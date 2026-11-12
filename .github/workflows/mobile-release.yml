@@ -68,6 +68,7 @@ jobs:
 
   build-pixel-apk:
     name: Compile Android APK (Pixel 10 XL)
+    needs: deploy-pwa
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -106,13 +107,25 @@ jobs:
           ./gradlew assembleDebug --no-daemon
 
       - name: Package BridgeBlitz-Pixel10XL.apk
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk BridgeBlitz-Pixel10XL.apk
+        run: |
+          mkdir -p apk-out
+          cp android/app/build/outputs/apk/debug/app-debug.apk BridgeBlitz-Pixel10XL.apk
+          cp BridgeBlitz-Pixel10XL.apk apk-out/BridgeBlitz-Pixel10XL.apk
 
       - name: Upload APK build artifact
         uses: actions/upload-artifact@v4
         with:
           name: BridgeBlitz-Pixel10XL-APK
           path: BridgeBlitz-Pixel10XL.apk
+
+      - name: Publish direct Chrome APK to gh-pages/download
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./apk-out
+          destination_dir: download
+          keep_files: true
+          publish_branch: gh-pages
 
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
@@ -121,7 +134,7 @@ jobs:
           name: Bridge Blitz v1.0.0 — Android APK (Pixel 10 XL)
           body: |
             ### Install on Google Pixel 10 XL (Android)
-            1. Tap **`BridgeBlitz-Pixel10XL.apk`** below on your Pixel 10 XL to download.
-            2. Open the downloaded `.apk` from Chrome Downloads or the **Files by Google** app and tap **Install** (if Play Protect prompts for an unknown developer debug build, tap **More details → Install anyway**).
-            3. Launch **Bridge Blitz** from your Pixel App Drawer in locked portrait mode with native linear haptics!
+            - **Direct Chrome Download (bypasses GitHub Mobile app)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk)
+            1. Open the downloaded `.apk` from Chrome Downloads or the **Files by Google** app and tap **Install** (if Play Protect prompts for an unknown developer debug build, tap **More details → Install anyway**).
+            2. Launch **Bridge Blitz** from your Pixel App Drawer in locked portrait mode with native linear haptics!
           files: BridgeBlitz-Pixel10XL.apk
