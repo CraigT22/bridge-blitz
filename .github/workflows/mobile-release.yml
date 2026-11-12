@@ -1,0 +1,105 @@
+name: Deploy PWA & Build Pixel APK
+
+on:
+  push:
+    branches:
+      - main
+      - 'release/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy-pwa:
+    name: Build & Deploy GitHub Pages PWA
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build production PWA bundle
+        run: |
+          npm run build
+          touch dist/.nojekyll
+
+      - name: Publish to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: gh-pages
+
+  build-pixel-apk:
+    name: Compile Android APK (Pixel 10 XL)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Setup Android SDK & accept API 36 licenses
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: |
+          if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          fi
+
+      - name: Install web dependencies & sync Capacitor Android
+        run: |
+          npm ci
+          npm run build
+          npx cap sync android
+
+      - name: Assemble Android APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Package BridgeBlitz-Pixel10XL.apk
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk BridgeBlitz-Pixel10XL.apk
+
+      - name: Upload APK build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BridgeBlitz-Pixel10XL-APK
+          path: BridgeBlitz-Pixel10XL.apk
+
+      - name: Publish APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: Bridge Blitz v1.0.0 — Android APK (Pixel 10 XL)
+          body: |
+            ### Install on Google Pixel 10 XL (Android)
+            1. Tap **`BridgeBlitz-Pixel10XL.apk`** below on your Pixel 10 XL to download.
+            2. Open the downloaded `.apk` from Chrome Downloads or the **Files by Google** app and tap **Install** (if Play Protect prompts for an unknown developer debug build, tap **More details → Install anyway**).
+            3. Launch **Bridge Blitz** from your Pixel App Drawer in locked portrait mode with native linear haptics!
+          files: BridgeBlitz-Pixel10XL.apk

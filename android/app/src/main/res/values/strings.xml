@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Bridge Blitz</string>
+    <string name="title_activity_main">Bridge Blitz</string>
+    <string name="package_name">com.bridgeblitz.game</string>
+    <string name="custom_url_scheme">com.bridgeblitz.game</string>
+</resources>

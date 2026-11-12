@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta
+      name="description"
+      content="Bridge Blitz — 60 FPS 3D math army gate-runner with skill-based progression, tiered weapons, anti-downgrade weapon lock, and Endless Bridge Mode."
+    />
+    <meta name="theme-color" content="#111c27" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Bridge Blitz — 3D Math Army Gate-Runner</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23121e2b'/%3E%3Cpath d='M4 22h24v3H4zm3-11h3v11H7zm15 0h3v11h-3zM7 13c5 4 13 4 18 0' stroke='%2324df72' stroke-width='2.5' fill='none'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <main id="app-root" class="game-viewport" aria-label="Bridge Blitz 3D Game Viewport">
+      <!-- WebGL Canvas Mount -->
+      <div id="canvas-container" class="canvas-container"></div>
+
+      <!-- 3D-Tracked World Overlays (Zero-GC Pooled Elements) -->
+      <div id="world-overlay-layer" class="world-overlay-layer" aria-hidden="true">
+        <div id="squad-count-badge" class="squad-pill">
+          <span id="squad-count-value" class="squad-pill__count">1</span>
+          <span id="squad-weapon-badge" class="squad-pill__weapon">Lv1 PISTOL</span>
+        </div>
+
+        <div id="enemy-wave-badges"></div>
+
+        <div id="boss-health-hud" class="boss-hud is-hidden">
+          <div class="boss-hud__header">
+            <span id="boss-hud-name" class="boss-hud__name">IRON WARDEN MK-I</span>
+            <span id="boss-hud-hp" class="boss-hud__hp">210 / 210</span>
+          </div>
+          <div class="boss-hud__track">
+            <div id="boss-hud-fill" class="boss-hud__fill"></div>
+            <div id="boss-hud-segments" class="boss-hud__segments"></div>
+          </div>
+        </div>
+
+        <div id="combat-text-layer" class="combat-text-layer"></div>
+      </div>
+
+      <!-- Crisp Top HUD Bar -->
+      <header class="top-hud">
+        <div class="top-hud__progress-card">
+          <div class="top-hud__stage-row">
+            <span id="hud-stage-label" class="top-hud__stage-label">STAGE 1 · GOLDEN SPAN</span>
+            <span id="hud-distance-label" class="top-hud__distance">0%</span>
+          </div>
+          <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-bar__track">
+              <div id="hud-progress-fill" class="progress-bar__fill"></div>
+            </div>
+            <div class="progress-bar__boss-icon" title="Stage Boss">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                <path d="M12 2C7.03 2 3 5.8 3 10.5c0 2.98 1.64 5.6 4.12 7.08V20a1 1 0 0 0 1 1h1.38v-2h1.5v2h2v-2h1.5v2h1.38a1 1 0 0 0 1-1v-2.42C19.36 16.1 21 13.48 21 10.5 21 5.8 16.97 2 12 2zm-3.25 9.75a1.75 1.75 0 1 1 0-3.5 1.75 1.75 0 0 1 0 3.5zm6.5 0a1.75 1.75 0 1 1 0-3.5 1.75 1.75 0 0 1 0 3.5zM10.5 15.5l1.5-2 1.5 2h-3z"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="top-hud__actions">
+          <div class="coin-pill" aria-label="Total Coins">
+            <svg class="coin-pill__icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" fill="#f5b82e" />
+              <circle cx="12" cy="12" r="7.2" fill="#ffd966" />
+              <path d="M11 7.5h2v9h-2z" fill="#b57608" />
+            </svg>
+            <span id="hud-coin-count" class="coin-pill__value">0</span>
+          </div>
+
+          <button
+            id="btn-settings"
+            type="button"
+            class="icon-button"
+            aria-label="Open Game Settings"
+            aria-expanded="false"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+              <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Settings Drawer -->
+      <aside id="settings-drawer" class="settings-drawer is-hidden" aria-label="Game Settings">
+        <div class="settings-drawer__header">
+          <h2 class="settings-drawer__title">Tactical Settings</h2>
+          <button id="btn-close-settings" type="button" class="settings-drawer__close" aria-label="Close Settings">✕</button>
+        </div>
+        <div class="settings-drawer__list">
+          <button id="btn-toggle-mute" type="button" class="settings-row">
+            <span>Sound Effects</span>
+            <span id="label-mute-state" class="settings-row__badge">ON</span>
+          </button>
+          <button id="btn-toggle-haptics" type="button" class="settings-row">
+            <span>Mobile Haptics</span>
+            <span id="label-haptics-state" class="settings-row__badge">ON</span>
+          </button>
+          <button id="btn-export-save" type="button" class="settings-row">
+            <span>Export Save JSON</span>
+            <span id="label-export-status" class="settings-row__badge">DOWNLOAD</span>
+          </button>
+          <button id="btn-reset-save" type="button" class="settings-row settings-row--danger">
+            <span id="label-reset-prompt">Reset Save Data</span>
+            <span class="settings-row__badge">RESET</span>
+          </button>
+        </div>
+        <div class="settings-drawer__records">
+          <span id="record-best-squad">Peak Army: 1</span>
+          <span id="record-best-endless">Endless Best: 0m</span>
+        </div>
+      </aside>
+
+      <!-- Pre-Run Staging & Upgrade Overlay -->
+      <section id="pre-run-overlay" class="staging-overlay" aria-label="Pre-Run Upgrade Deck">
+        <div class="staging-header">
+          <h1 class="staging-header__title">BRIDGE BLITZ</h1>
+          <div class="mode-bar" role="group" aria-label="Game Mode and Stage Selection">
+            <button id="btn-mode-campaign" type="button" class="mode-btn is-active">
+              Campaign
+            </button>
+            <div id="campaign-stage-stepper" class="stage-stepper">
+              <button id="btn-stage-prev" type="button" class="stepper-btn" aria-label="Previous Stage">‹</button>
+              <span id="label-selected-stage" class="stepper-label">Stage 1 / 10</span>
+              <button id="btn-stage-next" type="button" class="stepper-btn" aria-label="Next Stage">›</button>
+            </div>
+            <button id="btn-mode-endless" type="button" class="mode-btn">
+              Endless Bridge
+            </button>
+          </div>
+        </div>
+
+        <div class="staging-bottom">
+          <button id="btn-start-march" type="button" class="start-march-prompt">
+            <span class="start-march-prompt__main">TAP OR PRESS SPACE TO MARCH</span>
+            <span class="start-march-prompt__sub">Drag, A / D, Arrow Keys, or Gamepad to Steer</span>
+          </button>
+
+          <div id="upgrade-deck" class="upgrade-deck">
+            <button id="upgrade-card-fireRate" type="button" class="upgrade-card" data-upgrade="fireRate">
+              <div class="upgrade-card__top">
+                <span class="upgrade-card__key">1</span>
+                <span id="lvl-fireRate" class="upgrade-card__lvl">Lv. 0</span>
+              </div>
+              <div class="upgrade-card__name">Fire Rate</div>
+              <div id="stat-fireRate" class="upgrade-card__stat">+0% → +8%</div>
+              <div class="upgrade-card__cost">
+                <span class="upgrade-card__coin-dot"></span>
+                <span id="cost-fireRate">25</span>
+              </div>
+            </button>
+
+            <button id="upgrade-card-bulletPower" type="button" class="upgrade-card" data-upgrade="bulletPower">
+              <div class="upgrade-card__top">
+                <span class="upgrade-card__key">2</span>
+                <span id="lvl-bulletPower" class="upgrade-card__lvl">Lv. 0</span>
+              </div>
+              <div class="upgrade-card__name">Bullet Power</div>
+              <div id="stat-bulletPower" class="upgrade-card__stat">+0% → +15%</div>
+              <div class="upgrade-card__cost">
+                <span class="upgrade-card__coin-dot"></span>
+                <span id="cost-bulletPower">30</span>
+              </div>
+            </button>
+
+            <button id="upgrade-card-startingSquad" type="button" class="upgrade-card" data-upgrade="startingSquad">
+              <div class="upgrade-card__top">
+                <span class="upgrade-card__key">3</span>
+                <span id="lvl-startingSquad" class="upgrade-card__lvl">Lv. 0</span>
+              </div>
+              <div class="upgrade-card__name">Starting Squad</div>
+              <div id="stat-startingSquad" class="upgrade-card__stat">1 → 2</div>
+              <div class="upgrade-card__cost">
+                <span class="upgrade-card__coin-dot"></span>
+                <span id="cost-startingSquad">35</span>
+              </div>
+            </button>
+
+            <button id="upgrade-card-warChest" type="button" class="upgrade-card" data-upgrade="warChest">
+              <div class="upgrade-card__top">
+                <span class="upgrade-card__key">4</span>
+                <span id="lvl-warChest" class="upgrade-card__lvl">Lv. 0</span>
+              </div>
+              <div class="upgrade-card__name">War Chest</div>
+              <div id="stat-warChest" class="upgrade-card__stat">+0% → +12%</div>
+              <div class="upgrade-card__cost">
+                <span class="upgrade-card__coin-dot"></span>
+                <span id="cost-warChest">25</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Run Summary Modal (Victory / Defeat) -->
+      <section
+        id="run-summary-modal"
+        class="summary-backdrop is-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="summary-title"
+      >
+        <div class="summary-card">
+          <div id="summary-kicker" class="summary-card__kicker">STAGE 1 REPORT</div>
+          <h2 id="summary-title" class="summary-card__title">STAGE CLEARED!</h2>
+
+          <div class="summary-metrics">
+            <div class="summary-metric">
+              <span class="summary-metric__label">Distance</span>
+              <strong id="summary-distance" class="summary-metric__val">215m</strong>
+            </div>
+            <div class="summary-metric">
+              <span class="summary-metric__label">Peak Squad</span>
+              <strong id="summary-peak-squad" class="summary-metric__val">28</strong>
+            </div>
+            <div class="summary-metric">
+              <span class="summary-metric__label">Eliminations</span>
+              <strong id="summary-kills" class="summary-metric__val">17</strong>
+            </div>
+            <div class="summary-metric">
+              <span class="summary-metric__label">Gates Flipped</span>
+              <strong id="summary-flips" class="summary-metric__val">2</strong>
+            </div>
+          </div>
+
+          <div class="summary-payout">
+            <div class="summary-payout__row">
+              <span>Distance &amp; Progress</span>
+              <span id="summary-coin-dist">+30</span>
+            </div>
+            <div class="summary-payout__row">
+              <span>Enemy Eliminations</span>
+              <span id="summary-coin-kills">+30</span>
+            </div>
+            <div class="summary-payout__row">
+              <span>Boss &amp; Weapon Lock Bonus</span>
+              <span id="summary-coin-bonus">+65</span>
+            </div>
+            <div class="summary-payout__row summary-payout__row--mult">
+              <span>War Chest Multiplier</span>
+              <span id="summary-coin-mult">×1.00</span>
+            </div>
+            <div class="summary-payout__total">
+              <span>Total Earned</span>
+              <strong id="summary-coin-total">+125 COINS</strong>
+            </div>
+          </div>
+
+          <button id="btn-summary-continue" type="button" class="summary-continue-btn">
+            NEXT STAGE (SPACE)
+          </button>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
