@@ -126,25 +126,28 @@ export function createPlayerSoldierGeometry(): THREE.BufferGeometry {
   const visorCyan = 0x6efbff;
   const accentGold = 0xffcf56;
 
-  // --- LEGS (partId 1 = Left, partId 2 = Right) ---
+  // --- LEGS (partId 1 = Left, partId 2 = Right — subtle athletic bent-knee combat stance) ---
   for (const [sideSign, partId] of [
     [-1, 1],
     [1, 2],
   ] as const) {
-    const lx = sideSign * 0.096;
+    const lx = sideSign * 0.105;
 
-    const thigh = new THREE.CapsuleGeometry(0.064, 0.135, 8, 14);
-    thigh.translate(lx, 0.30, 0);
+    const thigh = new THREE.CapsuleGeometry(0.065, 0.135, 8, 14);
+    thigh.rotateX(-0.14);
+    thigh.rotateZ(-sideSign * 0.045);
+    thigh.translate(lx, 0.298, -0.014);
     parts.push(tagPartGeometry(thigh, pantsCobalt, partId));
 
-    const shin = new THREE.CapsuleGeometry(0.054, 0.125, 8, 14);
-    shin.translate(lx, 0.135, 0.008);
+    const shin = new THREE.CapsuleGeometry(0.055, 0.125, 8, 14);
+    shin.rotateX(0.16);
+    shin.translate(lx * 1.03, 0.135, 0.006);
     parts.push(tagPartGeometry(shin, pantsCobalt, partId));
 
-    const boot = new THREE.CapsuleGeometry(0.056, 0.09, 8, 12);
+    const boot = new THREE.CapsuleGeometry(0.057, 0.092, 8, 12);
     boot.rotateX(Math.PI / 2);
-    boot.scale(1.04, 0.84, 1.08);
-    boot.translate(lx, 0.046, -0.032);
+    boot.scale(1.05, 0.84, 1.10);
+    boot.translate(lx * 1.03, 0.046, -0.024);
     parts.push(tagPartGeometry(boot, darkWebbing, partId));
   }
 
@@ -478,26 +481,36 @@ export function createWeaponPickupGroup(tier: WeaponTierId): THREE.Group {
 }
 
 /**
- * Chunky High-Contrast Teardrop Plasma/Tracer Bolt:
- * Smooth rounded bright white nose + tapered cyan/gold wake!
+ * Sleek Elongated Tapered Tracer Streak:
+ * Neutral white-to-silver brightness ramp so per-instance weapon colors tint purely into
+ * electric cyan-white (Pistol/SMG/Plasma) or fiery peach-orange (Assault Rifle/Minigun)!
  */
 export function createTracerBoltGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
 
-  const head = new THREE.SphereGeometry(0.096, 12, 10);
-  head.scale(0.92, 0.92, 1.38);
-  head.translate(0, 0, -0.24);
-  parts.push(tagPartGeometry(head, 0xffffff, 0));
+  const outerWake = new THREE.ConeGeometry(0.136, 1.66, 8);
+  outerWake.rotateX(Math.PI / 2);
+  outerWake.translate(0, 0, 0.31);
+  parts.push(tagPartGeometry(outerWake, 0xf2f6fa, 0));
 
-  const tail = new THREE.ConeGeometry(0.088, 0.72, 10);
-  tail.rotateX(Math.PI / 2);
-  tail.translate(0, 0, 0.15);
-  parts.push(tagPartGeometry(tail, 0xd8faff, 0));
+  const coreTail = new THREE.ConeGeometry(0.062, 1.22, 8);
+  coreTail.rotateX(Math.PI / 2);
+  coreTail.translate(0, 0, 0.16);
+  const coreTailTagged = tagPartGeometry(coreTail, 0xffffff, 0);
 
-  const halo = new THREE.ConeGeometry(0.148, 0.90, 10);
-  halo.rotateX(Math.PI / 2);
-  halo.translate(0, 0, 0.11);
-  parts.push(tagPartGeometry(halo, 0x56c8e8, 0));
+  const head = new THREE.SphereGeometry(0.072, 10, 8);
+  head.scale(0.84, 0.84, 1.68);
+  head.translate(0, 0, -0.44);
+  const headTagged = tagPartGeometry(head, 0xffffff, 0);
+
+  for (const hotGeo of [coreTailTagged, headTagged]) {
+    const colAttr = hotGeo.getAttribute('color') as THREE.BufferAttribute;
+    const arr = colAttr.array as Float32Array;
+    for (let k = 0; k < arr.length; k++) {
+      arr[k] = 2.25;
+    }
+    parts.push(hotGeo);
+  }
 
   const merged = mergeGeometries(parts, false);
   for (const p of parts) {

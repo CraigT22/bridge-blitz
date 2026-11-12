@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { GateOperator, WeaponTierId } from '../core/types';
-import { formatGateLabel } from '../math/gateMath';
+import { formatGateLabel, isNegativeGateState } from '../math/gateMath';
+import { formatObstacleHp } from '../math/progressionMath';
 import { WEAPON_SPECS } from '../math/weaponMath';
 
 function traceChamferRect(
@@ -48,15 +49,14 @@ export class EditableGateTexture {
     operator: GateOperator,
     value: number,
     isLocked: boolean,
-    ringProgress: number,
+    _ringProgress: number,
     flashIntensity: number,
     panelWidthMeters = 4.76
   ): void {
-    const valKey = operator === 'MUL' && !isLocked ? Math.round(value * 10) : Math.round(value);
-    const progBucket = isLocked ? 0 : Math.floor(ringProgress * 16);
+    const valKey = operator === 'MUL' && !isLocked ? Math.round(value * 100) : Math.round(value);
     const flashFlag = flashIntensity > 0.15 ? 1 : 0;
     const widthBucket = Math.round(panelWidthMeters * 10);
-    const sig = `${operator}:${valKey}:${isLocked ? 1 : 0}:${progBucket}:${flashFlag}:${widthBucket}`;
+    const sig = `${operator}:${valKey}:${isLocked ? 1 : 0}:${flashFlag}:${widthBucket}`;
     if (sig === this.lastSignature) {
       return;
     }
@@ -67,88 +67,71 @@ export class EditableGateTexture {
     const h = this.canvas.height;
     ctx.clearRect(0, 0, w, h);
 
-    // Orthographic world-proportioned virtual width so dynamic 22%..78% split panels never stretch text or bevels!
-    const virtW = Math.max(196, h * (panelWidthMeters / 2.48));
-
-    // High-clarity translucent forcefield so obstacles behind the gate stay 100% readable!
-    let bgTop = 'rgba(24, 198, 255, 0.50)';
-    let bgBottom = 'rgba(10, 120, 212, 0.62)';
-    let borderStroke = '#62f4ff';
-
-    if (isLocked && operator === 'MUL') {
-      bgTop = 'rgba(235, 168, 24, 0.56)';
-      bgBottom = 'rgba(138, 76, 10, 0.66)';
-      borderStroke = '#ffe066';
-    } else if (isLocked && operator === 'DIV') {
-      bgTop = 'rgba(224, 38, 56, 0.58)';
-      bgBottom = 'rgba(116, 14, 28, 0.68)';
-      borderStroke = '#ff8a65';
-    } else if (operator === 'ADD' && value < 0) {
-      bgTop = 'rgba(232, 42, 64, 0.56)';
-      bgBottom = 'rgba(128, 16, 32, 0.68)';
-      borderStroke = '#ff6b81';
-    }
+    // Orthographic world-proportioned virtual width so dynamic 20%..80% split panels never stretch text!
+    const virtW = Math.max(190, h * (panelWidthMeters / 2.48));
+    const isNeg = isNegativeGateState(operator, value, isLocked);
 
     ctx.save();
     ctx.scale(w / virtW, 1);
 
-    ctx.save();
-    traceChamferRect(ctx, 8, 10, virtW - 16, h - 20, 20);
-    ctx.clip();
-
-    const grad = ctx.createLinearGradient(0, 10, 0, h - 10);
-    grad.addColorStop(0, bgTop);
-    grad.addColorStop(1, bgBottom);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, virtW, h);
-
-    // Subtle energy shimmer bands
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-    for (let sy = 22; sy < h - 22; sy += 24) {
-      ctx.fillRect(8, sy, virtW - 16, 4);
+    // Frameless-top translucent energy glass curtain:
+    // Fades smoothly to open air at the top, rich translucent cyan/crimson through the body,
+    // and terminates in a crisp glowing baseline along the bridge deck!
+    const grad = ctx.createLinearGradient(0, 4, 0, h - 6);
+    if (isNeg) {
+      grad.addColorStop(0.0, 'rgba(244, 48, 72, 0.03)');
+      grad.addColorStop(0.18, 'rgba(238, 42, 64, 0.24)');
+      grad.addColorStop(0.55, 'rgba(220, 30, 52, 0.46)');
+      grad.addColorStop(0.90, 'rgba(182, 16, 36, 0.64)');
+      grad.addColorStop(1.0, 'rgba(255, 76, 98, 0.84)');
+    } else {
+      grad.addColorStop(0.0, 'rgba(42, 220, 255, 0.03)');
+      grad.addColorStop(0.18, 'rgba(26, 202, 255, 0.24)');
+      grad.addColorStop(0.55, 'rgba(14, 168, 246, 0.44)');
+      grad.addColorStop(0.90, 'rgba(10, 126, 224, 0.62)');
+      grad.addColorStop(1.0, 'rgba(68, 236, 255, 0.82)');
     }
+    ctx.fillStyle = grad;
+    ctx.fillRect(2, 4, virtW - 4, h - 10);
+
+    // Subtle vertical glass sheen columns
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.07)';
+    ctx.fillRect(virtW * 0.14, 28, Math.max(14, virtW * 0.08), h - 42);
+    ctx.fillRect(virtW * 0.76, 36, Math.max(10, virtW * 0.05), h - 50);
 
     if (flashFlag) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.34)';
-      ctx.fillRect(8, 10, virtW - 16, h - 20);
+      const flashGrad = ctx.createLinearGradient(0, 18, 0, h - 6);
+      flashGrad.addColorStop(0, 'rgba(255, 255, 255, 0.05)');
+      flashGrad.addColorStop(0.45, 'rgba(255, 255, 255, 0.36)');
+      flashGrad.addColorStop(1, 'rgba(255, 255, 255, 0.48)');
+      ctx.fillStyle = flashGrad;
+      ctx.fillRect(2, 14, virtW - 4, h - 20);
     }
-    ctx.restore();
 
-    // Crisp Forcefield Border
-    traceChamferRect(ctx, 8, 10, virtW - 16, h - 20, 20);
-    ctx.lineWidth = 8;
-    ctx.strokeStyle = borderStroke;
-    ctx.stroke();
+    // Bright glowing ground-contact baseline strip
+    ctx.fillStyle = isNeg ? 'rgba(255, 166, 178, 0.96)' : 'rgba(164, 250, 255, 0.96)';
+    ctx.fillRect(2, h - 11, virtW - 4, 6);
+    ctx.fillStyle = isNeg ? 'rgba(255, 68, 92, 0.45)' : 'rgba(42, 220, 255, 0.45)';
+    ctx.fillRect(2, h - 19, virtW - 4, 8);
 
-    // Giant Bold Arcade Label (scales subtly with panel width while auto-fitting narrow splits!)
+    // Giant Bold White Black-Outlined Arcade Label (centered cleanly with no bottom charge bar!)
     const label = formatGateLabel(operator, value, isLocked);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    let fontPx = Math.round(Math.max(108, Math.min(156, 98 + virtW * 0.078)));
+    let fontPx = Math.round(Math.max(112, Math.min(162, 102 + virtW * 0.082)));
     ctx.font = `900 ${fontPx}px system-ui, -apple-system, sans-serif`;
-    const maxTextW = Math.max(120, virtW - 44);
+    const maxTextW = Math.max(124, virtW - 38);
     const measuredW = ctx.measureText(label).width;
     if (measuredW > maxTextW) {
-      fontPx = Math.max(76, Math.floor(fontPx * (maxTextW / measuredW)));
+      fontPx = Math.max(74, Math.floor(fontPx * (maxTextW / measuredW)));
       ctx.font = `900 ${fontPx}px system-ui, -apple-system, sans-serif`;
     }
     ctx.lineJoin = 'round';
-    ctx.lineWidth = Math.max(15, Math.round(fontPx * 0.155));
+    ctx.lineWidth = Math.max(16, Math.round(fontPx * 0.165));
     ctx.strokeStyle = '#09111c';
-    ctx.strokeText(label, virtW / 2, h / 2 - 4);
+    ctx.strokeText(label, virtW / 2, h * 0.54);
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(label, virtW / 2, h / 2 - 4);
-
-    // Compact Charge Bar along bottom for shootable ADD & fractional MUL gates
-    if (!isLocked) {
-      const barW = Math.min(320, Math.max(96, virtW - 68));
-      const startX = (virtW - barW) / 2;
-      const barY = h - 28;
-      ctx.fillStyle = 'rgba(7, 12, 20, 0.72)';
-      ctx.fillRect(startX - 4, barY - 4, barW + 8, 16);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(startX, barY, Math.round(barW * (progBucket / 16)), 8);
-    }
+    ctx.fillText(label, virtW / 2, h * 0.54);
 
     ctx.restore();
     this.texture.needsUpdate = true;
@@ -167,7 +150,7 @@ export class EditableArcadeHpTexture {
 
   constructor() {
     this.canvas = document.createElement('canvas');
-    this.canvas.width = 384;
+    this.canvas.width = 416;
     this.canvas.height = 224;
     const ctx = this.canvas.getContext('2d');
     if (!ctx) {
@@ -194,8 +177,9 @@ export class EditableArcadeHpTexture {
     const h = this.canvas.height;
     ctx.clearRect(0, 0, w, h);
 
-    const text = `${shown}`;
-    const fontSize = shown >= 1000 ? 124 : shown >= 100 ? 148 : 168;
+    const text = formatObstacleHp(shown);
+    const fontSize =
+      text.length >= 5 ? 104 : text.length === 4 ? 124 : text.length === 3 ? 148 : 168;
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -207,7 +191,7 @@ export class EditableArcadeHpTexture {
     ctx.strokeStyle = 'rgba(14, 8, 4, 0.92)';
     ctx.strokeText(text, w / 2, h / 2 + 6);
 
-    // Mid fiery orange arcade stroke (matches reference screenshots!)
+    // Mid fiery orange arcade stroke
     ctx.lineWidth = 22;
     ctx.strokeStyle = flashFlag ? '#ff3b1f' : '#ea5212';
     ctx.strokeText(text, w / 2, h / 2 + 2);

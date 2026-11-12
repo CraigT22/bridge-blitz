@@ -112,23 +112,25 @@ describe('ObjectPool & Core State Integrity', () => {
     }
   });
 
-  it('defines 10 valid handcrafted v4.0 campaign stages with opening supply drums, 3-lane tire walls, and Boss salvos', () => {
+  it('defines 10 valid handcrafted v5.0 campaign stages with V-trio supply drums, 3-lane tire walls, Mid-Bridge Brutes, and Boss salvos', () => {
     expect(CAMPAIGN_STAGES).toHaveLength(10);
     const seenChassis = new Set<string>();
     for (let i = 0; i < CAMPAIGN_STAGES.length; i++) {
       const stage = CAMPAIGN_STAGES[i];
       expect(stage.stageNumber).toBe(i + 1);
-      expect(stage.trackLength).toBeGreaterThanOrEqual(260);
-      expect(stage.supplyDrums.length).toBeGreaterThanOrEqual(6);
-      // Opening drum row visible immediately from the Live-Bridge Start Screen (z >= -20)
+      expect(stage.trackLength).toBeGreaterThanOrEqual(280);
+      expect(stage.supplyDrums.length).toBeGreaterThanOrEqual(9);
       expect(stage.supplyDrums[0].z).toBeGreaterThanOrEqual(-20);
       expect(stage.gatePairs.length).toBeGreaterThanOrEqual(3);
-      expect(stage.tireStacks.length).toBe(6); // Two 3-lane Tire Wall checkpoints per sector
+      expect(stage.tireStacks.length).toBe(6);
       expect(stage.enemyWaves.length).toBeGreaterThanOrEqual(4);
-      expect(stage.boss.maxHp).toBeGreaterThanOrEqual(2000);
+      expect(stage.enemyWaves[1].count).toBeGreaterThanOrEqual(30);
+      expect(stage.midBrute).toBeDefined();
+      expect(stage.midBrute!.maxHp).toBeGreaterThanOrEqual(6500);
+      expect(stage.boss.maxHp).toBeGreaterThanOrEqual(12500);
       expect(stage.boss.salvoLanes === 1 || stage.boss.salvoLanes === 2).toBe(true);
-      expect(stage.boss.salvoDamage).toBeGreaterThanOrEqual(2);
-      expect(stage.boss.salvoDamage).toBeLessThanOrEqual(5);
+      expect(stage.boss.salvoDamage).toBeGreaterThanOrEqual(5);
+      expect(stage.boss.salvoDamage).toBeLessThanOrEqual(12);
       seenChassis.add(stage.boss.chassis);
     }
     expect(seenChassis).toEqual(
@@ -138,8 +140,9 @@ describe('ObjectPool & Core State Integrity', () => {
     const wave1 = generateEndlessWaveStage(1);
     const wave4 = generateEndlessWaveStage(4);
     const wave5 = generateEndlessWaveStage(5);
-    expect(wave1.supplyDrums.length).toBeGreaterThanOrEqual(6);
+    expect(wave1.supplyDrums.length).toBeGreaterThanOrEqual(9);
     expect(wave1.tireStacks.length).toBe(6);
+    expect(wave1.midBrute).toBeDefined();
     expect(wave5.boss.maxHp).toBeGreaterThan(wave1.boss.maxHp);
     expect(wave1.boss.salvoLanes).toBe(1);
     expect(wave5.boss.salvoLanes).toBe(2);

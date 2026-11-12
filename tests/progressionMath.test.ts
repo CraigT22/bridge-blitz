@@ -3,6 +3,8 @@ import {
   attemptPurchaseUpgrade,
   computeRunCoinPayout,
   computeUpgradeCost,
+  formatCoinAmount,
+  formatObstacleHp,
   getBulletPowerMultiplier,
   getFireRateMultiplier,
   getStartingSquadCount,
@@ -18,13 +20,26 @@ describe('progressionMath', () => {
     expect(computeUpgradeCost('startingSquad', 2)).toBe(Math.round(65 * Math.pow(1.55, 2)));
   });
 
-  it('computes stat multipliers accurately and caps startingSquad at MAX_STARTING_SQUAD_LEVEL', () => {
+  it('computes stat multipliers accurately and caps startingSquad at MAX_STARTING_SQUAD_LEVEL (12)', () => {
+    expect(MAX_STARTING_SQUAD_LEVEL).toBe(12);
     expect(getFireRateMultiplier(4)).toBeCloseTo(1.4);
     expect(getBulletPowerMultiplier(2)).toBeCloseTo(1.36);
     expect(getStartingSquadCount(0)).toBe(1);
-    expect(getStartingSquadCount(MAX_STARTING_SQUAD_LEVEL)).toBe(1 + MAX_STARTING_SQUAD_LEVEL);
-    expect(getStartingSquadCount(99)).toBe(1 + MAX_STARTING_SQUAD_LEVEL);
+    expect(getStartingSquadCount(MAX_STARTING_SQUAD_LEVEL)).toBe(13);
+    expect(getStartingSquadCount(99)).toBe(13);
     expect(getWarChestMultiplier(4)).toBeCloseTo(1.6);
+  });
+
+  it('formats large coins with K/M/B suffixes while keeping < 10,000 obstacle/Brute HP raw integers', () => {
+    expect(formatCoinAmount(950)).toBe('950');
+    expect(formatCoinAmount(1250)).toBe('1.25K');
+    expect(formatCoinAmount(48500)).toBe('48.5K');
+    expect(formatCoinAmount(2400000)).toBe('2.4M');
+
+    expect(formatObstacleHp(1750)).toBe('1750');
+    expect(formatObstacleHp(8508)).toBe('8508');
+    expect(formatObstacleHp(12500)).toBe('12.5K');
+    expect(formatObstacleHp(76000)).toBe('76K');
   });
 
   it('deducts coins and increments level on valid upgrade purchase, rejecting insufficient coins or capped squad', () => {
@@ -49,7 +64,7 @@ describe('progressionMath', () => {
       stageNumber: 1,
       enemiesDefeated: 0,
       bonusCoinsCollected: 0,
-      bossRewardCoins: 120,
+      bossRewardCoins: 260,
       clearedStage: false,
       warChestLevel: 2,
     });

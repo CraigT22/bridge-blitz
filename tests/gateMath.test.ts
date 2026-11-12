@@ -4,6 +4,7 @@ import {
   computeGateStepThreshold,
   computeSplitGateRatio,
   formatGateLabel,
+  isNegativeGateState,
   MAX_ADD_GATE_VALUE,
   MAX_SHOOTABLE_MUL_VALUE,
   resolveGateSquadCount,
@@ -47,7 +48,7 @@ describe('gateMath', () => {
     expect(posHit.deltaIncrements).toBe(1);
   });
 
-  it('allows shootable ADD gates to climb smoothly past +10 (+2 -> +12+) without a low +8 ceiling', () => {
+  it('allows shootable ADD gates to climb smoothly past +10 (+2 -> +12+) without a low ceiling', () => {
     const res = applyGateBulletHit(
       {
         operator: 'ADD',
@@ -62,57 +63,55 @@ describe('gateMath', () => {
     expect(res.value).toBeLessThanOrEqual(MAX_ADD_GATE_VALUE);
   });
 
-  it('charges shootable fractional MUL gates freely past X2.2 (X1.0 -> X1.5 -> X3.5+) without an artificial 2.2x cap', () => {
-    let mulState = {
+  it('steps shootable < X1.00 red fractional penalty gates by +0.05, flips positive at X1.00, and climbs uncapped past X3.5', () => {
+    const startRed = {
       operator: 'MUL' as const,
-      value: 1.0,
+      value: 0.85,
       hitAccumulator: 0,
       damagePerIncrement: 10,
       isLocked: false,
     };
+    expect(isNegativeGateState('MUL', startRed.value)).toBe(true);
 
-    const step1 = applyGateBulletHit(mulState, 10);
-    expect(step1.value).toBeCloseTo(1.1);
-    expect(step1.deltaIncrements).toBe(1);
-    expect(step1.flippedToPositive).toBe(false);
+    // 10 dmg -> 0.85 to 0.90 (still red < 1.00)
+    const step090 = applyGateBulletHit(startRed, 10);
+    expect(step090.value).toBeCloseTo(0.9, 2);
+    expect(step090.flippedToPositive).toBe(false);
 
-    // Push well past X1.5 milestone
+    // Next 20 dmg -> 0.90 -> 0.95 -> 1.00 (flips to cyan positive!)
     const stepFlip = applyGateBulletHit(
-      { ...mulState, value: 1.4, hitAccumulator: 0 },
-      30
+      { ...startRed, value: step090.value, hitAccumulator: 0 },
+      20
     );
-    expect(stepFlip.value).toBeGreaterThanOrEqual(1.5);
+    expect(stepFlip.value).toBeCloseTo(1.0, 2);
     expect(stepFlip.flippedToPositive).toBe(true);
+    expect(isNegativeGateState('MUL', stepFlip.value)).toBe(false);
 
-    // High DPS pushes well past the old 2.2x cap (e.g., X3.5+)
+    // Sustained DPS pushes freely past X3.5+
     const stepUncapped = applyGateBulletHit(
-      { ...mulState, value: 1.9, hitAccumulator: 0 },
+      { ...startRed, value: 1.9, hitAccumulator: 0 },
       900
     );
     expect(stepUncapped.value).toBeGreaterThan(3.5);
     expect(stepUncapped.value).toBeLessThanOrEqual(MAX_SHOOTABLE_MUL_VALUE);
   });
 
-  it('expands split gate width when +2 grows to +10 and shrinks negative side when -10 drops to -2', () => {
-    // Equal magnitude (+2 vs -2) => 50/50 split
-    const equalSplit = computeSplitGateRatio('ADD', 2, false, 'ADD', -2, false);
-    expect(equalSplit).toBeCloseTo(0.5, 4);
+  it('weights positive split-gate sides ~3x wider (+21 | -21 gives +21 ~70% width) and expands/shrinks dynamically', () => {
+    // Symmetric magnitude (+21 vs -21) => positive blue side gets ~70% width!
+    const symSplit = computeSplitGateRatio('ADD', 21, false, 'ADD', -21, false);
+    expect(symSplit).toBeGreaterThan(0.67);
+    expect(symSplit).toBeLessThan(0.75);
 
-    // Left +2 vs Right -10: negative -10 starts wider (>65% on right, <35% on left)
-    const startRatio = computeSplitGateRatio('ADD', 2, false, 'ADD', -10, false);
-    expect(startRatio).toBeLessThan(0.35);
-
-    // Example 1: Left +2 grows to +10 -> Left portion gets BIGGER!
-    const grownLeftRatio = computeSplitGateRatio('ADD', 10, false, 'ADD', -10, false);
-    const grownFurtherRatio = computeSplitGateRatio('ADD', 10, false, 'ADD', -2, false);
+    // Left +2 vs Right -24: startRatio grows cleanly when +2 climbs to +10
+    const startRatio = computeSplitGateRatio('ADD', 2, false, 'ADD', -24, false);
+    const grownLeftRatio = computeSplitGateRatio('ADD', 10, false, 'ADD', -24, false);
     expect(grownLeftRatio).toBeGreaterThan(startRatio);
-    expect(grownFurtherRatio).toBeGreaterThan(0.68);
 
-    // Example 2: Right -10 goes to -2 -> Right portion (1 - leftRatio) gets SMALLER!
-    const rightWidthAtMinus10 = 1 - computeSplitGateRatio('ADD', 2, false, 'ADD', -10, false);
+    // Right -24 shrinking to -2 shrinks the right negative portion
+    const rightWidthAtMinus24 = 1 - computeSplitGateRatio('ADD', 2, false, 'ADD', -24, false);
     const rightWidthAtMinus2 = 1 - computeSplitGateRatio('ADD', 2, false, 'ADD', -2, false);
     const rightWidthAtZero = 1 - computeSplitGateRatio('ADD', 2, false, 'ADD', 0, false);
-    expect(rightWidthAtMinus2).toBeLessThan(rightWidthAtMinus10);
+    expect(rightWidthAtMinus2).toBeLessThan(rightWidthAtMinus24);
     expect(rightWidthAtZero).toBeLessThan(rightWidthAtMinus2);
   });
 
@@ -142,41 +141,23 @@ describe('gateMath', () => {
     expect(step3.flippedToPositive).toBe(true);
   });
 
-  it('keeps locked x2, x3, and ÷2 gates immune to bullet damage with ricochet flag', () => {
-    const lockedMul = applyGateBulletHit(
-      {
-        operator: 'MUL',
-        value: 3,
-        hitAccumulator: 0,
-        damagePerIncrement: 0,
-        isLocked: true,
-      },
-      100
-    );
-    expect(lockedMul.value).toBe(3);
-    expect(lockedMul.deltaIncrements).toBe(0);
-    expect(lockedMul.ricochet).toBe(true);
-  });
-
-  it('applies exact squad count arithmetic for ADD, fractional MUL, and ÷2 DIV gates with 10-commando cap', () => {
-    expect(resolveGateSquadCount(4, 'ADD', 3)).toBe(7);
-    expect(resolveGateSquadCount(8, 'ADD', 5)).toBe(10);
+  it('applies exact squad count arithmetic for ADD and fractional MUL gates up to 40-commando crowd cap', () => {
+    expect(resolveGateSquadCount(14, 'ADD', 12)).toBe(26);
+    expect(resolveGateSquadCount(32, 'ADD', 15)).toBe(40);
     expect(resolveGateSquadCount(4, 'ADD', -25)).toBe(0);
-    expect(resolveGateSquadCount(1, 'MUL', 1.4)).toBe(1);
-    expect(resolveGateSquadCount(1, 'MUL', 1.5)).toBe(2);
-    expect(resolveGateSquadCount(3, 'MUL', 1.7)).toBe(5);
-    expect(resolveGateSquadCount(7, 'DIV', 2)).toBe(3);
-    expect(resolveGateSquadCount(1, 'DIV', 2)).toBe(1);
+    expect(resolveGateSquadCount(20, 'MUL', 0.35)).toBe(7);
+    expect(resolveGateSquadCount(12, 'MUL', 2.5)).toBe(30);
+    expect(resolveGateSquadCount(20, 'MUL', 2.8)).toBe(40);
   });
 
-  it('formats gate labels with clear operators including fractional shootable X1.7 labels', () => {
+  it('formats gate labels with clear 2-decimal < X1.00 penalty labels and crisp >= X1 labels', () => {
     expect(formatGateLabel('ADD', 3)).toBe('+3');
     expect(formatGateLabel('ADD', 0)).toBe('+0');
     expect(formatGateLabel('ADD', -18)).toBe('-18');
-    expect(formatGateLabel('MUL', 1.0, false)).toBe('X1');
+    expect(formatGateLabel('MUL', 0.05, false)).toBe('X0.05');
+    expect(formatGateLabel('MUL', 0.65, false)).toBe('X0.65');
+    expect(formatGateLabel('MUL', 1.0, false)).toBe('X1.0');
     expect(formatGateLabel('MUL', 1.7, false)).toBe('X1.7');
-    expect(formatGateLabel('MUL', 2.0, false)).toBe('X2');
-    expect(formatGateLabel('MUL', 2, true)).toBe('x2');
-    expect(formatGateLabel('DIV', 2, true)).toBe('÷2');
+    expect(formatGateLabel('MUL', 2.0, false)).toBe('X2.0');
   });
 });

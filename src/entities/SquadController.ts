@@ -118,10 +118,50 @@ export class SquadController {
     const followFactor = Math.min(1, dt * 15);
     for (let i = 0; i < vis; i++) {
       getEliteFormationOffset(i, vis, _slotOffset);
-      const targetX = this.x + _slotOffset.x;
+      const rawTargetX = this.x + _slotOffset.x;
+      const clampedTargetX = Math.max(
+        -4.38 + (i % 3) * 0.08,
+        Math.min(4.38 - (i % 3) * 0.08, rawTargetX)
+      );
       const targetZ = this.z + _slotOffset.z;
-      this.soldierWorldX[i] += (targetX - this.soldierWorldX[i]) * followFactor;
+      this.soldierWorldX[i] += (clampedTargetX - this.soldierWorldX[i]) * followFactor;
       this.soldierWorldZ[i] += (targetZ - this.soldierWorldZ[i]) * followFactor;
+    }
+  }
+
+  /**
+   * Smoothly funnels outer crowd soldiers around standing unbroken barrels & sibling Tire Stacks
+   * when the squad marches through an adjacent breached corridor!
+   */
+  public funnelAroundStandingObstacle(
+    obsX: number,
+    obsZ: number,
+    radiusX: number,
+    radiusZ: number,
+    dt: number
+  ): void {
+    const vis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
+    if (vis <= 0) {
+      return;
+    }
+    const pushSign = this.x >= obsX ? 1 : -1;
+    const blend = Math.min(1, dt * 22);
+    const padX = radiusX + 0.32;
+    const padZ = radiusZ + 0.65;
+
+    for (let i = 0; i < vis; i++) {
+      const sz = this.soldierWorldZ[i];
+      const dz = Math.abs(sz - obsZ);
+      if (dz > padZ) {
+        continue;
+      }
+      const sx = this.soldierWorldX[i];
+      const dx = sx - obsX;
+      if (Math.abs(dx) < padX) {
+        const edgeX = obsX + pushSign * (padX + (i % 3) * 0.07);
+        const safeEdgeX = Math.max(-4.38, Math.min(4.38, edgeX));
+        this.soldierWorldX[i] += (safeEdgeX - sx) * blend;
+      }
     }
   }
 

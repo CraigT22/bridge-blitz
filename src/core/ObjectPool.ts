@@ -281,7 +281,7 @@ export class RagdollPool {
 
   private seedCounter = 1;
 
-  constructor(capacity = 64) {
+  constructor(capacity = 96) {
     this.capacity = capacity;
     this.x = new Float32Array(capacity);
     this.y = new Float32Array(capacity);
@@ -307,31 +307,31 @@ export class RagdollPool {
     impulseScale = 1.0
   ): void {
     if (this.activeCount >= this.capacity) {
-      // Recycle oldest slot at index 0 if saturated during massive 150v60 wipeouts
+      // Recycle oldest slot at index 0 if saturated during massive swarm wipeouts
       this.deactivate(0);
     }
     const idx = this.activeCount++;
     const s = this.seedCounter++;
     const spreadSign = s % 2 === 0 ? 1 : -1;
-    const lateral = spreadSign * (1.1 + ((s * 7) % 11) * 0.24) * impulseScale;
+    const lateral = spreadSign * (1.25 + ((s * 7) % 11) * 0.26) * impulseScale;
 
     this.x[idx] = x + (((s * 5) % 7) - 3) * 0.08;
-    this.y[idx] = 0.22;
+    this.y[idx] = 0.26;
     this.z[idx] = z;
     this.vx[idx] = lateral;
-    this.vy[idx] = (4.6 + ((s * 13) % 9) * 0.28) * impulseScale;
+    this.vy[idx] = (5.6 + ((s * 13) % 9) * 0.34) * impulseScale;
     // Enemies fly backward down-bridge (-Z); wiped player commandos fly backward (+Z)
-    this.vz[idx] = (isEnemyUnit ? -1 : 1) * (6.2 + ((s * 11) % 9) * 0.42) * impulseScale;
+    this.vz[idx] = (isEnemyUnit ? -1 : 1) * (6.8 + ((s * 11) % 9) * 0.44) * impulseScale;
 
     this.rx[idx] = 0;
     this.ry[idx] = isEnemyUnit ? 0 : Math.PI;
     this.rz[idx] = 0;
-    this.spinX[idx] = (isEnemyUnit ? -1 : 1) * (8.5 + (s % 5) * 1.4);
-    this.spinY[idx] = spreadSign * (3.2 + (s % 4) * 1.1);
-    this.spinZ[idx] = -spreadSign * (5.4 + (s % 6) * 0.9);
+    this.spinX[idx] = (isEnemyUnit ? -1 : 1) * (9.2 + (s % 5) * 1.4);
+    this.spinY[idx] = spreadSign * (3.4 + (s % 4) * 1.1);
+    this.spinZ[idx] = -spreadSign * (5.8 + (s % 6) * 0.9);
 
     this.age[idx] = 0;
-    this.maxAge[idx] = 0.62;
+    this.maxAge[idx] = 0.68;
     this.isEnemy[idx] = isEnemyUnit ? 1 : 0;
   }
 

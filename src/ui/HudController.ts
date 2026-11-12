@@ -13,6 +13,8 @@ import { CAMPAIGN_STAGES } from '../core/StageData';
 import type { EnemyWaveSlot } from '../entities/EnemyWave';
 import {
   computeUpgradeCost,
+  formatCoinAmount,
+  formatObstacleHp,
   formatUpgradeStatPreview,
   getStartingSquadCount,
   MAX_STARTING_SQUAD_LEVEL,
@@ -49,7 +51,7 @@ export interface HudCallbacks {
   onSummaryContinue: () => void;
 }
 
-const MAX_HEAVY_HP_BARS = 10;
+const MAX_HEAVY_HP_BARS = 28;
 
 const CHASSIS_LABELS: Readonly<Record<BossChassisId, string>> = {
   WARDEN_MECH: 'BIPEDAL VULCAN MECH',
@@ -95,7 +97,6 @@ export class HudController {
   private readonly btnPause = mustEl<HTMLButtonElement>('btn-pause');
 
   private readonly squadPillEl = mustEl<HTMLElement>('squad-pill');
-  private readonly squadCountEl = mustEl<HTMLElement>('squad-count-text');
   private readonly squadWeaponEl = mustEl<HTMLElement>('squad-weapon-badge');
   private readonly heavyHpBars: HTMLDivElement[] = [];
   private readonly heavyHpFills: HTMLDivElement[] = [];
@@ -160,13 +161,11 @@ export class HudController {
   private hubPreviewWeaponTier: WeaponTierId = 1;
   private latestSaveSnapshot: SaveDataV1 | null = null;
 
-  private lastSquadCount = -1;
   private lastWeaponTier = -1;
   private lastBossSegments = -1;
   private coinRollupRaf = 0;
 
   private liveTickerAccum = 0;
-  private liveTickerHideTimer = 0;
 
   constructor(callbacks: HudCallbacks) {
     this.callbacks = callbacks;
@@ -190,7 +189,7 @@ export class HudController {
       }
     }
 
-    // Pre-allocate pooled floating Heavy Juggernaut HP bars
+    // Pre-allocate pooled floating Damaged-Swarm mini HP bars
     const overlayLayer = mustEl<HTMLElement>('world-overlay-layer');
     for (let i = 0; i < MAX_HEAVY_HP_BARS; i++) {
       const bar = document.createElement('div');
@@ -383,27 +382,16 @@ export class HudController {
   }
 
   public flashLiveCoinGain(addedAmount: number, totalWalletCoins: number): void {
-    this.coinCountEl.textContent = `${totalWalletCoins}`;
+    this.coinCountEl.textContent = formatCoinAmount(totalWalletCoins);
     if (addedAmount <= 0) {
       return;
     }
     this.liveTickerAccum += addedAmount;
-    this.liveCoinTickerEl.textContent = `+${this.liveTickerAccum}`;
+    this.liveCoinTickerEl.textContent = `+${formatCoinAmount(this.liveTickerAccum)}`;
     this.liveCoinTickerEl.classList.remove('is-hidden');
-
-    if (this.liveTickerHideTimer) {
-      window.clearTimeout(this.liveTickerHideTimer);
-    }
-    this.liveTickerHideTimer = window.setTimeout(() => {
-      this.resetLiveCoinTicker();
-    }, 1500);
   }
 
   private resetLiveCoinTicker(): void {
-    if (this.liveTickerHideTimer) {
-      window.clearTimeout(this.liveTickerHideTimer);
-      this.liveTickerHideTimer = 0;
-    }
     this.liveTickerAccum = 0;
     this.liveCoinTickerEl.classList.add('is-hidden');
   }
@@ -415,7 +403,7 @@ export class HudController {
     endlessWave: number
   ): void {
     this.latestSaveSnapshot = save;
-    this.coinCountEl.textContent = `${save.coins}`;
+    this.coinCountEl.textContent = formatCoinAmount(save.coins);
 
     const isCampaign = save.selectedMode === 'CAMPAIGN';
     this.hubSectorKickerEl.textContent = isCampaign
@@ -448,7 +436,7 @@ export class HudController {
         const sLvl = document.querySelector<HTMLElement>('[data-lvl="startingSquad"]');
         if (sLvl) sLvl.textContent = `${countNow}/${1 + MAX_STARTING_SQUAD_LEVEL}`;
         const sCost = document.querySelector<HTMLElement>('[data-cost="startingSquad"]');
-        if (sCost) sCost.textContent = maxed ? 'MAX' : `${cost}`;
+        if (sCost) sCost.textContent = maxed ? 'MAX' : formatCoinAmount(cost);
         continue;
       }
 
@@ -463,7 +451,7 @@ export class HudController {
       const qLvl = document.querySelector<HTMLElement>(`[data-lvl="${key}"]`);
       if (qLvl) qLvl.textContent = `${lvl + 1}`;
       const qCost = document.querySelector<HTMLElement>(`[data-cost="${key}"]`);
-      if (qCost) qCost.textContent = `${cost}`;
+      if (qCost) qCost.textContent = formatCoinAmount(cost);
       const qStat = document.querySelector<HTMLElement>(`[data-stat="${key}"]`);
       if (qStat) {
         qStat.textContent = `${preview.currentLabel} → ${preview.nextLabel}`;
@@ -544,7 +532,7 @@ export class HudController {
       this.armoryItemNote.textContent =
         spec.tier === 1
           ? 'Standard sidearm equipped at launch. Shatter Supply Drums & Tire Walls on the bridge to upgrade live!'
-          : `Weapon Lock Rule: Breaking lower/equal weapon drops keeps this gun and awards +${WEAPON_LOCK_BONUS_COINS} Coins & +${WEAPON_LOCK_BONUS_SQUAD} Commando (overflow >10 converts to +${OVERFLOW_SQUAD_COIN_BONUS} Coins).`;
+          : `Weapon Lock Rule: Breaking lower/equal weapon drops keeps this gun and awards +${WEAPON_LOCK_BONUS_COINS} Coins & +${WEAPON_LOCK_BONUS_SQUAD} Commando (overflow >40 converts to +${OVERFLOW_SQUAD_COIN_BONUS} Coins).`;
     } else {
       for (const stage of CAMPAIGN_STAGES) {
         const chip = document.createElement('button');
@@ -564,14 +552,14 @@ export class HudController {
       this.armoryItemKicker.textContent = `SECTOR ${st.stageNumber} // ${CHASSIS_LABELS[boss.chassis]}`;
       this.armoryItemName.textContent = boss.name.toUpperCase();
 
-      const hpPct = Math.min(100, Math.max(10, Math.round((boss.maxHp / 52000) * 100)));
+      const hpPct = Math.min(100, Math.max(10, Math.round((boss.maxHp / 76000) * 100)));
       const segPct = Math.round((boss.segments / 10) * 100);
       const spdPct = Math.round((boss.advanceSpeed / 1.5) * 100);
-      const rewPct = Math.round((boss.rewardCoins / 850) * 100);
+      const rewPct = Math.round((boss.rewardCoins / 2000) * 100);
 
       this.armoryStatBars.innerHTML = `
         <div class="stat-meter">
-          <div class="stat-meter__top"><span>ARMOR HP</span><strong>${boss.maxHp}</strong></div>
+          <div class="stat-meter__top"><span>ARMOR HP</span><strong>${formatObstacleHp(boss.maxHp)}</strong></div>
           <div class="stat-meter__track"><div class="stat-meter__fill" style="width:${hpPct}%"></div></div>
         </div>
         <div class="stat-meter">
@@ -583,7 +571,7 @@ export class HudController {
           <div class="stat-meter__track"><div class="stat-meter__fill" style="width:${spdPct}%"></div></div>
         </div>
         <div class="stat-meter">
-          <div class="stat-meter__top"><span>CLEAR BOUNTY</span><strong>+${boss.rewardCoins} Coins</strong></div>
+          <div class="stat-meter__top"><span>CLEAR BOUNTY</span><strong>+${formatCoinAmount(boss.rewardCoins)}</strong></div>
           <div class="stat-meter__track"><div class="stat-meter__fill" style="width:${rewPct}%"></div></div>
         </div>
       `;
@@ -602,7 +590,7 @@ export class HudController {
       <div class="sector-node__num">∞</div>
       <div class="sector-node__info">
         <span class="sector-node__title">ENDLESS BRIDGE GAUNTLET</span>
-        <span class="sector-node__sub">Escalating Drums, Tire Walls &amp; Bosses • Best: ${Math.round(save.bestEndlessDistance)}m</span>
+        <span class="sector-node__sub">Escalating Swarms, Goliaths &amp; Bosses • Best: ${Math.round(save.bestEndlessDistance)}m</span>
       </div>
       <span class="sector-node__status">${endlessSelected ? 'ACTIVE' : 'DEPLOY'}</span>
     `;
@@ -642,7 +630,7 @@ export class HudController {
         <div class="sector-node__num">${String(st.stageNumber).padStart(2, '0')}</div>
         <div class="sector-node__info">
           <span class="sector-node__title">${st.title.toUpperCase()}</span>
-          <span class="sector-node__sub">${st.boss.name} • +${st.boss.rewardCoins} Clear Coins</span>
+          <span class="sector-node__sub">${st.boss.name} • +${formatCoinAmount(st.boss.rewardCoins)} Clear Coins</span>
         </div>
         <span class="sector-node__status">${statusText}</span>
       `;
@@ -658,7 +646,7 @@ export class HudController {
   }
 
   public updateCoins(coins: number): void {
-    this.coinCountEl.textContent = `${coins}`;
+    this.coinCountEl.textContent = formatCoinAmount(coins);
   }
 
   public updateTrackProgress(
@@ -678,9 +666,9 @@ export class HudController {
   public updateWorldOverlays(
     sceneManager: SceneManager,
     state: GameState,
-    squadX: number,
+    _squadX: number,
     squadZ: number,
-    logicalSquad: number,
+    _logicalSquad: number,
     weaponTier: WeaponTierId,
     enemyWaves: ReadonlyArray<EnemyWaveSlot>,
     bossVisible: boolean,
@@ -690,33 +678,16 @@ export class HudController {
     bossSegments: number
   ): void {
     const inCombat = state === 'RUNNING' || state === 'BOSS_FIGHT';
-    const showSquadPill = logicalSquad > 0 && inCombat;
 
     if (weaponTier !== this.lastWeaponTier) {
       this.lastWeaponTier = weaponTier;
       this.squadWeaponEl.textContent = WEAPON_SPECS[weaponTier].shortBadge;
     }
 
-    if (showSquadPill) {
-      // Offset badge slightly right of the squad so the center tracer lane stays 100% unobstructed!
-      const badgeWorldX = Math.min(4.2, squadX + 0.74);
-      sceneManager.projectToScreen(badgeWorldX, 1.56, squadZ, _projScratch);
-      if (_projScratch.visible) {
-        this.squadPillEl.classList.remove('is-hidden');
-        this.squadPillEl.style.transform = `translate3d(${_projScratch.x.toFixed(1)}px, ${_projScratch.y.toFixed(1)}px, 0) translate(-50%, -100%)`;
+    // All 1..40 commandos are rendered 1:1 on the bridge — keep floating #squad-pill hidden for unobstructed action!
+    this.squadPillEl.classList.add('is-hidden');
 
-        if (logicalSquad !== this.lastSquadCount) {
-          this.lastSquadCount = logicalSquad;
-          this.squadCountEl.textContent = `${logicalSquad}`;
-        }
-      } else {
-        this.squadPillEl.classList.add('is-hidden');
-      }
-    } else {
-      this.squadPillEl.classList.add('is-hidden');
-    }
-
-    // Project floating red-on-black HP bars above nearby Heavy Juggernauts!
+    // Project compact mini HP bars ONLY on damaged swarm troopers & brawlers (unitHp < unitMaxHp)!
     let usedBars = 0;
     if (inCombat) {
       for (let w = 0; w < enemyWaves.length && usedBars < MAX_HEAVY_HP_BARS; w++) {
@@ -726,15 +697,19 @@ export class HudController {
         }
         const totalUnits = wave.getConfiguredCount();
         for (let u = 0; u < totalUnits && usedBars < MAX_HEAVY_HP_BARS; u++) {
-          if (wave.unitAlive[u] === 0 || wave.unitIsHeavy[u] === 0) {
+          if (
+            wave.unitAlive[u] === 0 ||
+            wave.unitHp[u] >= wave.unitMaxHp[u] - 0.01
+          ) {
             continue;
           }
           const uz = wave.unitZ[u];
           const distAhead = squadZ - uz;
-          if (distAhead > 38 || distAhead < -4) {
+          if (distAhead > 34 || distAhead < -3) {
             continue;
           }
-          sceneManager.projectToScreen(wave.unitX[u], 1.98, uz, _projScratch);
+          const headY = wave.unitIsHeavy[u] ? 1.98 : 1.56;
+          sceneManager.projectToScreen(wave.unitX[u], headY, uz, _projScratch);
           if (!_projScratch.visible) {
             continue;
           }
@@ -758,7 +733,7 @@ export class HudController {
       this.bossHudEl.classList.remove('is-hidden');
       this.bossNameEl.textContent = bossName.toUpperCase();
       const hpCeil = Math.max(0, Math.ceil(bossHp));
-      this.bossHpEl.textContent = `${hpCeil} / ${bossMaxHp}`;
+      this.bossHpEl.textContent = `${formatObstacleHp(hpCeil)} / ${formatObstacleHp(bossMaxHp)}`;
       const hpPct = Math.max(0, Math.min(100, (bossHp / Math.max(1, bossMaxHp)) * 100));
       this.bossFillEl.style.width = `${hpPct.toFixed(1)}%`;
 
@@ -796,8 +771,8 @@ export class HudController {
     this.sumEnemiesEl.textContent = `${summary.enemiesDefeated}`;
 
     const endBonusEarned = Math.max(0, summary.totalCoinsEarned - summary.liveCoinsEarned);
-    this.sumLiveCoinsEl.textContent = `+${summary.liveCoinsEarned}`;
-    this.sumBonusCoinsEl.textContent = `+${endBonusEarned}`;
+    this.sumLiveCoinsEl.textContent = `+${formatCoinAmount(summary.liveCoinsEarned)}`;
+    this.sumBonusCoinsEl.textContent = `+${formatCoinAmount(endBonusEarned)}`;
     this.sumMultEl.textContent = `×${summary.warChestMultiplier.toFixed(2)}`;
     this.btnSummaryContinue.textContent = 'NEXT';
 
@@ -807,19 +782,19 @@ export class HudController {
     }
     const targetCoins = summary.totalCoinsEarned;
     const startTs = performance.now();
-    const durationMs = 460;
-    this.sumTotalCoinsEl.textContent = `+${targetCoins}`;
+    const durationMs = 420;
+    this.sumTotalCoinsEl.textContent = `+${formatCoinAmount(targetCoins)}`;
 
     if (targetCoins > 0) {
       const stepRollup = (now: number): void => {
         const t = Math.min(1, (now - startTs) / durationMs);
         const eased = 1 - Math.pow(1 - t, 3);
         const shown = Math.round(targetCoins * eased);
-        this.sumTotalCoinsEl.textContent = `+${shown}`;
+        this.sumTotalCoinsEl.textContent = `+${formatCoinAmount(shown)}`;
         if (t < 1) {
           this.coinRollupRaf = requestAnimationFrame(stepRollup);
         } else {
-          this.sumTotalCoinsEl.textContent = `+${targetCoins}`;
+          this.sumTotalCoinsEl.textContent = `+${formatCoinAmount(targetCoins)}`;
           this.coinRollupRaf = 0;
         }
       };

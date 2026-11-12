@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 
-const MAX_SHOCKWAVES = 28;
-const MAX_MUZZLE_FLASHES = 36;
-const MAX_IMPACT_SPLASHES = 56;
+const MAX_SHOCKWAVES = 32;
+const MAX_MUZZLE_FLASHES = 64;
+const MAX_IMPACT_SPLASHES = 96;
 
 const _pos = new THREE.Vector3();
 const _quat = new THREE.Quaternion();
@@ -15,7 +15,7 @@ const _color = new THREE.Color();
  * Zero-GC pooled tactical VFX system:
  * 1. Expanding HDR ground shockwave rings (gate flips, squad passes, tire shatters, boss stomps, upgrades)
  * 2. Crisp 3-fin additive muzzle flash bursts at the front rank of the squad
- * 3. Punchy camera-facing starburst splash bursts at bullet impact points
+ * 3. Cel-outlined comic smoke/impact puff clouds tinted cyan or fiery-orange by weapon tier
  */
 export class CombatVfxRenderer {
   private readonly ringMesh: THREE.InstancedMesh;
@@ -123,40 +123,66 @@ export class CombatVfxRenderer {
     }
     scene.add(this.flashMesh);
 
-    // 3. Camera-facing Bullet Impact Splash Ring/Starburst InstancedMesh
+    // 3. Camera-facing Cel-Outlined Comic Impact Smoke Puff InstancedMesh
     const splashCanvas = document.createElement('canvas');
     splashCanvas.width = 128;
     splashCanvas.height = 128;
     const sCtx = splashCanvas.getContext('2d')!;
-    const sGrad = sCtx.createRadialGradient(64, 64, 4, 64, 64, 58);
-    sGrad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
-    sGrad.addColorStop(0.45, 'rgba(255, 245, 210, 0.72)');
-    sGrad.addColorStop(0.72, 'rgba(255, 220, 140, 0.28)');
-    sGrad.addColorStop(1, 'rgba(255, 200, 90, 0.0)');
-    sCtx.fillStyle = sGrad;
-    sCtx.fillRect(0, 0, 128, 128);
+    const lobes: ReadonlyArray< readonly [number, number, number] > = [
+      [64, 64, 30],
+      [42, 58, 22],
+      [86, 56, 23],
+      [50, 82, 20],
+      [78, 80, 21],
+      [64, 42, 21],
+    ];
+    // Crisp dark cartoon cloud outline so cyan & orange puffs pop on sunlit concrete AND dark tires
+    sCtx.fillStyle = 'rgba(16, 24, 36, 0.78)';
+    for (const [lx, ly, lr] of lobes) {
+      sCtx.beginPath();
+      sCtx.arc(lx, ly, lr + 5, 0, Math.PI * 2);
+      sCtx.fill();
+    }
+    // Mid cloud body (tints vividly via instanceColor into cyan or fiery peach-orange)
+    sCtx.fillStyle = 'rgba(246, 250, 255, 0.97)';
+    for (const [lx, ly, lr] of lobes) {
+      sCtx.beginPath();
+      sCtx.arc(lx, ly, lr, 0, Math.PI * 2);
+      sCtx.fill();
+    }
+    // Compact hot inner puff highlight + comic spark ticks
+    sCtx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+    for (const [lx, ly, lr] of lobes) {
+      sCtx.beginPath();
+      sCtx.arc(lx - 2, ly - 3, lr * 0.40, 0, Math.PI * 2);
+      sCtx.fill();
+    }
     sCtx.save();
     sCtx.translate(64, 64);
-    sCtx.fillStyle = 'rgba(255, 255, 255, 0.88)';
-    for (let k = 0; k < 6; k++) {
-      sCtx.rotate(Math.PI / 3);
+    sCtx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+    for (let k = 0; k < 5; k++) {
+      sCtx.rotate((Math.PI * 2) / 5);
       sCtx.beginPath();
-      sCtx.moveTo(-5, 0);
-      sCtx.lineTo(0, -60);
-      sCtx.lineTo(5, 0);
+      sCtx.moveTo(-3.5, -24);
+      sCtx.lineTo(0, -56);
+      sCtx.lineTo(3.5, -24);
       sCtx.closePath();
       sCtx.fill();
     }
     sCtx.restore();
 
-    const splashGeo = new THREE.PlaneGeometry(0.95, 0.95);
+    const splashTex = new THREE.CanvasTexture(splashCanvas);
+    splashTex.colorSpace = THREE.SRGBColorSpace;
+    const splashGeo = new THREE.PlaneGeometry(1.08, 1.08);
     splashGeo.rotateX(-0.42);
     const splashMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
-      map: new THREE.CanvasTexture(splashCanvas),
+      map: splashTex,
       transparent: true,
-      opacity: 0.95,
-      blending: THREE.AdditiveBlending,
+      opacity: 0.94,
+      blending: THREE.NormalBlending,
+      toneMapped: false,
+      alphaTest: 0.03,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
@@ -241,13 +267,14 @@ export class CombatVfxRenderer {
     this.splashY[idx] = y;
     this.splashZ[idx] = z;
     this.splashAge[idx] = 0;
-    this.splashMaxAge[idx] = 0.11;
+    this.splashMaxAge[idx] = 0.165;
     this.splashScale[idx] = scale;
 
     _color.setHex(colorHex);
-    this.splashR[idx] = _color.r * 1.65;
-    this.splashG[idx] = _color.g * 1.55;
-    this.splashB[idx] = _color.b * 1.35;
+    // Keep vivid cyan / fiery peach-orange saturation on comic puffs under NormalBlending
+    this.splashR[idx] = 0.14 + _color.r * 0.88;
+    this.splashG[idx] = 0.14 + _color.g * 0.88;
+    this.splashB[idx] = 0.14 + _color.b * 0.88;
   }
 
   public updateAndSync(dt: number): void {
@@ -362,21 +389,26 @@ export class CombatVfxRenderer {
         continue;
       }
       this.splashAge[p] = nextAge;
+      this.splashY[p] += dt * 1.35;
       const t = nextAge / this.splashMaxAge[p];
-      const fade = 1 - t;
-      const s = this.splashScale[p] * (0.45 + (1 - fade * fade) * 0.85);
+      const pop =
+        t < 0.28
+          ? 0.44 + (t / 0.28) * 0.78
+          : Math.max(0.03, 1.22 * (1 - (t - 0.28) / 0.72));
+      const s = this.splashScale[p] * pop;
+      const tone = 1.06 - t * 0.18;
 
       _pos.set(this.splashX[p], this.splashY[p], this.splashZ[p]);
-      _euler.set(0, 0, p * 0.85 + nextAge * 14);
+      _euler.set(0, 0, p * 0.85 + nextAge * 8.5);
       _quat.setFromEuler(_euler);
       _scale.set(s, s, s);
       _mat4.compose(_pos, _quat, _scale);
       this.splashMesh.setMatrixAt(p, _mat4);
 
       _color.setRGB(
-        this.splashR[p] * fade,
-        this.splashG[p] * fade,
-        this.splashB[p] * fade
+        this.splashR[p] * tone,
+        this.splashG[p] * tone,
+        this.splashB[p] * tone
       );
       this.splashMesh.setColorAt(p, _color);
       p++;

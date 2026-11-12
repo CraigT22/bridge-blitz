@@ -273,11 +273,10 @@ export class SupplyDrumSlot {
 
     for (const t of [1, 2, 3, 4, 5] as const) {
       const rig = this.weaponRigs[t];
-      rig.root.scale.setScalar(1.28);
-      rig.root.rotation.z = 0.18;
+      rig.root.scale.setScalar(1.56);
+      rig.root.rotation.z = 0.14;
       this.pickupPivot.add(rig.root);
-      this.weaponBadges[t].position.set(0, 0.90, 0);
-      this.pickupPivot.add(this.weaponBadges[t]);
+      this.weaponBadges[t].visible = false;
     }
 
     this.root.visible = false;
@@ -325,7 +324,7 @@ export class SupplyDrumSlot {
     for (const t of [1, 2, 3, 4, 5] as const) {
       const show = isWeapon && t === wTier;
       this.weaponRigs[t].root.visible = show;
-      this.weaponBadges[t].visible = show;
+      this.weaponBadges[t].visible = false;
     }
 
     if (isWeapon) {
@@ -351,9 +350,10 @@ export class SupplyDrumSlot {
     if (!this.active || this.broken) {
       return;
     }
-    if (squadZ < this.z - 3.4) {
+    // Keep unbroken sibling barrels physically standing on the bridge until well behind the camera!
+    if (squadZ < this.z - 8.5) {
       this.root.position.y -= dt * 16.0;
-      if (this.root.position.y <= -3.5 || squadZ < this.z - 5.2) {
+      if (this.root.position.y <= -3.5 || squadZ < this.z - 11.0) {
         this.hide();
       }
       return;
@@ -361,18 +361,18 @@ export class SupplyDrumSlot {
 
     this.spinAngle += dt * 2.4;
     const bobY = Math.sin(this.spinAngle * 1.5) * 0.08;
-    this.pickupPivot.position.y = 2.56 + bobY;
+    this.pickupPivot.position.y = 2.66 + bobY;
     this.glowHaloMesh.rotation.z = this.spinAngle * 0.45;
 
     if (this.coinGroup.visible) {
-      // Oscillate +/- 33 deg toward camera so coin face always gleams and never goes edge-on!
-      this.coinGroup.rotation.y = Math.sin(this.spinAngle * 1.15) * 0.58;
+      this.coinGroup.rotation.y = Math.sin(this.spinAngle * 1.15) * 0.52;
     } else if (this.recruitGroup.visible) {
-      this.recruitGroup.rotation.y = Math.sin(this.spinAngle * 0.95) * 0.48;
+      this.recruitGroup.rotation.y = Math.sin(this.spinAngle * 0.95) * 0.44;
     } else {
       const wTier = Math.max(1, Math.min(5, Math.round(this.rewardValue))) as WeaponTierId;
       const rig = this.weaponRigs[wTier];
-      rig.root.rotation.y = Math.sin(this.spinAngle * 0.9) * 0.72;
+      // Crisp side-profile hover (+/- 16 deg) so the full weapon silhouette reads unmistakably!
+      rig.root.rotation.y = Math.sin(this.spinAngle * 0.85) * 0.28;
       if (rig.spinCluster) {
         rig.spinCluster.rotation.x += dt * 12;
       }
@@ -380,7 +380,6 @@ export class SupplyDrumSlot {
 
     if (this.flashTimer > 0) {
       this.flashTimer = Math.max(0, this.flashTimer - dt * 7.5);
-      // Fiery red-orange barrel impact flash + punchy squash pop
       this.drumMat.emissive.setRGB(this.flashTimer * 0.85, this.flashTimer * 0.18, 0.02);
       this.hoopMat.emissive.setRGB(this.flashTimer * 0.45, this.flashTimer * 0.12, 0.01);
       const pop = 1 + this.flashTimer * 0.06;
@@ -428,19 +427,15 @@ export class SupplyDrumSlot {
     return 'HIT';
   }
 
-  public checkUnbrokenSquadBump(squadX: number, squadZ: number, squadRadius: number): boolean {
+  /**
+   * Checks if the squad's core lane slams head-on into an unbroken Supply Drum.
+   * Leaves the barrel standing & visible on the bridge so the Run-End card displays right in front of it!
+   */
+  public checkCoreLaneCrash(squadX: number, squadZ: number): boolean {
     if (!this.active || this.broken) {
       return false;
     }
-    if (
-      Math.abs(squadZ - this.z) < 0.92 + squadRadius * 0.25 &&
-      Math.abs(squadX - this.x) < 1.12 + squadRadius * 0.55
-    ) {
-      this.broken = true;
-      this.active = false;
-      this.root.visible = false;
-      return true;
-    }
-    return false;
+    const dz = squadZ - this.z;
+    return dz > -0.20 && dz < 0.92 && Math.abs(squadX - this.x) < 0.92;
   }
 }

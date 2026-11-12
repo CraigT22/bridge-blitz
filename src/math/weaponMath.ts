@@ -2,12 +2,12 @@ import type { WeaponSpec, WeaponTierId } from '../core/types';
 
 export const WEAPON_LOCK_BONUS_COINS = 25;
 export const WEAPON_LOCK_BONUS_SQUAD = 1;
-export const MAX_SQUAD_COUNT = 10;
-export const MAX_VISUAL_SOLDIERS = 10;
-export const MAX_ACTIVE_VOLLEY_EMITTERS = 10;
+export const MAX_SQUAD_COUNT = 40;
+export const MAX_VISUAL_SOLDIERS = 40;
+export const MAX_ACTIVE_VOLLEY_EMITTERS = 26;
 export const OVERFLOW_SQUAD_COIN_BONUS = 10;
-export const COMMANDO_MODEL_SCALE = 1.42;
-export const BASE_SOLDIER_BULLET_DAMAGE = 5.0;
+export const COMMANDO_MODEL_SCALE = 1.24;
+export const BASE_SOLDIER_BULLET_DAMAGE = 5.2;
 
 const DEG_TO_RAD = Math.PI / 180;
 
@@ -17,12 +17,12 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Sidearm Pistol',
     shortBadge: 'Lv1 PISTOL',
     pattern: 'SINGLE',
-    fireRate: 3.4,
+    fireRate: 3.6,
     damageMultiplier: 1.0,
-    projectileSpeed: 29,
+    projectileSpeed: 31,
     pierceCount: 1,
-    spreadRadians: 0,
-    colorHex: 0x62f4ff,
+    spreadRadians: 0.4 * DEG_TO_RAD,
+    colorHex: 0x1ee6ff,
     bossArmorFactor: 1.0,
   },
   2: {
@@ -30,12 +30,12 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Tactical SMG',
     shortBadge: 'Lv2 SMG',
     pattern: 'SINGLE',
-    fireRate: 6.2,
-    damageMultiplier: 1.08,
-    projectileSpeed: 33,
+    fireRate: 6.5,
+    damageMultiplier: 1.12,
+    projectileSpeed: 35,
     pierceCount: 1,
-    spreadRadians: 0.8 * DEG_TO_RAD,
-    colorHex: 0x45ffdf,
+    spreadRadians: 1.2 * DEG_TO_RAD,
+    colorHex: 0x08dcff,
     bossArmorFactor: 1.0,
   },
   3: {
@@ -43,12 +43,12 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Assault Rifle',
     shortBadge: 'Lv3 RIFLE',
     pattern: 'BURST_2',
-    fireRate: 4.5,
-    damageMultiplier: 1.85,
-    projectileSpeed: 36,
+    fireRate: 4.8,
+    damageMultiplier: 1.88,
+    projectileSpeed: 38,
     pierceCount: 1,
-    spreadRadians: 0.4 * DEG_TO_RAD,
-    colorHex: 0xffe066,
+    spreadRadians: 1.0 * DEG_TO_RAD,
+    colorHex: 0xff7d24,
     bossArmorFactor: 1.0,
   },
   4: {
@@ -56,12 +56,12 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Rotary Minigun',
     shortBadge: 'Lv4 MINIGUN',
     pattern: 'TWIN_SPREAD',
-    fireRate: 7.4,
-    damageMultiplier: 1.75,
-    projectileSpeed: 39,
+    fireRate: 7.6,
+    damageMultiplier: 1.82,
+    projectileSpeed: 40,
     pierceCount: 1,
-    spreadRadians: 2.6 * DEG_TO_RAD,
-    colorHex: 0xff9f43,
+    spreadRadians: 2.8 * DEG_TO_RAD,
+    colorHex: 0xff6614,
     bossArmorFactor: 1.0,
   },
   5: {
@@ -69,12 +69,12 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Plasma Pulse Rifle',
     shortBadge: 'Lv5 PLASMA',
     pattern: 'PIERCING',
-    fireRate: 5.2,
-    damageMultiplier: 3.15,
-    projectileSpeed: 42,
+    fireRate: 5.5,
+    damageMultiplier: 3.25,
+    projectileSpeed: 44,
     pierceCount: 2,
-    spreadRadians: 0,
-    colorHex: 0x38f6ff,
+    spreadRadians: 0.8 * DEG_TO_RAD,
+    colorHex: 0x18f4ff,
     bossArmorFactor: 1.35,
   },
 };
@@ -91,7 +91,7 @@ export interface WeaponPickupResolution {
 /**
  * Mandatory Weapon Lock Rule:
  * Breaking a crate/tire stack with a lower or equal tier weapon NEVER downgrades the player's weapon;
- * instead it keeps their higher-tier weapon and grants +50 coins and +1 elite commando.
+ * instead it keeps their higher-tier weapon and grants +25 coins and +1 elite commando.
  */
 export function resolveWeaponPickup(
   currentTier: WeaponTierId,
@@ -128,17 +128,22 @@ export interface VolleyDamagePlan {
 }
 
 /**
- * Front-rank elite commandos (1..5) fire at full 1:1 line-of-sight efficiency;
- * second-rank commandos (6..10) add 0.82x over-the-shoulder suppressive fire.
+ * Crowd-scale firing curve for 1..40 commandos:
+ * - 1..8 front-cluster commandos fire at 1.0x efficiency
+ * - 9..24 mid-cluster commandos fire at 0.85x efficiency
+ * - 25..40 rear-cluster commandos fire at 0.72x efficiency
  */
 export function computeEffectiveFiringSquad(logicalSquad: number): number {
   if (logicalSquad <= 0) {
     return 0;
   }
-  if (logicalSquad <= 5) {
+  if (logicalSquad <= 8) {
     return logicalSquad;
   }
-  return 5 + (logicalSquad - 5) * 0.82;
+  if (logicalSquad <= 24) {
+    return 8 + (logicalSquad - 8) * 0.85;
+  }
+  return 8 + 16 * 0.85 + (logicalSquad - 24) * 0.72;
 }
 
 /**

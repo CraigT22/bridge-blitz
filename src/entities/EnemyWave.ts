@@ -2,7 +2,7 @@ import type { EnemyWaveDefinition } from '../core/types';
 import { computeSquadOuterRadius } from '../math/formationMath';
 import type { InstancedBatchRenderer } from '../rendering/InstancedBatchRenderer';
 
-const MAX_UNITS_PER_WAVE = 24;
+const MAX_UNITS_PER_WAVE = 52;
 
 export interface EliminatedEnemyEvent {
   x: number;
@@ -22,7 +22,7 @@ export class EnemyWaveSlot {
   public z = 0;
   public marchPhase = 0;
 
-  // Per-unit Struct-of-Arrays for loose bridge-wide formations, individual white hit-flashes & lane carving!
+  // Per-unit Struct-of-Arrays for dense 30-50 unit swarms, individual white hit-flashes & damaged mini HP bars!
   public readonly unitCountCap = MAX_UNITS_PER_WAVE;
   public readonly unitAlive = new Uint8Array(MAX_UNITS_PER_WAVE);
   public readonly unitIsHeavy = new Uint8Array(MAX_UNITS_PER_WAVE);
@@ -41,7 +41,7 @@ export class EnemyWaveSlot {
 
   constructor(waveIndex: number) {
     this.entityId = 800 + waveIndex;
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 8; i++) {
       this.lastKills.push({ x: 0, z: 0, isHeavy: false, coinReward: 0 });
     }
   }
@@ -53,17 +53,17 @@ export class EnemyWaveSlot {
     this.aliveCount = this.totalConfigured;
     this.hpPerEnemy = Math.max(2, def.hpPerEnemy);
     this.speed = def.speed;
-    this.x = def.lane === 'LEFT' ? -2.0 : def.lane === 'RIGHT' ? 2.0 : 0;
+    this.x = def.lane === 'LEFT' ? -1.85 : def.lane === 'RIGHT' ? 1.85 : 0;
     this.z = def.z;
     this.marchPhase = 0;
     this.lastKillCount = 0;
 
     const heavyTarget =
-      def.heavyCount ?? Math.max(1, Math.floor(this.totalConfigured * 0.26));
-    const baseCoin = def.coinPerKill ?? 5;
-    const spanHalfX = def.lane === 'CENTER' ? 3.55 : 2.15;
+      def.heavyCount ?? Math.max(2, Math.floor(this.totalConfigured * 0.24));
+    const baseCoin = def.coinPerKill ?? 8;
+    const spanHalfX = def.lane === 'CENTER' ? 3.85 : 2.35;
 
-    const cols = def.lane === 'CENTER' ? 5 : 3;
+    const cols = def.lane === 'CENTER' ? 7 : 5;
     const centerCol = Math.floor(cols / 2);
     const heavyOrder: number[] = [];
     for (let i = 0; i < this.totalConfigured; i++) {
@@ -84,23 +84,24 @@ export class EnemyWaveSlot {
       const row = Math.floor(i / cols);
       const col = i % cols;
       const uNorm = cols > 1 ? col / (cols - 1) - 0.5 : 0;
-      const staggerX = (((i * 17 + 5) % 11) - 5) * 0.085;
-      const staggerZ = (((i * 13 + 3) % 9) - 4) * 0.14;
+      const rowShift = (row % 2) * 0.28 - 0.14;
+      const staggerX = (((i * 17 + 5) % 11) - 5) * 0.08 + rowShift;
+      const staggerZ = (((i * 13 + 3) % 9) - 4) * 0.12;
 
       const wx = Math.max(
-        -4.15,
-        Math.min(4.15, this.x + uNorm * spanHalfX * 2 + staggerX)
+        -4.22,
+        Math.min(4.22, this.x + uNorm * spanHalfX * 2 + staggerX)
       );
-      const wz = def.z - row * 1.18 + staggerZ;
+      const wz = def.z - row * 0.96 + staggerZ;
 
       this.unitX[i] = wx;
       this.unitZ[i] = wz;
 
-      const maxHp = isHeavy ? this.hpPerEnemy * 3.8 : this.hpPerEnemy;
+      const maxHp = isHeavy ? this.hpPerEnemy * 3.4 : this.hpPerEnemy;
       this.unitMaxHp[i] = maxHp;
       this.unitHp[i] = maxHp;
       this.unitHitFlash[i] = 0;
-      this.unitCoins[i] = isHeavy ? Math.round(baseCoin * 3.4) : baseCoin;
+      this.unitCoins[i] = isHeavy ? Math.round(baseCoin * 3.2) : baseCoin;
     }
   }
 
@@ -216,7 +217,7 @@ export class EnemyWaveSlot {
       if (this.unitAlive[i] === 0) {
         continue;
       }
-      const uEntityId = this.entityId * 32 + i;
+      const uEntityId = this.entityId * 64 + i;
       if (uEntityId === lastHitId) {
         continue;
       }

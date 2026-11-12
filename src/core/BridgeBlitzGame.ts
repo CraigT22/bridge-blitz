@@ -2,13 +2,14 @@ import { SoundSynthesizer } from '../audio/SoundSynthesizer';
 import { BossEntity } from '../entities/BossEntity';
 import { EnemyWaveSlot } from '../entities/EnemyWave';
 import { GatePairSlot } from '../entities/GatePair';
+import { MidBridgeBrute } from '../entities/MidBridgeBrute';
 import { SquadController } from '../entities/SquadController';
 import { SupplyDrumSlot } from '../entities/SupplyDrum';
 import { TireWeaponStackSlot } from '../entities/TireWeaponStack';
-import { computeSquadOuterRadius } from '../math/formationMath';
 import {
   attemptPurchaseUpgrade,
   computeRunCoinPayout,
+  formatCoinAmount,
   getBulletPowerMultiplier,
   getFireRateMultiplier,
   getStartingSquadCount,
@@ -64,7 +65,7 @@ export class BridgeBlitzGame {
   private readonly bridgeEnv: BridgeEnvironment;
   private readonly bulletPool = new BulletPool(1200);
   private readonly particlePool = new ParticlePool(900);
-  private readonly ragdollPool = new RagdollPool(64);
+  private readonly ragdollPool = new RagdollPool(96);
   private readonly batchRenderer: InstancedBatchRenderer;
   private readonly vfx: CombatVfxRenderer;
   private readonly combatText: CombatTextOverlay;
@@ -74,6 +75,7 @@ export class BridgeBlitzGame {
   private readonly gatePairs: GatePairSlot[] = [];
   private readonly tireStacks: TireWeaponStackSlot[] = [];
   private readonly enemyWaves: EnemyWaveSlot[] = [];
+  private readonly midBrute = new MidBridgeBrute();
   private readonly boss: BossEntity;
 
   private readonly hud: HudController;
@@ -141,6 +143,7 @@ export class BridgeBlitzGame {
     for (let i = 0; i < MAX_ENEMY_WAVES; i++) {
       this.enemyWaves.push(new EnemyWaveSlot(i));
     }
+    this.sceneManager.scene.add(this.midBrute.root);
     this.boss = new BossEntity(this.sceneManager.scene);
 
     this.activeStageDef = getCampaignStage(initialSave.selectedStage);
@@ -331,6 +334,15 @@ export class BridgeBlitzGame {
       }
     }
 
+    if (stage.midBrute) {
+      this.midBrute.configure({
+        ...stage.midBrute,
+        z: zBase + stage.midBrute.z,
+      });
+    } else {
+      this.midBrute.hide();
+    }
+
     const bossTrackEnd = -zBase + stage.trackLength;
     this.bridgeEnv.configureBossPlatformZ(zBase - stage.trackLength);
     this.boss.configure(stage.boss, bossTrackEnd);
@@ -366,7 +378,14 @@ export class BridgeBlitzGame {
     this.hud.flashLiveCoinGain(earned, updated.coins);
 
     if (spawnWorldText) {
-      this.combatText.spawn(worldX, 1.95, worldZ, `+${earned} COINS`, 'gold', 0.85);
+      this.combatText.spawn(
+        worldX,
+        1.95,
+        worldZ,
+        `+${formatCoinAmount(earned)}`,
+        'gold',
+        0.82
+      );
     }
     return earned;
   }
@@ -378,13 +397,13 @@ export class BridgeBlitzGame {
   ): void {
     const overflow = this.squad.setLogicalCount(targetCount);
     if (overflow > 0) {
-      const cappedBase = Math.min(80, overflow * OVERFLOW_SQUAD_COIN_BONUS);
+      const cappedBase = Math.min(240, overflow * OVERFLOW_SQUAD_COIN_BONUS);
       const earned = this.awardLiveCoins(cappedBase, worldX, worldZ, false);
       this.combatText.spawn(
         worldX,
         2.2,
         worldZ,
-        `MAX SQUAD! +${earned} COINS`,
+        `MAX 40! +${formatCoinAmount(earned)}`,
         'gold',
         0.95
       );
@@ -559,17 +578,17 @@ export class BridgeBlitzGame {
       return;
     }
     const tier = this.squad.weaponTier;
-    const flashColor = tier === 5 ? 0x38f6ff : 0xffca4f;
+    const flashColor = WEAPON_SPECS[tier]?.colorHex ?? 0x62f4ff;
     const flashScale = tier >= 4 ? 1.42 : 1.08;
-    const burstCount = Math.min(3, vis);
+    const burstCount = Math.min(4, vis);
     const seed = Math.floor(this.elapsedTime * 60);
 
-    const mxOff = 0.255 * COMMANDO_MODEL_SCALE;
+    const mxOff = 0.42 * COMMANDO_MODEL_SCALE;
     const my = 0.548 * COMMANDO_MODEL_SCALE;
-    const mzOff = -0.68 * COMMANDO_MODEL_SCALE;
+    const mzOff = -0.52 * COMMANDO_MODEL_SCALE;
 
     for (let k = 0; k < burstCount; k++) {
-      const idx = (seed + k * 3) % vis;
+      const idx = (seed + k * 5) % vis;
       const sx = this.squad.soldierWorldX[idx] + mxOff;
       const sz = this.squad.soldierWorldZ[idx] + mzOff;
       this.vfx.spawnMuzzleFlash(sx, my, sz, flashScale, flashColor);
@@ -645,10 +664,13 @@ export class BridgeBlitzGame {
     this.commandoFacingYaw +=
       (targetFacingYaw - this.commandoFacingYaw) * Math.min(1, dt * 12);
 
+    const haltedByBrute =
+      state === 'RUNNING' && this.midBrute.isHaltingMarch(this.squad.z);
+
     if (state === 'PRE_RUN') {
       this.squad.updateMovement(dt, 0, false, false);
     } else if (state === 'RUNNING') {
-      this.squad.updateMovement(dt, lateralDelta, true, true);
+      this.squad.updateMovement(dt, lateralDelta, !haltedByBrute, true);
       const fired = this.squad.updateAutoFire(
         dt,
         getFireRateMultiplier(save.upgrades.fireRate),
@@ -689,25 +711,29 @@ export class BridgeBlitzGame {
       }
     }
 
-    const squadRadius = computeSquadOuterRadius(this.squad.logicalCount);
-
-    // Update Supply Drums & Unbroken Bumps (coins/weapons/recruits spin live on Start Screen too!)
+    // Update Supply Drums: core lane crash ends run right at intact barrel; outer soldiers funnel smoothly!
     for (let i = 0; i < MAX_SUPPLY_DRUMS; i++) {
       const drum = this.supplyDrums[i];
       drum.update(dt, this.squad.z);
-      if (
-        state === 'RUNNING' &&
-        this.squad.logicalCount > 0 &&
-        drum.checkUnbrokenSquadBump(this.squad.x, this.squad.z, squadRadius)
-      ) {
-        this.sceneManager.addShake(0.28);
-        this.vfx.spawnShockwave(drum.x, drum.z, 2.2, 0.28, 0xff4757);
-        this.particlePool.spawnBurst(drum.x, 0.9, drum.z, 14, 5.2, 0x987346);
-        this.ragdollPool.spawnKnockback(drum.x, this.squad.z, false, 1.0);
-        this.squad.setLogicalCount(this.squad.logicalCount - 1);
-        this.combatText.spawn(drum.x, 1.6, drum.z, '-1 DRUM HIT', 'negative');
-        if (this.squad.logicalCount <= 0) {
+      if (state === 'RUNNING' && this.squad.logicalCount > 0) {
+        if (drum.checkCoreLaneCrash(this.squad.x, this.squad.z)) {
+          const ragBursts = Math.min(10, this.squad.logicalCount);
+          for (let r = 0; r < ragBursts; r++) {
+            this.ragdollPool.spawnKnockback(
+              this.squad.x + ((r % 3) - 1) * 0.4,
+              this.squad.z,
+              false,
+              1.12
+            );
+          }
+          this.sceneManager.addShake(0.48);
+          this.vfx.spawnShockwave(drum.x, drum.z, 2.8, 0.34, 0xff4757);
+          this.particlePool.spawnBurst(drum.x, 0.9, drum.z, 18, 5.4, 0x987346);
+          this.sound.playEnemyPop();
+          this.combatText.spawn(drum.x, 1.8, drum.z, 'BLOCKED!', 'negative', 0.95);
           this.triggerRunDefeat();
+        } else if (drum.active && !drum.broken) {
+          this.squad.funnelAroundStandingObstacle(drum.x, drum.z, 1.02, 0.95, dt);
         }
       }
     }
@@ -724,7 +750,7 @@ export class BridgeBlitzGame {
         );
         if (collect) {
           if (collect.deltaSquad < 0) {
-            const ragCount = Math.min(3, Math.abs(collect.deltaSquad));
+            const ragCount = Math.min(6, Math.abs(collect.deltaSquad));
             for (let r = 0; r < ragCount; r++) {
               this.ragdollPool.spawnKnockback(this.squad.x, this.squad.z, false, 0.95);
             }
@@ -766,39 +792,94 @@ export class BridgeBlitzGame {
       }
     }
 
-    // Update 3-Lane Tire Wall Checkpoints & Unbroken Crashes
+    // Update 3-Lane Tire Wall Checkpoints: unbroken sibling stacks stay standing!
     for (let i = 0; i < MAX_TIRE_STACKS; i++) {
       const stack = this.tireStacks[i];
       stack.update(dt, this.squad.z);
       if (state === 'RUNNING' && this.squad.logicalCount > 0) {
-        const crashCasualties = stack.resolveUnbrokenSquadCrash(
-          this.squad.x,
-          this.squad.z,
-          squadRadius
-        );
-        if (crashCasualties > 0) {
-          this.retireSiblingTireStacks(stack.z);
-          const lost = Math.min(this.squad.logicalCount, crashCasualties);
-          this.sceneManager.addShake(0.42);
-          this.vfx.spawnShockwave(stack.x, stack.z, 2.8, 0.34, 0xff3b56);
-          this.particlePool.spawnBurst(stack.x, 0.9, stack.z, 18, 5.6, 0x2d3540);
-          const ragBursts = Math.min(3, lost);
+        if (stack.checkCoreLaneCrash(this.squad.x, this.squad.z)) {
+          const ragBursts = Math.min(12, this.squad.logicalCount);
           for (let r = 0; r < ragBursts; r++) {
-            this.ragdollPool.spawnKnockback(stack.x, this.squad.z, false, 1.15);
+            this.ragdollPool.spawnKnockback(
+              this.squad.x + ((r % 3) - 1) * 0.45,
+              this.squad.z,
+              false,
+              1.18
+            );
           }
-          this.squad.setLogicalCount(this.squad.logicalCount - lost);
+          this.sceneManager.addShake(0.55);
+          this.vfx.spawnShockwave(stack.x, stack.z, 3.2, 0.38, 0xff3b56);
+          this.particlePool.spawnBurst(stack.x, 0.95, stack.z, 22, 5.8, 0x2d3540);
           this.sound.playEnemyPop();
           this.combatText.spawn(
             stack.x,
-            1.65,
+            1.85,
             stack.z,
-            `-${lost} BARRICADE!`,
+            'BARRICADE!',
             'negative',
-            0.9
+            1.0
+          );
+          this.triggerRunDefeat();
+        } else if (stack.active && !stack.broken) {
+          this.squad.funnelAroundStandingObstacle(stack.x, stack.z, 1.28, 1.14, dt);
+        }
+      }
+    }
+
+    // Update Mid-Bridge Riot Goliath Brute (stalks lanes & swings spiked breaching maul)
+    if (state === 'RUNNING') {
+      const bruteSmash = this.midBrute.update(
+        dt,
+        this.squad.x,
+        this.squad.z,
+        this.squad.logicalCount
+      );
+      if (bruteSmash) {
+        this.sceneManager.addShake(0.48);
+        this.vfx.spawnShockwave(
+          bruteSmash.impactX,
+          bruteSmash.impactZ,
+          3.4,
+          0.36,
+          0xff384c
+        );
+        this.particlePool.spawnBurst(
+          bruteSmash.impactX,
+          0.7,
+          bruteSmash.impactZ,
+          18,
+          6.2,
+          0xff4757
+        );
+        if (bruteSmash.playerLosses > 0 && this.squad.logicalCount > 0) {
+          const lost = Math.min(this.squad.logicalCount, bruteSmash.playerLosses);
+          const ragLost = Math.min(5, lost);
+          for (let r = 0; r < ragLost; r++) {
+            this.ragdollPool.spawnKnockback(this.squad.x, this.squad.z, false, 1.25);
+          }
+          this.squad.setLogicalCount(this.squad.logicalCount - lost);
+          this.sound.playBossSalvoImpact(false);
+          this.combatText.spawn(
+            this.squad.x,
+            1.85,
+            this.squad.z,
+            `-${lost} MAUL!`,
+            'negative',
+            0.95
           );
           if (this.squad.logicalCount <= 0) {
             this.triggerRunDefeat();
           }
+        } else if (this.squad.logicalCount > 0) {
+          this.sound.playBossSalvoImpact(true);
+          this.combatText.spawn(
+            this.squad.x,
+            1.75,
+            this.squad.z,
+            'DODGED!',
+            'cyan',
+            0.78
+          );
         }
       }
     }
@@ -817,9 +898,9 @@ export class BridgeBlitzGame {
           if (collision && collision.playerLosses > 0) {
             const lost = collision.playerLosses;
             this.squad.setLogicalCount(this.squad.logicalCount - lost);
-            const ragBursts = Math.min(2, lost);
+            const ragBursts = Math.min(4, lost);
             for (let r = 0; r < ragBursts; r++) {
-              this.ragdollPool.spawnKnockback(collision.hitX, collision.hitZ, true, 0.95);
+              this.ragdollPool.spawnKnockback(collision.hitX, collision.hitZ, true, 0.98);
               this.ragdollPool.spawnKnockback(this.squad.x, this.squad.z, false, 0.95);
             }
             this.sceneManager.addShake(0.28);
@@ -1026,6 +1107,8 @@ export class BridgeBlitzGame {
 
       const dmg = pool.damage[i];
       const lastHit = pool.lastHitEntityId[i];
+      const wTier = (pool.weaponTier[i] || this.squad.weaponTier) as WeaponTierId;
+      const weaponSplashHex = WEAPON_SPECS[wTier]?.colorHex ?? 0x62f4ff;
       let consumedHit = false;
 
       // 1. Check Supply Drums
@@ -1039,8 +1122,8 @@ export class BridgeBlitzGame {
         consumedHit = true;
 
         if (res === 'HIT') {
-          this.vfx.spawnImpactSplash(bx, 1.02, drum.z + 1.0, 0.82, 0xffd166);
-          this.particlePool.spawnBurst(bx, 1.0, drum.z, 3, 4.2, 0xffaa3b, 0.1, 0.24);
+          this.vfx.spawnImpactSplash(bx, 1.04, drum.z + 0.95, 0.92, weaponSplashHex);
+          this.particlePool.spawnBurst(bx, 1.0, drum.z, 2, 4.0, weaponSplashHex, 0.09, 0.22);
         } else if (res === 'SHATTERED') {
           this.handleSupplyDrumShattered(drum);
         }
@@ -1059,20 +1142,19 @@ export class BridgeBlitzGame {
 
           if (hit.ricochet) {
             this.sound.playRicochet();
-            this.vfx.spawnImpactSplash(hit.hitX, 1.22, hit.hitZ, 0.65, 0xffe066);
+            this.vfx.spawnImpactSplash(hit.hitX, 1.22, hit.hitZ, 0.72, 0xffe066);
             this.particlePool.spawnBurst(hit.hitX, 1.2, hit.hitZ, 3, 4.2, 0xffe066, 0.1, 0.25);
           } else {
-            const splashHex = hit.newValue >= 0 ? 0x62f4ff : 0xff6b81;
-            this.vfx.spawnImpactSplash(hit.hitX, 1.24, hit.hitZ, 0.78, splashHex);
+            this.vfx.spawnImpactSplash(hit.hitX, 1.24, hit.hitZ, 0.90, weaponSplashHex);
             this.particlePool.spawnBurst(
               hit.hitX,
               1.2,
               hit.hitZ,
-              3,
+              2,
               3.5,
-              splashHex,
-              0.11,
-              0.24
+              weaponSplashHex,
+              0.1,
+              0.22
             );
             if (hit.flippedToPositive) {
               this.gatesFlippedThisRun++;
@@ -1096,6 +1178,36 @@ export class BridgeBlitzGame {
         }
       }
 
+      // 2.5 Check Mid-Bridge Riot Goliath Brute (off-axis shots fly past to chip Tire Walls behind!)
+      if (!consumedHit && this.midBrute.active && !this.midBrute.defeated) {
+        const bruteRes = this.midBrute.tryBulletHit(bx, bz, prevZ, dmg, lastHit, this.squad.z);
+        if (bruteRes !== 'NONE') {
+          pool.lastHitEntityId[i] = this.midBrute.entityId;
+          consumedHit = true;
+          if (bruteRes === 'HIT') {
+            this.vfx.spawnImpactSplash(
+              bx,
+              1.55,
+              this.midBrute.z + 0.85,
+              1.06,
+              weaponSplashHex
+            );
+            this.particlePool.spawnBurst(
+              bx,
+              1.5,
+              this.midBrute.z + 0.6,
+              3,
+              4.4,
+              weaponSplashHex,
+              0.11,
+              0.24
+            );
+          } else if (bruteRes === 'DEFEATED') {
+            this.handleMidBruteDefeated();
+          }
+        }
+      }
+
       // 3. Check 3-Lane Tire Wall Checkpoints
       if (!consumedHit) {
         for (let t = 0; t < MAX_TIRE_STACKS; t++) {
@@ -1108,8 +1220,8 @@ export class BridgeBlitzGame {
           consumedHit = true;
 
           if (res === 'HIT') {
-            this.vfx.spawnImpactSplash(bx, 1.05, stack.z + 1.2, 0.85, 0xffd166);
-            this.particlePool.spawnBurst(bx, 0.95, stack.z, 3, 4.0, 0xffd166, 0.11, 0.25);
+            this.vfx.spawnImpactSplash(bx, 1.08, stack.z + 1.15, 0.94, weaponSplashHex);
+            this.particlePool.spawnBurst(bx, 0.95, stack.z, 2, 4.0, weaponSplashHex, 0.1, 0.22);
           } else if (res === 'SHATTERED') {
             this.handleTireStackShattered(stack);
           }
@@ -1117,7 +1229,7 @@ export class BridgeBlitzGame {
         }
       }
 
-      // 4. Check Enemy Skirmish Waves (per-trooper hit & individual white flash)
+      // 4. Check Enemy Skirmish Waves (per-trooper hit, grey ragdoll knockback & gold coin pop)
       if (!consumedHit) {
         for (let w = 0; w < MAX_ENEMY_WAVES; w++) {
           const wave = this.enemyWaves[w];
@@ -1134,32 +1246,21 @@ export class BridgeBlitzGame {
             this.sound.playEnemyPop();
             this.vfx.spawnImpactSplash(
               ev.x,
-              0.95,
+              0.96,
               ev.z,
-              ev.isHeavy ? 1.45 : 0.92,
-              ev.isHeavy ? 0xffdf59 : 0xff6b81
+              ev.isHeavy ? 1.42 : 0.96,
+              weaponSplashHex
             );
-            this.ragdollPool.spawnKnockback(ev.x, ev.z, true, ev.isHeavy ? 1.25 : 0.98);
-            this.particlePool.spawnBurst(
-              ev.x,
-              0.85,
-              ev.z,
-              ev.isHeavy ? 16 : 7,
-              5.6,
-              ev.isHeavy ? 0xffae42 : 0xff384c
-            );
-            if (ev.isHeavy) {
-              this.spawnGoldConfettiShower(ev.x, 1.2, ev.z, 12);
-            }
+            this.ragdollPool.spawnKnockback(ev.x, ev.z, true, ev.isHeavy ? 1.28 : 1.02);
+            this.spawnGoldConfettiShower(ev.x, 1.05, ev.z, ev.isHeavy ? 10 : 3);
             this.awardLiveCoins(
-              ev.coinReward,
+              ev.coinReward * kills,
               ev.x,
               ev.z,
-              ev.isHeavy || this.enemiesDefeatedThisRun % 3 === 0
+              ev.isHeavy
             );
           } else {
-            this.vfx.spawnImpactSplash(bx, 0.92, bz, 0.68, 0xfff4d2);
-            this.particlePool.spawnBurst(bx, 0.85, bz, 2, 3.2, 0xffffff, 0.09, 0.2);
+            this.vfx.spawnImpactSplash(bx, 0.94, bz, 0.78, weaponSplashHex);
           }
           break;
         }
@@ -1178,19 +1279,19 @@ export class BridgeBlitzGame {
         if (bossRes !== 'NONE') {
           pool.lastHitEntityId[i] = this.boss.entityId;
           consumedHit = true;
-          this.vfx.spawnImpactSplash(bx, 1.45, this.boss.z + 0.95, 0.95, 0xffdf66);
-          this.particlePool.spawnBurst(bx, 1.4, this.boss.z + 0.6, 4, 4.6, 0xffbe3b, 0.12, 0.28);
+          this.vfx.spawnImpactSplash(bx, 1.45, this.boss.z + 0.95, 1.02, weaponSplashHex);
+          this.particlePool.spawnBurst(bx, 1.4, this.boss.z + 0.6, 3, 4.6, weaponSplashHex, 0.12, 0.26);
           if (this.boss.lastStepSegmentBroken) {
             this.sound.playTireBreak(false);
             this.sceneManager.addShake(0.28);
             this.vfx.spawnShockwave(this.boss.x, this.boss.z + 0.5, 3.4, 0.34, 0xffb830);
             this.spawnGoldConfettiShower(this.boss.x, 2.2, this.boss.z + 0.6, 14);
-            const segEarned = this.awardLiveCoins(8, this.boss.x, this.boss.z + 0.8, false);
+            const segEarned = this.awardLiveCoins(25, this.boss.x, this.boss.z + 0.8, false);
             this.combatText.spawn(
               this.boss.x,
               3.9,
               this.boss.z,
-              `ARMOR BREAK! +${segEarned}`,
+              `ARMOR BREAK! +${formatCoinAmount(segEarned)}`,
               'gold',
               0.78
             );
@@ -1232,13 +1333,45 @@ export class BridgeBlitzGame {
     }
   }
 
-  private retireSiblingTireStacks(breachedZ: number): void {
-    for (let k = 0; k < MAX_TIRE_STACKS; k++) {
-      const other = this.tireStacks[k];
-      if (other.active && !other.broken && Math.abs(other.z - breachedZ) < 1.0) {
-        other.retireCheckpointSibling();
-      }
+  private handleMidBruteDefeated(): void {
+    this.enemiesDefeatedThisRun += 1;
+    this.sound.playBossDefeat();
+    this.sceneManager.addShake(0.56);
+    this.vfx.spawnShockwave(this.midBrute.x, this.midBrute.z, 5.2, 0.5, 0xffae42);
+    this.vfx.spawnImpactSplash(this.midBrute.x, 1.8, this.midBrute.z, 2.2, 0xffdf66);
+    this.particlePool.spawnBurst(
+      this.midBrute.x,
+      1.7,
+      this.midBrute.z,
+      32,
+      8.2,
+      0xffae42,
+      0.22,
+      0.72
+    );
+    for (let r = 0; r < 3; r++) {
+      this.ragdollPool.spawnKnockback(
+        this.midBrute.x + (r - 1) * 0.45,
+        this.midBrute.z,
+        true,
+        1.55
+      );
     }
+    this.spawnGoldConfettiShower(this.midBrute.x, 1.8, this.midBrute.z, 22);
+    const earned = this.awardLiveCoins(
+      this.midBrute.coinReward,
+      this.midBrute.x,
+      this.midBrute.z,
+      false
+    );
+    this.combatText.spawn(
+      this.midBrute.x,
+      2.7,
+      this.midBrute.z,
+      `GOLIATH DOWN! +${formatCoinAmount(earned)}`,
+      'gold',
+      1.15
+    );
   }
 
   private applyWeaponDrop(
@@ -1274,7 +1407,7 @@ export class BridgeBlitzGame {
         worldX,
         2.25,
         worldZ,
-        `WEAPON LOCK! +${earned} COINS`,
+        `WEAPON LOCK! +${formatCoinAmount(earned)}`,
         'gold',
         1.1
       );
@@ -1304,7 +1437,7 @@ export class BridgeBlitzGame {
         drum.x,
         2.05,
         drum.z,
-        `+${drum.rewardValue} COMMANDO!`,
+        `+${drum.rewardValue} COMMANDO${drum.rewardValue > 1 ? 'S' : ''}!`,
         'positive',
         1.0
       );
@@ -1316,7 +1449,6 @@ export class BridgeBlitzGame {
 
   private handleTireStackShattered(stack: TireWeaponStackSlot): void {
     this.tiresBrokenThisRun++;
-    this.retireSiblingTireStacks(stack.z);
     this.sceneManager.addShake(0.36);
     const ringHex = stack.weaponTier
       ? WEAPON_SPECS[stack.weaponTier].colorHex
@@ -1350,7 +1482,7 @@ export class BridgeBlitzGame {
         0,
         2.6,
         this.squad.z - 4,
-        `WAVE ${this.endlessWave} CLEARED! +${earned} COINS`,
+        `WAVE ${this.endlessWave} CLEARED! +${formatCoinAmount(earned)}`,
         'gold',
         1.3
       );
@@ -1589,6 +1721,11 @@ export class BridgeBlitzGame {
       weaponBadge: WEAPON_SPECS[this.squad.weaponTier].shortBadge,
       bossHp: this.boss.currentHp,
       bossMaxHp: this.boss.maxHp,
+      bruteHp: this.midBrute.hp,
+      bruteMaxHp: this.midBrute.maxHp,
+      marchHaltedByBrute:
+        this.stateMachine.state === 'RUNNING' &&
+        this.midBrute.isHaltingMarch(this.squad.z),
       drumsBrokenThisRun: this.drumsBrokenThisRun,
       gatesFlippedThisRun: this.gatesFlippedThisRun,
       tiresBrokenThisRun: this.tiresBrokenThisRun,

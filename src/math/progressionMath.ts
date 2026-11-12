@@ -11,7 +11,7 @@ export interface UpgradeSpec {
 }
 
 export const UPGRADE_COST_GROWTH = 1.28;
-export const MAX_STARTING_SQUAD_LEVEL = 5;
+export const MAX_STARTING_SQUAD_LEVEL = 12;
 
 export const UPGRADE_SPECS: Readonly<Record<UpgradeKey, UpgradeSpec>> = {
   fireRate: {
@@ -184,3 +184,41 @@ export function attemptPurchaseUpgrade(
     cost,
   };
 }
+
+/**
+ * Formats large coin wallets, upgrade costs, and rewards cleanly with K / M / B suffixes
+ * while keeping sub-1,000 values crisp integers (e.g. 292, 1.27K, 25.3K, 1.45M).
+ */
+export function formatCoinAmount(amount: number): string {
+  const sign = amount < 0 ? '-' : '';
+  const abs = Math.abs(Math.round(amount));
+  if (abs < 1000) {
+    return `${sign}${abs}`;
+  }
+  if (abs < 1_000_000) {
+    const k = abs / 1000;
+    const digits = k >= 100 ? 0 : k >= 10 ? 1 : 2;
+    return `${sign}${k.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1')}K`;
+  }
+  if (abs < 1_000_000_000) {
+    const m = abs / 1_000_000;
+    const digits = m >= 100 ? 0 : m >= 10 ? 1 : 2;
+    return `${sign}${m.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1')}M`;
+  }
+  const b = abs / 1_000_000_000;
+  const digits = b >= 100 ? 0 : b >= 10 ? 1 : 2;
+  return `${sign}${b.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1')}B`;
+}
+
+/**
+ * Formats obstacle & Brute HP: raw integers up to 9,999 (e.g. 90, 1900, 7300, 8508)
+ * and K/M suffixes at 10,000+ so 4-digit tire & Brute HP plaques read just like classic arcade counters!
+ */
+export function formatObstacleHp(hp: number): string {
+  const val = Math.max(0, Math.ceil(hp));
+  if (val < 10_000) {
+    return `${val}`;
+  }
+  return formatCoinAmount(val);
+}
+

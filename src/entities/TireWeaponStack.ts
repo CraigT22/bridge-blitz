@@ -102,17 +102,17 @@ export class TireWeaponStackSlot {
     stackShadow.position.set(0, 0.02, 0.08);
     this.root.add(stackShadow);
 
-    // Wide heavy-duty barricade tires (3 stacks side-by-side at -3.15, 0, +3.15 seal the whole bridge!)
-    const tireGeo = new THREE.TorusGeometry(1.12, 0.34, 12, 24);
+    // Wide heavy-duty barricade tires leaving clean breached-lane funnel corridors when 1 stack is shattered!
+    const tireGeo = new THREE.TorusGeometry(1.04, 0.31, 12, 24);
     tireGeo.rotateX(Math.PI / 2);
-    const tireOutlineGeo = new THREE.TorusGeometry(1.12, 0.39, 10, 24);
+    const tireOutlineGeo = new THREE.TorusGeometry(1.04, 0.36, 10, 24);
     tireOutlineGeo.rotateX(Math.PI / 2);
-    const hubGeo = new THREE.CylinderGeometry(0.84, 0.84, 0.48, 16);
+    const hubGeo = new THREE.CylinderGeometry(0.78, 0.78, 0.45, 16);
 
     for (let i = 0; i < MAX_TIRE_LAYERS; i++) {
       const layerGroup = new THREE.Group();
       const offsetX = i % 2 === 0 ? 0.02 : -0.025;
-      layerGroup.position.set(offsetX, 0.32 + i * 0.52, 0);
+      layerGroup.position.set(offsetX, 0.30 + i * 0.50, 0);
       layerGroup.rotation.y = i * 0.45;
 
       const tire = new THREE.Mesh(tireGeo, this.rubberMat);
@@ -130,8 +130,8 @@ export class TireWeaponStackSlot {
       transparent: true,
       depthWrite: false,
     });
-    this.plaqueMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.55, 1.48), plaqueMat);
-    this.plaqueMesh.position.set(0, 1.15, 1.56);
+    this.plaqueMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.58, 1.48), plaqueMat);
+    this.plaqueMesh.position.set(0, 1.12, 1.46);
     this.root.add(this.plaqueMesh);
 
     this.root.add(this.pickupPivot);
@@ -180,11 +180,10 @@ export class TireWeaponStackSlot {
 
     for (const t of [1, 2, 3, 4, 5] as const) {
       const rig = this.weaponRigs[t];
-      rig.root.scale.setScalar(1.32);
-      rig.root.rotation.z = 0.20;
+      rig.root.scale.setScalar(1.58);
+      rig.root.rotation.z = 0.14;
       this.pickupPivot.add(rig.root);
-      this.badgeMeshes[t].position.set(0, 1.04, 0);
-      this.pickupPivot.add(this.badgeMeshes[t]);
+      this.badgeMeshes[t].visible = false;
     }
 
     this.root.visible = false;
@@ -219,7 +218,7 @@ export class TireWeaponStackSlot {
     for (const t of [1, 2, 3, 4, 5] as const) {
       const show = this.weaponTier === t;
       this.weaponRigs[t].root.visible = show;
-      this.badgeMeshes[t].visible = show;
+      this.badgeMeshes[t].visible = false;
     }
 
     this.syncStackHeight();
@@ -232,29 +231,18 @@ export class TireWeaponStackSlot {
     this.root.visible = false;
   }
 
-  /**
-   * Retires sibling Tire Stacks in the same 3-lane checkpoint row once one lane is breached,
-   * sinking them smoothly into the bridge deck so wide-spread squads cannot triple-farm one wall.
-   */
-  public retireCheckpointSibling(): void {
-    if (!this.active || this.broken) {
-      return;
-    }
-    this.retiring = true;
-  }
-
   private syncStackHeight(): void {
     const ratio = Math.max(0, this.remainingBreakCount / this.initialBreakCount);
     const totalLayers =
-      this.initialBreakCount >= 400 ? 5 : this.initialBreakCount >= 140 ? 4 : 3;
+      this.initialBreakCount >= 1400 ? 5 : this.initialBreakCount >= 500 ? 4 : 3;
     const visibleLayers = Math.max(1, Math.ceil(ratio * totalLayers));
 
     for (let i = 0; i < MAX_TIRE_LAYERS; i++) {
       this.tireMeshes[i].visible = i < visibleLayers;
     }
 
-    const topY = 0.42 + visibleLayers * 0.52;
-    this.pickupPivot.position.set(0, topY + 0.68, 0);
+    const topY = 0.40 + visibleLayers * 0.50;
+    this.pickupPivot.position.set(0, topY + 0.72, 0);
     this.plaqueMesh.position.y = Math.max(0.75, topY * 0.52);
   }
 
@@ -262,10 +250,11 @@ export class TireWeaponStackSlot {
     if (!this.active || this.broken) {
       return;
     }
-    if (this.retiring || squadZ < this.z - 2.6) {
+    // Keep unbroken sibling Tire Stacks physically standing on the bridge until behind camera!
+    if (this.retiring || squadZ < this.z - 8.5) {
       this.retiring = true;
-      this.root.position.y -= dt * 18.0;
-      if (this.root.position.y <= -3.8 || squadZ < this.z - 5.4) {
+      this.root.position.y -= dt * 16.0;
+      if (this.root.position.y <= -3.8 || squadZ < this.z - 11.2) {
         this.hide();
       }
       return;
@@ -276,14 +265,15 @@ export class TireWeaponStackSlot {
     if (this.weaponTier) {
       const activeRig = this.weaponRigs[this.weaponTier];
       if (activeRig.root.visible) {
-        activeRig.root.rotation.y = Math.sin(this.spinAngle * 0.9) * 0.68;
-        activeRig.root.position.y = 0.08 + Math.sin(this.spinAngle * 1.6) * 0.09;
+        // Broadside profile (+/- 16 deg) so Rifle/Minigun/Plasma silhouette reads clearly!
+        activeRig.root.rotation.y = Math.sin(this.spinAngle * 0.85) * 0.28;
+        activeRig.root.position.y = 0.10 + Math.sin(this.spinAngle * 1.6) * 0.09;
         if (activeRig.spinCluster) {
           activeRig.spinCluster.rotation.x += dt * 14.0;
         }
       }
     } else if (this.coinPickupGroup.visible) {
-      this.coinPickupGroup.rotation.y = Math.sin(this.spinAngle * 1.15) * 0.58;
+      this.coinPickupGroup.rotation.y = Math.sin(this.spinAngle * 1.15) * 0.52;
       this.coinPickupGroup.position.y = Math.sin(this.spinAngle * 1.8) * 0.07;
     }
 
@@ -334,27 +324,15 @@ export class TireWeaponStackSlot {
   }
 
   /**
-   * Returns commando crash casualties if the squad slams into an unbroken Tire Wall barricade!
-   * High-HP unbroken tire walls act as genuine DPS gear-check barricades.
+   * Checks if the squad's core lane slams head-on into an unbreached Tire Wall stack.
+   * Preserves the standing Tire Stack (`broken = false`, `visible = true`) so the Run-End card
+   * displays right over the frozen intact barricade!
    */
-  public resolveUnbrokenSquadCrash(
-    squadX: number,
-    squadZ: number,
-    squadRadius: number
-  ): number {
+  public checkCoreLaneCrash(squadX: number, squadZ: number): boolean {
     if (!this.active || this.broken || this.retiring) {
-      return 0;
+      return false;
     }
-    if (
-      Math.abs(squadZ - this.z) < 1.18 + squadRadius * 0.28 &&
-      Math.abs(squadX - this.x) < 1.46 + squadRadius * 0.45
-    ) {
-      const crashDamage = Math.max(2, Math.ceil(this.remainingBreakCount / 35));
-      this.broken = true;
-      this.active = false;
-      this.root.visible = false;
-      return crashDamage;
-    }
-    return 0;
+    const dz = squadZ - this.z;
+    return dz > -0.22 && dz < 1.08 && Math.abs(squadX - this.x) < 1.02;
   }
 }

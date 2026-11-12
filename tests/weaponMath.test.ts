@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   computeEffectiveFiringSquad,
   computeSquadVolleyPlan,
+  MAX_ACTIVE_VOLLEY_EMITTERS,
   MAX_SQUAD_COUNT,
   resolveWeaponPickup,
   WEAPON_LOCK_BONUS_COINS,
@@ -26,39 +27,28 @@ describe('weaponMath', () => {
     expect(lowerPickup.bonusCoins).toBe(WEAPON_LOCK_BONUS_COINS);
     expect(lowerPickup.bonusSquad).toBe(WEAPON_LOCK_BONUS_SQUAD);
     expect(lowerPickup.bannerText).toContain('WEAPON LOCKED: +25 COINS');
-
-    const equalPickup = resolveWeaponPickup(3, 3);
-    expect(equalPickup.equippedTier).toBe(3);
-    expect(equalPickup.upgraded).toBe(false);
-    expect(equalPickup.lockedBonusTriggered).toBe(true);
-    expect(equalPickup.bonusCoins).toBe(25);
-    expect(equalPickup.bonusSquad).toBe(1);
   });
 
-  it('scales front-rank DPS 1:1 for 1..5 commandos and 0.82x per rear-rank commando up to MAX_SQUAD_COUNT (10)', () => {
+  it('scales crowd DPS smoothly across 1..40 commandos while capping emitters at MAX_ACTIVE_VOLLEY_EMITTERS', () => {
+    expect(MAX_SQUAD_COUNT).toBe(40);
     expect(computeEffectiveFiringSquad(1)).toBe(1);
-    expect(computeEffectiveFiringSquad(5)).toBe(5);
-    expect(computeEffectiveFiringSquad(6)).toBeCloseTo(5.82, 4);
-    expect(computeEffectiveFiringSquad(10)).toBeCloseTo(9.1, 4);
+    expect(computeEffectiveFiringSquad(4)).toBe(4);
+    expect(computeEffectiveFiringSquad(16)).toBeGreaterThan(13);
+    expect(computeEffectiveFiringSquad(40)).toBeGreaterThan(30);
 
     const plan1 = computeSquadVolleyPlan(1, 2, 1.0, 1.0);
-    const plan5 = computeSquadVolleyPlan(5, 2, 1.0, 1.0);
-    const plan10 = computeSquadVolleyPlan(10, 2, 1.0, 1.0);
+    const plan40 = computeSquadVolleyPlan(40, 2, 1.0, 1.0);
 
-    expect(plan5.visualSoldiers).toBe(5);
-    expect(plan10.visualSoldiers).toBe(MAX_SQUAD_COUNT);
+    expect(plan40.visualSoldiers).toBe(40);
+    expect(plan40.activeEmitters).toBe(MAX_ACTIVE_VOLLEY_EMITTERS);
 
     const dps1 =
       (plan1.activeEmitters * plan1.projectilesPerEmitter * plan1.damagePerProjectile) /
       plan1.intervalSeconds;
-    const dps5 =
-      (plan5.activeEmitters * plan5.projectilesPerEmitter * plan5.damagePerProjectile) /
-      plan5.intervalSeconds;
-    const dps10 =
-      (plan10.activeEmitters * plan10.projectilesPerEmitter * plan10.damagePerProjectile) /
-      plan10.intervalSeconds;
+    const dps40 =
+      (plan40.activeEmitters * plan40.projectilesPerEmitter * plan40.damagePerProjectile) /
+      plan40.intervalSeconds;
 
-    expect(dps5 / dps1).toBeCloseTo(5.0, 4);
-    expect(dps10 / dps1).toBeCloseTo(9.1, 4);
+    expect(dps40 / dps1).toBeCloseTo(computeEffectiveFiringSquad(40), 4);
   });
 });

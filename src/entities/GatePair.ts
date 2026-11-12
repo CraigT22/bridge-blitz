@@ -4,6 +4,7 @@ import {
   applyGateBulletHit,
   computeSplitGateRatio,
   formatGateLabel,
+  isNegativeGateState,
   resolveGateSquadCount,
   SPLIT_SPAN_MAX_X,
   SPLIT_SPAN_MIN_X,
@@ -20,9 +21,6 @@ interface SingleGateSlot {
   panelWidth: number;
   readonly group: THREE.Group;
   readonly panelMesh: THREE.Mesh;
-  readonly barL: THREE.Mesh;
-  readonly barR: THREE.Mesh;
-  readonly ledMat: THREE.MeshBasicMaterial;
   readonly padlockGroup: THREE.Group;
   readonly labelTex: EditableGateTexture;
   active: boolean;
@@ -59,10 +57,10 @@ export interface GateSquadCollectEvent {
   readonly positive: boolean;
 }
 
-const SPLIT_WIDTH = 4.76;
-const FULL_WIDTH = 9.64;
-const PANEL_HEIGHT = 2.48;
-const CENTER_POST_GAP = 0.06;
+const SPLIT_WIDTH = 4.82;
+const FULL_WIDTH = 9.72;
+const PANEL_HEIGHT = 2.52;
+const CENTER_POST_GAP = 0.04;
 
 export class GatePairSlot {
   public readonly root = new THREE.Group();
@@ -75,28 +73,37 @@ export class GatePairSlot {
 
   private appliedSplitX = Number.NaN;
   private readonly centerPostGroup = new THREE.Group();
+  private readonly leftPylonMat: THREE.MeshStandardMaterial;
+  private readonly centerPylonMat: THREE.MeshStandardMaterial;
+  private readonly rightPylonMat: THREE.MeshStandardMaterial;
   private readonly leftSlot: SingleGateSlot;
   private readonly rightSlot: SingleGateSlot;
   private readonly fullSlot: SingleGateSlot;
 
   constructor(pairIndex: number) {
-    const pylonMat = new THREE.MeshStandardMaterial({
-      color: 0x263445,
-      metalness: 0.42,
-      roughness: 0.34,
-    });
+    const makePylonMat = () =>
+      new THREE.MeshStandardMaterial({
+        color: 0x1fd8ff,
+        emissive: 0x064866,
+        metalness: 0.22,
+        roughness: 0.30,
+      });
+    this.leftPylonMat = makePylonMat();
+    this.centerPylonMat = makePylonMat();
+    this.rightPylonMat = makePylonMat();
+
     const outlineMat = new THREE.MeshBasicMaterial({
-      color: 0x0b0f16,
+      color: 0x090e16,
       side: THREE.BackSide,
     });
 
     // Grounded contact shadow strip
     const gantryShadow = new THREE.Mesh(
-      new THREE.PlaneGeometry(10.2, 0.55),
+      new THREE.PlaneGeometry(10.2, 0.48),
       new THREE.MeshBasicMaterial({
         color: 0x05080d,
         transparent: true,
-        opacity: 0.32,
+        opacity: 0.28,
         depthWrite: false,
       })
     );
@@ -104,26 +111,30 @@ export class GatePairSlot {
     gantryShadow.position.set(0, 0.018, 0.06);
     this.root.add(gantryShadow);
 
-    // Sleek Vertical Energy Pylons (center post slides dynamically with splitX!)
-    for (const px of [-4.92, 0, 4.92]) {
+    // Cel-outlined polarity-colored cylindrical side posts & sliding center divider post!
+    const pylonDefs: ReadonlyArray<readonly [number, THREE.MeshStandardMaterial]> = [
+      [-4.90, this.leftPylonMat],
+      [0, this.centerPylonMat],
+      [4.90, this.rightPylonMat],
+    ];
+    for (const [px, pMat] of pylonDefs) {
       const holder = px === 0 ? this.centerPostGroup : this.root;
       const localX = px === 0 ? 0 : px;
       const post = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.14, 0.17, 2.75, 12),
-        pylonMat
+        new THREE.CylinderGeometry(0.145, 0.165, 2.72, 14),
+        pMat
       );
-      post.position.set(localX, 1.38, 0);
+      post.position.set(localX, 1.36, 0);
       const postOutline = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.18, 0.21, 2.81, 12),
+        new THREE.CylinderGeometry(0.19, 0.21, 2.78, 14),
         outlineMat
       );
-      postOutline.position.set(localX, 1.38, 0);
-      const cap = new THREE.Mesh(
-        new THREE.SphereGeometry(0.20, 10, 8),
-        pylonMat
-      );
-      cap.position.set(localX, 2.78, 0);
-      holder.add(post, postOutline, cap);
+      postOutline.position.set(localX, 1.36, 0);
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.175, 12, 10), pMat);
+      cap.position.set(localX, 2.73, 0);
+      const capOutline = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), outlineMat);
+      capOutline.position.set(localX, 2.73, 0);
+      holder.add(post, postOutline, cap, capOutline);
     }
     this.root.add(this.centerPostGroup);
 
@@ -153,23 +164,14 @@ export class GatePairSlot {
       side: THREE.DoubleSide,
       depthWrite: false,
     });
-    // Unit-width plane scaled dynamically along X so split gates expand & contract smoothly!
+    // Frameless-top unit-width curtain scaled dynamically along X as split ratios shift!
     const panelMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(1.0, PANEL_HEIGHT),
       panelMat
     );
     panelMesh.scale.x = width;
-    panelMesh.position.set(0, 1.34, 0);
+    panelMesh.position.set(0, 1.28, 0);
     group.add(panelMesh);
-
-    const ledMat = new THREE.MeshBasicMaterial({ color: 0x38f6ff });
-    const barGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.52, 8);
-    const halfSpan = width * 0.5 - 0.04;
-    const barL = new THREE.Mesh(barGeo, ledMat);
-    barL.position.set(-halfSpan, 1.34, 0);
-    const barR = new THREE.Mesh(barGeo, ledMat);
-    barR.position.set(halfSpan, 1.34, 0);
-    group.add(barL, barR);
 
     const padlockGroup = createPadlockMesh();
     padlockGroup.position.set(0, 2.75, 0.10);
@@ -186,9 +188,6 @@ export class GatePairSlot {
       panelWidth: width,
       group,
       panelMesh,
-      barL,
-      barR,
-      ledMat,
       padlockGroup,
       labelTex,
       active: false,
@@ -211,9 +210,6 @@ export class GatePairSlot {
     slot.panelWidth = width;
     slot.group.position.x = centerX;
     slot.panelMesh.scale.x = width;
-    const halfSpan = width * 0.5 - 0.04;
-    slot.barL.position.x = -halfSpan;
-    slot.barR.position.x = halfSpan;
   }
 
   private recomputeTargetSplitX(): void {
@@ -240,16 +236,36 @@ export class GatePairSlot {
     this.applySlotGeometry(this.rightSlot, splitX + CENTER_POST_GAP, SPLIT_SPAN_MAX_X);
   }
 
-  private syncLedColor(slot: SingleGateSlot): void {
-    if (slot.isLocked && slot.operator === 'MUL') {
-      slot.ledMat.color.setRGB(1.35, 1.0, 0.25);
-    } else if (slot.isLocked && slot.operator === 'DIV') {
-      slot.ledMat.color.setRGB(1.42, 0.25, 0.24);
-    } else if (slot.operator === 'ADD' && slot.value < 0) {
-      slot.ledMat.color.setRGB(1.4, 0.24, 0.34);
+  private applyPylonPolarity(mat: THREE.MeshStandardMaterial, isNeg: boolean): void {
+    if (isNeg) {
+      mat.color.setHex(0xee2c44);
+      mat.emissive.setHex(0x520814);
     } else {
-      slot.ledMat.color.setRGB(0.24, 1.25, 1.48);
+      mat.color.setHex(0x20d8ff);
+      mat.emissive.setHex(0x064866);
     }
+  }
+
+  private syncPylonColors(): void {
+    if (this.isFullSpan) {
+      const neg = isNegativeGateState(
+        this.fullSlot.operator,
+        this.fullSlot.value,
+        this.fullSlot.isLocked
+      );
+      this.applyPylonPolarity(this.leftPylonMat, neg);
+      this.applyPylonPolarity(this.rightPylonMat, neg);
+      return;
+    }
+    const leftNeg = this.leftSlot.active
+      ? isNegativeGateState(this.leftSlot.operator, this.leftSlot.value, this.leftSlot.isLocked)
+      : false;
+    const rightNeg = this.rightSlot.active
+      ? isNegativeGateState(this.rightSlot.operator, this.rightSlot.value, this.rightSlot.isLocked)
+      : false;
+    this.applyPylonPolarity(this.leftPylonMat, leftNeg);
+    this.applyPylonPolarity(this.rightPylonMat, rightNeg);
+    this.applyPylonPolarity(this.centerPylonMat, leftNeg && rightNeg ? true : rightNeg);
   }
 
   public configure(def: GatePairDefinition): void {
@@ -269,12 +285,14 @@ export class GatePairSlot {
       this.configureSlot(this.leftSlot, null);
       this.configureSlot(this.rightSlot, null);
       this.configureSlot(this.fullSlot, def.full);
+      this.syncPylonColors();
     } else {
       this.isFullSpan = false;
       this.centerPostGroup.visible = true;
       this.configureSlot(this.fullSlot, null);
       this.configureSlot(this.leftSlot, def.left);
       this.configureSlot(this.rightSlot, def.right);
+      this.syncPylonColors();
       this.recomputeTargetSplitX();
       this.currentSplitX = this.targetSplitX;
       this.applySplitLayout(this.currentSplitX);
@@ -317,7 +335,6 @@ export class GatePairSlot {
     slot.ringProgress = 0;
     slot.flashTimer = 0;
     slot.padlockGroup.visible = def.isLocked;
-    this.syncLedColor(slot);
     slot.labelTex.redrawIfDirty(
       def.operator,
       def.initialValue,
@@ -424,7 +441,7 @@ export class GatePairSlot {
     targetSlot.hitAccumulator = res.hitAccumulator;
     targetSlot.ringProgress = res.ringProgress;
     targetSlot.flashTimer = 1.0;
-    this.syncLedColor(targetSlot);
+    this.syncPylonColors();
     if (!this.isFullSpan && res.deltaIncrements > 0) {
       this.recomputeTargetSplitX();
     }

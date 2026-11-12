@@ -95,6 +95,15 @@ export interface BossDefinition {
   readonly rewardCoins: number;
 }
 
+export interface MidBridgeBruteDefinition {
+  readonly z: number;
+  readonly name: string;
+  readonly maxHp: number;
+  readonly speed: number;
+  readonly clubDamage: number;
+  readonly coinReward: number;
+}
+
 export interface StageDefinition {
   readonly stageNumber: number;
   readonly title: string;
@@ -103,6 +112,7 @@ export interface StageDefinition {
   readonly gatePairs: GatePairDefinition[];
   readonly tireStacks: TireStackDefinition[];
   readonly enemyWaves: EnemyWaveDefinition[];
+  readonly midBrute?: MidBridgeBruteDefinition;
   readonly boss: BossDefinition;
 }
 
@@ -163,6 +173,9 @@ export interface TelemetrySnapshot {
   progress: number;
   weaponTier: WeaponTierId;
   weaponBadge: string;
+  bruteHp: number;
+  bruteMaxHp: number;
+  marchHaltedByBrute: boolean;
   bossHp: number;
   bossMaxHp: number;
   drumsBrokenThisRun: number;
