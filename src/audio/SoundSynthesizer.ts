@@ -255,6 +255,60 @@ export class SoundSynthesizer {
     }
   }
 
+  public playBossSalvoWarning(): void {
+    this.vibrate(10);
+    const ctx = this.ensureReady();
+    if (!ctx) {
+      return;
+    }
+    const base = ctx.currentTime;
+    for (let i = 0; i < 2; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      const t = base + i * 0.12;
+      osc.frequency.setValueAtTime(540, t);
+      osc.frequency.exponentialRampToValueAtTime(820, t + 0.09);
+      gain.gain.setValueAtTime(0.055, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.10);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.11);
+    }
+  }
+
+  public playBossSalvoImpact(dodged: boolean): void {
+    if (!dodged) {
+      this.vibrate(20);
+    }
+    const ctx = this.ensureReady();
+    if (!ctx) {
+      return;
+    }
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    if (dodged) {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(620, now);
+      osc.frequency.exponentialRampToValueAtTime(980, now + 0.09);
+      gain.gain.setValueAtTime(0.055, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.10);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.11);
+    } else {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(165, now);
+      osc.frequency.exponentialRampToValueAtTime(42, now + 0.22);
+      gain.gain.setValueAtTime(0.13, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.25);
+    }
+  }
+
   public playUpgradeBuy(): void {
     const ctx = this.ensureReady();
     if (!ctx) {

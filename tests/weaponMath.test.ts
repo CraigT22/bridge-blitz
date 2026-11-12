@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  computeEffectiveFiringSquad,
   computeSquadVolleyPlan,
   MAX_VISUAL_SOLDIERS,
   resolveWeaponPickup,
@@ -34,20 +35,34 @@ describe('weaponMath', () => {
     expect(equalPickup.bonusSquad).toBe(3);
   });
 
-  it('caps visual soldiers at 150 while scaling total volley DPS linearly up to 9,999+ logical troops', () => {
-    const plan10 = computeSquadVolleyPlan(10, 2, 1.0, 1.0);
+  it('scales front-rank DPS linearly up to 6 commandos and smoothly sublinearly for large platoons', () => {
+    expect(computeEffectiveFiringSquad(1)).toBe(1);
+    expect(computeEffectiveFiringSquad(6)).toBe(6);
+    // Smooth C1 transition above 6
+    expect(computeEffectiveFiringSquad(7)).toBeGreaterThan(6);
+    expect(computeEffectiveFiringSquad(7)).toBeLessThan(7);
+
+    const plan6 = computeSquadVolleyPlan(6, 2, 1.0, 1.0);
+    const plan38 = computeSquadVolleyPlan(38, 2, 1.0, 1.0);
     const plan1000 = computeSquadVolleyPlan(1000, 2, 1.0, 1.0);
 
-    expect(plan10.visualSoldiers).toBe(10);
+    expect(plan6.visualSoldiers).toBe(6);
     expect(plan1000.visualSoldiers).toBe(MAX_VISUAL_SOLDIERS);
 
-    const dps10 =
-      (plan10.activeEmitters * plan10.projectilesPerEmitter * plan10.damagePerProjectile) /
-      plan10.intervalSeconds;
+    const dps6 =
+      (plan6.activeEmitters * plan6.projectilesPerEmitter * plan6.damagePerProjectile) /
+      plan6.intervalSeconds;
+    const dps38 =
+      (plan38.activeEmitters * plan38.projectilesPerEmitter * plan38.damagePerProjectile) /
+      plan38.intervalSeconds;
     const dps1000 =
       (plan1000.activeEmitters * plan1000.projectilesPerEmitter * plan1000.damagePerProjectile) /
       plan1000.intervalSeconds;
 
-    expect(dps1000 / dps10).toBeCloseTo(100, 5);
+    // 38 troops => 4*sqrt(36)-2 = 22 effective firing soldiers (22/6 = 3.666x)
+    expect(dps38 / dps6).toBeCloseTo(22 / 6, 4);
+    expect(dps1000).toBeGreaterThan(dps38);
+    // Prevents 1,000-troop snowball from dealing 166x front-rank DPS
+    expect(dps1000 / dps6).toBeLessThan(25);
   });
 });

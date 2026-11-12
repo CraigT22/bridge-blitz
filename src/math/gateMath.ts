@@ -18,9 +18,27 @@ export interface GateHitOutcome {
   readonly ringProgress: number;
 }
 
+export const MAX_ADD_GATE_VALUE = 30;
+export const POSITIVE_GATE_RESISTANCE_SLOPE = 0.22;
+
+/**
+ * Computes damage required for the next +1 increment on a shootable ADD gate:
+ * - Negative values (< 0) use 1.0x base threshold so flipping red gates to blue feels responsive.
+ * - Non-negative values (>= 0) require progressively more damage per +1 to prevent +200 runaway snowballs.
+ */
+export function computeGateStepThreshold(
+  baseDamagePerIncrement: number,
+  currentValue: number
+): number {
+  if (currentValue < 0) {
+    return baseDamagePerIncrement;
+  }
+  return baseDamagePerIncrement * (1 + currentValue * POSITIVE_GATE_RESISTANCE_SLOPE);
+}
+
 /**
  * Applies incoming projectile damage to a gate.
- * - Shootable ADD gates accumulate damage and increase displayed integer by +1 every K damage.
+ * - Shootable ADD gates accumulate damage with progressive resistance above 0 up to MAX_ADD_GATE_VALUE (+30).
  * - Locked MUL/DIV gates ignore projectile damage and signal a metallic ricochet.
  */
 export function applyGateBulletHit(state: GateHitState, bulletDamage: number): GateHitOutcome {
@@ -36,23 +54,51 @@ export function applyGateBulletHit(state: GateHitState, bulletDamage: number): G
     };
   }
 
-  const threshold = state.damagePerIncrement;
-  const totalAccumulated = state.hitAccumulator + bulletDamage;
-  const deltaIncrements = Math.floor(totalAccumulated / threshold);
-  const remainder = totalAccumulated - deltaIncrements * threshold;
-  const nextValue = state.value + deltaIncrements;
+  if (state.value >= MAX_ADD_GATE_VALUE) {
+    return {
+      value: state.value,
+      hitAccumulator: 0,
+      deltaIncrements: 0,
+      crossedZeroOrPositive: false,
+      flippedToPositive: false,
+      ricochet: false,
+      ringProgress: 0.999,
+    };
+  }
 
-  const crossedZeroOrPositive = state.value < 0 && nextValue >= 0;
-  const flippedToPositive = state.value <= 0 && nextValue > 0;
+  let curValue = state.value;
+  let acc = state.hitAccumulator + bulletDamage;
+  let deltaIncrements = 0;
+
+  while (curValue < MAX_ADD_GATE_VALUE) {
+    const stepThreshold = computeGateStepThreshold(state.damagePerIncrement, curValue);
+    if (acc + 1e-9 < stepThreshold) {
+      break;
+    }
+    acc = Math.max(0, acc - stepThreshold);
+    curValue += 1;
+    deltaIncrements += 1;
+  }
+
+  if (curValue >= MAX_ADD_GATE_VALUE) {
+    acc = 0;
+  }
+
+  const nextThreshold = computeGateStepThreshold(state.damagePerIncrement, curValue);
+  const crossedZeroOrPositive = state.value < 0 && curValue >= 0;
+  const flippedToPositive = state.value <= 0 && curValue > 0;
 
   return {
-    value: nextValue,
-    hitAccumulator: remainder,
+    value: curValue,
+    hitAccumulator: acc,
     deltaIncrements,
     crossedZeroOrPositive,
     flippedToPositive,
     ricochet: false,
-    ringProgress: Math.min(0.999, Math.max(0, remainder / threshold)),
+    ringProgress:
+      curValue >= MAX_ADD_GATE_VALUE
+        ? 0.999
+        : Math.min(0.999, Math.max(0, acc / nextThreshold)),
   };
 }
 

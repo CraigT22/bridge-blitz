@@ -3,6 +3,7 @@ import { GameStateMachine, WIPEOUT_SLOWMO_DURATION } from '../src/core/GameState
 import { BulletPool, ParticlePool, RagdollPool } from '../src/core/ObjectPool';
 import { sanitizeSaveData } from '../src/core/SaveManager';
 import { CAMPAIGN_STAGES, generateEndlessWaveStage } from '../src/core/StageData';
+import { selectBossSalvoLaneMask } from '../src/entities/BossEntity';
 
 describe('ObjectPool & Core State Integrity', () => {
   it('maintains contiguous O(1) swap-remove invariants in BulletPool', () => {
@@ -97,14 +98,36 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(fsm.timeScale).toBe(1.0);
   });
 
-  it('defines 10 valid handcrafted campaign stages with all 4 Boss war-machine archetypes', () => {
+  it('guarantees Boss telegraphed lane salvos target player lane while always leaving >= 1 safe lane', () => {
+    for (const x of [-3.2, 0.0, 3.2]) {
+      const expectedPlayerLane = x < -1.15 ? 0 : x > 1.15 ? 2 : 1;
+
+      const mask1 = selectBossSalvoLaneMask(x, 1, 0);
+      expect(mask1[expectedPlayerLane]).toBe(true);
+      expect(mask1.filter(Boolean)).toHaveLength(1);
+
+      for (let cycle = 0; cycle < 4; cycle++) {
+        const mask2 = selectBossSalvoLaneMask(x, 2, cycle);
+        expect(mask2[expectedPlayerLane]).toBe(true);
+        expect(mask2.filter(Boolean)).toHaveLength(2);
+        // Strictly at least 1 safe lane (false)
+        expect(mask2.some((locked) => !locked)).toBe(true);
+      }
+    }
+  });
+
+  it('defines 10 valid handcrafted campaign stages with spaced obstacles and active Boss salvos', () => {
     expect(CAMPAIGN_STAGES).toHaveLength(10);
     const seenChassis = new Set<string>();
     for (let i = 0; i < CAMPAIGN_STAGES.length; i++) {
       const stage = CAMPAIGN_STAGES[i];
       expect(stage.stageNumber).toBe(i + 1);
+      expect(stage.trackLength).toBeGreaterThanOrEqual(265);
       expect(stage.gatePairs.length).toBeGreaterThanOrEqual(3);
-      expect(stage.boss.maxHp).toBeGreaterThan(0);
+      expect(stage.boss.maxHp).toBeGreaterThanOrEqual(1100);
+      expect(stage.boss.salvoLanes === 1 || stage.boss.salvoLanes === 2).toBe(true);
+      expect(stage.boss.salvoInterval).toBeGreaterThan(1.5);
+      expect(stage.boss.salvoDamage).toBeGreaterThanOrEqual(5);
       expect(stage.boss.chassis).toBeTruthy();
       expect(stage.boss.primaryHex).toBeGreaterThan(0);
       seenChassis.add(stage.boss.chassis);
@@ -117,6 +140,8 @@ describe('ObjectPool & Core State Integrity', () => {
     const wave4 = generateEndlessWaveStage(4);
     const wave5 = generateEndlessWaveStage(5);
     expect(wave5.boss.maxHp).toBeGreaterThan(wave1.boss.maxHp);
+    expect(wave1.boss.salvoLanes).toBe(1);
+    expect(wave4.boss.salvoLanes).toBe(2);
     expect(wave4.boss.chassis).toBe('SOVEREIGN_TITAN');
   });
 

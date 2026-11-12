@@ -16,7 +16,7 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     pattern: 'SINGLE',
     fireRate: 2.5,
     damageMultiplier: 1.0,
-    projectileSpeed: 38,
+    projectileSpeed: 28,
     pierceCount: 1,
     spreadRadians: 0,
     colorHex: 0xffd85a,
@@ -29,7 +29,7 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     pattern: 'SINGLE',
     fireRate: 5.0,
     damageMultiplier: 1.15,
-    projectileSpeed: 44,
+    projectileSpeed: 32,
     pierceCount: 1,
     spreadRadians: 0.9 * DEG_TO_RAD,
     colorHex: 0xffe66d,
@@ -42,7 +42,7 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     pattern: 'BURST_2',
     fireRate: 4.5,
     damageMultiplier: 1.6,
-    projectileSpeed: 50,
+    projectileSpeed: 36,
     pierceCount: 1,
     spreadRadians: 0.4 * DEG_TO_RAD,
     colorHex: 0xffae42,
@@ -55,7 +55,7 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     pattern: 'TWIN_SPREAD',
     fireRate: 8.5,
     damageMultiplier: 1.4,
-    projectileSpeed: 54,
+    projectileSpeed: 39,
     pierceCount: 1,
     spreadRadians: 3.0 * DEG_TO_RAD,
     colorHex: 0xff8c38,
@@ -68,7 +68,7 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     pattern: 'PIERCING',
     fireRate: 4.0,
     damageMultiplier: 2.75,
-    projectileSpeed: 58,
+    projectileSpeed: 42,
     pierceCount: 2,
     spreadRadians: 0,
     colorHex: 0x36f3ff,
@@ -125,9 +125,24 @@ export interface VolleyDamagePlan {
 }
 
 /**
- * Computes visual soldier cap (<=150), emitter count (<=48), and exact proportional
- * per-projectile damage so a logical squad of 2,500 deals 2,500x single-soldier DPS
- * while keeping projectile counts well inside the fixed BulletPool at 60 FPS.
+ * Models front-rank clear line-of-sight (1:1 up to 6 commandos) plus smooth C1 sublinear
+ * rear-platoon suppressive fire (4 * sqrt(n - 2) - 2 for n > 6).
+ * Every additional commando increases total squad DPS and 1-for-1 durability without letting
+ * 500+ troop snowballs vaporize Bosses in 0.2 seconds.
+ */
+export function computeEffectiveFiringSquad(logicalSquad: number): number {
+  if (logicalSquad <= 0) {
+    return 0;
+  }
+  if (logicalSquad <= 6) {
+    return logicalSquad;
+  }
+  return 4 * Math.sqrt(logicalSquad - 2) - 2;
+}
+
+/**
+ * Computes visual soldier cap (<=150), emitter count (<=48), and platoon-scaled
+ * per-projectile damage while keeping projectile counts inside the fixed BulletPool at 60 FPS.
  */
 export function computeSquadVolleyPlan(
   logicalSquad: number,
@@ -152,12 +167,10 @@ export function computeSquadVolleyPlan(
   const projectilesPerEmitter =
     spec.pattern === 'BURST_2' || spec.pattern === 'TWIN_SPREAD' ? 2 : 1;
 
-  // Split pattern damage across sub-projectiles of a single burst/twin shot so
-  // total damage per shot event equals BASE * bulletPower * spec.damageMultiplier,
-  // scaled linearly by (logicalSquad / activeEmitters).
   const perEventDamage =
     BASE_SOLDIER_BULLET_DAMAGE * bulletPowerMultiplier * spec.damageMultiplier;
-  const squadScale = logicalSquad / activeEmitters;
+  const effectiveSquad = computeEffectiveFiringSquad(logicalSquad);
+  const squadScale = effectiveSquad / activeEmitters;
   const damagePerProjectile = (perEventDamage / projectilesPerEmitter) * squadScale;
 
   const effectiveFireRate = Math.max(0.5, spec.fireRate * fireRateMultiplier);

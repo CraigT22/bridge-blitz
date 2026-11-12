@@ -552,7 +552,7 @@ export class HudController {
 
       const ratePct = Math.min(100, Math.round((spec.fireRate / 8.5) * 100));
       const dmgPct = Math.min(100, Math.round((spec.damageMultiplier / 2.75) * 100));
-      const velPct = Math.min(100, Math.round((spec.projectileSpeed / 58) * 100));
+      const velPct = Math.min(100, Math.round((spec.projectileSpeed / 42) * 100));
       const armorPct = spec.bossArmorFactor > 1 ? 100 : 65;
 
       this.armoryStatBars.innerHTML = `
@@ -596,10 +596,10 @@ export class HudController {
       this.armoryItemKicker.textContent = `SECTOR ${st.stageNumber} // ${CHASSIS_LABELS[boss.chassis]}`;
       this.armoryItemName.textContent = boss.name.toUpperCase();
 
-      const hpPct = Math.min(100, Math.max(12, Math.round((boss.maxHp / 5600) * 100)));
+      const hpPct = Math.min(100, Math.max(12, Math.round((boss.maxHp / 38000) * 100)));
       const segPct = Math.round((boss.segments / 10) * 100);
-      const spdPct = Math.round((boss.advanceSpeed / 2.3) * 100);
-      const rewPct = Math.round((boss.rewardCoins / 350) * 100);
+      const spdPct = Math.round((boss.advanceSpeed / 1.55) * 100);
+      const rewPct = Math.round((boss.rewardCoins / 380) * 100);
 
       this.armoryStatBars.innerHTML = `
         <div class="stat-meter">
@@ -607,7 +607,7 @@ export class HudController {
           <div class="stat-meter__track"><div class="stat-meter__fill" style="width:${hpPct}%"></div></div>
         </div>
         <div class="stat-meter">
-          <div class="stat-meter__top"><span>ARMOR PLATES</span><strong>${boss.segments} Segs</strong></div>
+          <div class="stat-meter__top"><span>LANE SALVO</span><strong>${boss.salvoLanes}x (-${boss.salvoDamage})</strong></div>
           <div class="stat-meter__track"><div class="stat-meter__fill" style="width:${segPct}%"></div></div>
         </div>
         <div class="stat-meter">
@@ -619,7 +619,7 @@ export class HudController {
           <div class="stat-meter__track"><div class="stat-meter__fill" style="width:${rewPct}%"></div></div>
         </div>
       `;
-      this.armoryItemNote.textContent = `Guarding ${st.title} (${st.trackLength}m span). Equip Lv5 Plasma Rifle for 135% armor-piercing damage!`;
+      this.armoryItemNote.textContent = `Guarding ${st.title} (${st.trackLength}m). Fires ${boss.salvoLanes}-lane telegraphed plasma salvos every ${boss.salvoInterval.toFixed(1)}s — steer into the safe lane!`;
     }
   }
 

@@ -10,7 +10,7 @@ import {
   WEAPON_SPECS,
 } from '../math/weaponMath';
 
-export const SQUAD_MARCH_SPEED = 12.2;
+export const SQUAD_MARCH_SPEED = 7.8;
 
 export class SquadController {
   public logicalCount = 1;
@@ -121,7 +121,8 @@ export class SquadController {
     dt: number,
     fireRateMultiplier: number,
     bulletPowerMultiplier: number,
-    bulletPool: BulletPool
+    bulletPool: BulletPool,
+    aimYawRadians = 0
   ): boolean {
     if (this.logicalCount <= 0) {
       return false;
@@ -140,7 +141,8 @@ export class SquadController {
           this.pendingBurstDamage,
           spec.spreadRadians,
           false,
-          bulletPool
+          bulletPool,
+          aimYawRadians
         );
         firedAny = true;
       }
@@ -162,7 +164,8 @@ export class SquadController {
           plan.damagePerProjectile,
           spec.spreadRadians,
           false,
-          bulletPool
+          bulletPool,
+          aimYawRadians
         );
         this.pendingBurstTimer = 0.062;
         this.pendingBurstDamage = plan.damagePerProjectile;
@@ -173,7 +176,8 @@ export class SquadController {
           plan.damagePerProjectile,
           spec.spreadRadians,
           true,
-          bulletPool
+          bulletPool,
+          aimYawRadians
         );
       } else {
         this.emitVolleyStream(
@@ -181,7 +185,8 @@ export class SquadController {
           plan.damagePerProjectile,
           spec.spreadRadians,
           false,
-          bulletPool
+          bulletPool,
+          aimYawRadians
         );
       }
       firedAny = true;
@@ -199,7 +204,8 @@ export class SquadController {
     damagePerProjectile: number,
     spreadRad: number,
     twinStream: boolean,
-    bulletPool: BulletPool
+    bulletPool: BulletPool,
+    aimYawRadians: number
   ): void {
     const vis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
     if (vis <= 0 || emitterCount <= 0) {
@@ -210,16 +216,17 @@ export class SquadController {
     const speed = spec.projectileSpeed;
     // Uniform crisp tracer bullet scale across all tiers
     const bulletScale = 1.05;
-    const maxAge = 1.25;
+    const maxAge = 1.30;
 
     for (let e = 0; e < emitterCount; e++) {
       const soldierIdx = (this.emitterCursor + e) % vis;
-      const sx = this.soldierWorldX[soldierIdx] + 0.105;
+      const sx = this.soldierWorldX[soldierIdx] + 0.178;
       const sz = this.soldierWorldZ[soldierIdx] - 0.62;
 
       if (twinStream) {
-        const vxLeft = Math.sin(-spreadRad) * speed;
-        const vzLeft = -Math.cos(-spreadRad) * speed;
+        const angLeft = aimYawRadians - spreadRad;
+        const vxLeft = Math.sin(angLeft) * speed;
+        const vzLeft = -Math.cos(angLeft) * speed;
         bulletPool.spawn(
           sx - 0.07,
           0.56,
@@ -234,8 +241,9 @@ export class SquadController {
           spec.colorHex
         );
 
-        const vxRight = Math.sin(spreadRad) * speed;
-        const vzRight = -Math.cos(spreadRad) * speed;
+        const angRight = aimYawRadians + spreadRad;
+        const vxRight = Math.sin(angRight) * speed;
+        const vzRight = -Math.cos(angRight) * speed;
         bulletPool.spawn(
           sx + 0.07,
           0.56,
@@ -252,8 +260,9 @@ export class SquadController {
       } else {
         const jitterAngle =
           spreadRad > 0 ? (((soldierIdx * 7 + e * 3) % 9) - 4) * 0.25 * spreadRad : 0;
-        const vx = Math.sin(jitterAngle) * speed;
-        const vz = -Math.cos(jitterAngle) * speed;
+        const totalAngle = aimYawRadians + jitterAngle;
+        const vx = Math.sin(totalAngle) * speed;
+        const vz = -Math.cos(totalAngle) * speed;
         bulletPool.spawn(
           sx,
           0.56,

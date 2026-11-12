@@ -71,6 +71,9 @@ export interface BossDefinition {
   readonly maxHp: number;
   readonly segments: number;
   readonly advanceSpeed: number;
+  readonly salvoLanes: 1 | 2;
+  readonly salvoInterval: number;
+  readonly salvoDamage: number;
   readonly rewardCoins: number;
 }
 
@@ -144,6 +147,7 @@ export interface TelemetrySnapshot {
   tiresBrokenThisRun: number;
   weaponLocksTriggeredThisRun: number;
   enemiesDefeatedThisRun: number;
+  bossSalvosDodgedThisRun: number;
   activeBullets: number;
   activeParticles: number;
   upgrades: UpgradeLevels;

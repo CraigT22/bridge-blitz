@@ -92,6 +92,7 @@ export class BridgeBlitzGame {
   private tiresBrokenThisRun = 0;
   private weaponLocksThisRun = 0;
   private bonusCoinsThisRun = 0;
+  private bossSalvosDodgedThisRun = 0;
   private pendingSummary: RunSummary | null = null;
 
   constructor() {
@@ -228,6 +229,7 @@ export class BridgeBlitzGame {
     this.tiresBrokenThisRun = 0;
     this.weaponLocksThisRun = 0;
     this.bonusCoinsThisRun = 0;
+    this.bossSalvosDodgedThisRun = 0;
     this.pendingSummary = null;
     this.coinFountainTimer = 0;
     this.dioramaYawOffset = 0;
@@ -480,7 +482,7 @@ export class BridgeBlitzGame {
 
     for (let k = 0; k < burstCount; k++) {
       const idx = (seed + k * 5) % vis;
-      const sx = this.squad.soldierWorldX[idx] + 0.105;
+      const sx = this.squad.soldierWorldX[idx] + 0.178;
       const sz = this.squad.soldierWorldZ[idx] - 0.68;
       this.vfx.spawnMuzzleFlash(sx, 0.56, sz, flashScale, flashColor);
 
@@ -546,9 +548,28 @@ export class BridgeBlitzGame {
       this.input.resetFrameDeltas();
     }
 
-    // Smoothly orient commandos toward the low-angle Hero Diorama in PRE_RUN, and snap down-bridge (-Z) on Deploy!
+    // In BOSS_FIGHT, commandos angle slightly inward toward the Boss so strafing lane salvos keeps fire on target!
+    const bossAimYaw =
+      state === 'BOSS_FIGHT' && this.boss.active
+        ? Math.max(
+            -0.34,
+            Math.min(
+              0.34,
+              Math.atan2(
+                this.boss.x - this.squad.x,
+                Math.max(2.2, this.squad.z - this.boss.z)
+              )
+            )
+          )
+        : 0;
+
+    // Smoothly orient commandos toward the low-angle Hero Diorama in PRE_RUN, and down-bridge / Boss in combat!
     const targetFacingYaw =
-      state === 'PRE_RUN' ? HERO_DIORAMA_YAW + this.dioramaYawOffset : 0;
+      state === 'PRE_RUN'
+        ? HERO_DIORAMA_YAW + this.dioramaYawOffset
+        : state === 'BOSS_FIGHT'
+          ? -bossAimYaw
+          : 0;
     this.commandoFacingYaw +=
       (targetFacingYaw - this.commandoFacingYaw) * Math.min(1, dt * 12);
 
@@ -560,7 +581,8 @@ export class BridgeBlitzGame {
         dt,
         getFireRateMultiplier(save.upgrades.fireRate),
         getBulletPowerMultiplier(save.upgrades.bulletPower),
-        this.bulletPool
+        this.bulletPool,
+        0
       );
       if (fired) {
         this.sound.playGunfire(this.squad.weaponTier);
@@ -587,7 +609,8 @@ export class BridgeBlitzGame {
         dt,
         getFireRateMultiplier(save.upgrades.fireRate),
         getBulletPowerMultiplier(save.upgrades.bulletPower),
-        this.bulletPool
+        this.bulletPool,
+        bossAimYaw
       );
       if (fired) {
         this.sound.playGunfire(this.squad.weaponTier);
@@ -712,7 +735,7 @@ export class BridgeBlitzGame {
       }
     }
 
-    // Update Boss War Machine
+    // Update Boss War Machine & Telegraphed Lane Salvos
     if (state === 'RUNNING' || state === 'BOSS_FIGHT') {
       this.boss.update(
         dt,
@@ -721,6 +744,77 @@ export class BridgeBlitzGame {
         this.squad.z,
         this.squad.logicalCount
       );
+      if (this.boss.lastStepSalvoWarning) {
+        this.sound.playBossSalvoWarning();
+        this.combatText.spawn(
+          this.squad.x,
+          1.95,
+          this.squad.z - 1.2,
+          'DODGE LANE!',
+          'gold',
+          0.75
+        );
+      }
+      if (this.boss.lastStepSalvoLaunched) {
+        this.sceneManager.addShake(0.22);
+        this.vfx.spawnShockwave(this.boss.x, this.boss.z + 1.4, 2.8, 0.26, 0xff5e2b);
+      }
+      if (this.boss.lastStepSalvoHitDamage > 0 && this.squad.logicalCount > 0) {
+        const lost = Math.min(this.squad.logicalCount, this.boss.lastStepSalvoHitDamage);
+        const ragLost = Math.min(4, lost);
+        for (let r = 0; r < ragLost; r++) {
+          this.ragdollPool.spawnKnockback(this.squad.x, this.squad.z, false, 1.3);
+        }
+        this.squad.setLogicalCount(this.squad.logicalCount - lost);
+        this.sound.playBossSalvoImpact(false);
+        this.sceneManager.addShake(0.46);
+        this.vfx.spawnShockwave(this.boss.lastStepSalvoHitX, this.squad.z, 3.6, 0.36, 0xff2e4c);
+        this.particlePool.spawnBurst(
+          this.boss.lastStepSalvoHitX,
+          0.9,
+          this.squad.z,
+          20,
+          6.6,
+          0xff384c
+        );
+        this.combatText.spawn(
+          this.squad.x,
+          1.75,
+          this.squad.z,
+          `-${lost} SALVO!`,
+          'negative',
+          0.95
+        );
+        if (this.squad.logicalCount <= 0) {
+          this.triggerRunDefeat();
+        }
+      } else if (this.boss.lastStepSalvoDodgedCount > 0 && this.squad.logicalCount > 0) {
+        this.bossSalvosDodgedThisRun += this.boss.lastStepSalvoDodgedCount;
+        this.sound.playBossSalvoImpact(true);
+        this.vfx.spawnShockwave(
+          this.boss.lastStepSalvoDodgeX,
+          this.squad.z + 0.3,
+          2.2,
+          0.26,
+          0xff9f43
+        );
+        this.particlePool.spawnBurst(
+          this.boss.lastStepSalvoDodgeX,
+          0.6,
+          this.squad.z + 0.3,
+          10,
+          4.4,
+          0xffae42
+        );
+        this.combatText.spawn(
+          this.squad.x,
+          1.65,
+          this.squad.z,
+          'DODGED!',
+          'cyan',
+          0.75
+        );
+      }
       if (this.boss.lastStepTriggeredShake) {
         const isSlam = this.boss.lastStepSlamDamage > 0;
         this.sceneManager.addShake(isSlam ? 0.55 : 0.16);
@@ -807,7 +901,8 @@ export class BridgeBlitzGame {
       const bx = pool.x[i] + pool.vx[i] * dt;
       const bz = prevZ + pool.vz[i] * dt;
 
-      if (bz < this.squad.z - 58) {
+      // 32m tactical engagement range prevents bullets from sniping unseen gates off-screen!
+      if (bz < this.squad.z - 32) {
         pool.deactivate(i);
         continue;
       }
@@ -1047,7 +1142,7 @@ export class BridgeBlitzGame {
 
     const effectiveProgressForCoins =
       save.selectedMode === 'ENDLESS'
-        ? totalDistanceMeters / 220
+        ? totalDistanceMeters / 265
         : clearedStage
           ? 1.0
           : sectorProgress;
@@ -1215,6 +1310,7 @@ export class BridgeBlitzGame {
       tiresBrokenThisRun: this.tiresBrokenThisRun,
       weaponLocksTriggeredThisRun: this.weaponLocksThisRun,
       enemiesDefeatedThisRun: this.enemiesDefeatedThisRun,
+      bossSalvosDodgedThisRun: this.bossSalvosDodgedThisRun,
       activeBullets: this.bulletPool.activeCount,
       activeParticles: this.particlePool.activeCount,
       upgrades: { ...save.upgrades },

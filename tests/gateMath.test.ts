@@ -1,34 +1,68 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyGateBulletHit,
+  computeGateStepThreshold,
   formatGateLabel,
+  MAX_ADD_GATE_VALUE,
   resolveGateSquadCount,
 } from '../src/math/gateMath';
 
 describe('gateMath', () => {
-  it('accumulates fractional bullet damage and increments +1 every K damage threshold', () => {
-    let state = {
+  it('accumulates fractional bullet damage at 1.0x threshold on negative gates and progressive resistance above 0', () => {
+    let negState = {
       operator: 'ADD' as const,
-      value: 5,
+      value: -5,
       hitAccumulator: 0,
       damagePerIncrement: 4,
       isLocked: false,
     };
 
-    const hit1 = applyGateBulletHit(state, 2.5);
-    expect(hit1.value).toBe(5);
+    const hit1 = applyGateBulletHit(negState, 2.5);
+    expect(hit1.value).toBe(-5);
     expect(hit1.deltaIncrements).toBe(0);
     expect(hit1.hitAccumulator).toBeCloseTo(2.5);
     expect(hit1.ringProgress).toBeCloseTo(2.5 / 4);
 
-    state = { ...state, value: hit1.value, hitAccumulator: hit1.hitAccumulator };
-    const hit2 = applyGateBulletHit(state, 2.5);
-    expect(hit2.value).toBe(6);
+    negState = { ...negState, value: hit1.value, hitAccumulator: hit1.hitAccumulator };
+    const hit2 = applyGateBulletHit(negState, 2.5);
+    expect(hit2.value).toBe(-4);
     expect(hit2.deltaIncrements).toBe(1);
     expect(hit2.hitAccumulator).toBeCloseTo(1.0);
+
+    // Above 0, step cost scales progressively via computeGateStepThreshold
+    const posCostAt5 = computeGateStepThreshold(4, 5);
+    expect(posCostAt5).toBeGreaterThan(4);
+    const posHit = applyGateBulletHit(
+      {
+        operator: 'ADD',
+        value: 5,
+        hitAccumulator: 0,
+        damagePerIncrement: 4,
+        isLocked: false,
+      },
+      posCostAt5
+    );
+    expect(posHit.value).toBe(6);
+    expect(posHit.deltaIncrements).toBe(1);
   });
 
-  it('detects negative-to-positive gate flip across -1 -> 0 -> +1', () => {
+  it('caps shootable ADD gates cleanly at MAX_ADD_GATE_VALUE (+30) to prevent runaway snowballs', () => {
+    const res = applyGateBulletHit(
+      {
+        operator: 'ADD',
+        value: 28,
+        hitAccumulator: 0,
+        damagePerIncrement: 1.5,
+        isLocked: false,
+      },
+      5000
+    );
+    expect(res.value).toBe(MAX_ADD_GATE_VALUE);
+    expect(res.deltaIncrements).toBe(2);
+    expect(res.hitAccumulator).toBe(0);
+  });
+
+  it('detects negative-to-positive gate flip across -2 -> -1 -> 0 -> +1', () => {
     let state = {
       operator: 'ADD' as const,
       value: -2,
@@ -58,6 +92,7 @@ describe('gateMath', () => {
   });
 
   it('triggers both crossedZeroOrPositive and flippedToPositive when jumping directly from -1 to +2', () => {
+    // -1 -> 0 costs 2.0, 0 -> 1 costs 2.0, 1 -> 2 costs 2.0 * 1.22 = 2.44 (total 6.44)
     const res = applyGateBulletHit(
       {
         operator: 'ADD',
@@ -66,7 +101,7 @@ describe('gateMath', () => {
         damagePerIncrement: 2,
         isLocked: false,
       },
-      6
+      6.5
     );
     expect(res.value).toBe(2);
     expect(res.crossedZeroOrPositive).toBe(true);

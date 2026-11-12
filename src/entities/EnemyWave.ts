@@ -58,13 +58,13 @@ export class EnemyWaveSlot {
       this.contactCooldown = Math.max(0, this.contactCooldown - dt);
     }
 
-    // Begin marching down the bridge once within 95m of the squad
-    if (squadZ - this.z < 95) {
+    // Begin marching down the bridge once within 52m of the squad (stays inside its own obstacle zone)
+    if (squadZ - this.z < 52) {
       this.z += this.speed * dt;
-      // Subtle homing drift toward the player's squad when within 28m
-      if (squadZ - this.z < 28 && squadZ - this.z > -3) {
+      // Active tactical homing toward the player's squad when within 30m
+      if (squadZ - this.z < 30 && squadZ - this.z > -3) {
         const dx = squadX - this.x;
-        this.x += Math.sign(dx) * Math.min(Math.abs(dx), 1.65 * dt);
+        this.x += Math.sign(dx) * Math.min(Math.abs(dx), 2.05 * dt);
       }
       this.marchPhase += dt * 9.5;
     }
