@@ -43,9 +43,9 @@ const WATER_FRAGMENT_SHADER = /* glsl */ `
     vec3 N = normalize(vec3(-dx, 1.0, -dz));
     vec3 V = normalize(uCamPos - vWorldPos);
 
-    // Schlick Fresnel sky reflection
-    float NoV = max(0.02, dot(N, V));
-    float fresnel = pow(1.0 - NoV, 4.0);
+    // Schlick Fresnel sky reflection (strictly positive pow base for mobile GLSL ES)
+    float NoV = clamp(dot(N, V), 0.02, 0.9999);
+    float fresnel = pow(max(0.0001, 1.0 - NoV), 4.0);
 
     vec3 deepTrough = vec3(0.028, 0.068, 0.105);
     vec3 seaBody = vec3(0.055, 0.145, 0.195);
@@ -58,8 +58,9 @@ const WATER_FRAGMENT_SHADER = /* glsl */ `
     // Golden-Hour Sun Specular Glitter Path across the bay
     vec3 sunDir = normalize(vec3(-0.38, 0.21, -0.90));
     vec3 H = normalize(sunDir + V);
-    float specTight = pow(max(0.0, dot(N, H)), 96.0);
-    float specBroad = pow(max(0.0, dot(N, H)), 18.0);
+    float NoH = max(0.0001, dot(N, H));
+    float specTight = pow(NoH, 96.0);
+    float specBroad = pow(NoH, 18.0);
     col += vec3(1.55, 0.86, 0.38) * specTight * 1.35;
     col += vec3(0.55, 0.26, 0.10) * specBroad * 0.42;
 
@@ -74,7 +75,8 @@ const WATER_FRAGMENT_SHADER = /* glsl */ `
 
     // Distance atmospheric golden-haze blend
     float dist = length(uCamPos.xz - p);
-    float fogFactor = 1.0 - exp(-pow(dist * 0.0046, 2.0));
+    float dNorm = dist * 0.0046;
+    float fogFactor = 1.0 - exp(-(dNorm * dNorm));
     col = mix(col, vec3(0.56, 0.31, 0.22), clamp(fogFactor, 0.0, 0.92));
 
     gl_FragColor = vec4(col, 1.0);
@@ -128,7 +130,7 @@ export class BridgeEnvironment {
       uTime: { value: 0 },
       uCamPos: { value: new THREE.Vector3(0, 9, 14) },
     };
-    const waterGeo = new THREE.PlaneGeometry(420, 560, 72, 96);
+    const waterGeo = new THREE.PlaneGeometry(420, 560, 64, 84);
     waterGeo.rotateX(-Math.PI / 2);
     const waterMat = new THREE.ShaderMaterial({
       vertexShader: WATER_VERTEX_SHADER,
@@ -139,50 +141,50 @@ export class BridgeEnvironment {
     this.waterMesh.position.set(0, -4.6, -140);
     this.root.add(this.waterMesh);
 
-    // Shared Gritty Tactical PBR Bridge Materials
+    // Shared Gritty Tactical PBR Bridge Materials (tuned for direct 4-light forward pass)
     const deckMat = new THREE.MeshStandardMaterial({
       map: this.textures.albedo,
       bumpMap: this.textures.bump,
       bumpScale: 0.045,
       roughnessMap: this.textures.roughness,
-      roughness: 0.88,
-      metalness: 0.14,
+      roughness: 0.86,
+      metalness: 0.12,
     });
 
     const concreteBarrierMat = new THREE.MeshStandardMaterial({
-      color: 0x5c626b,
+      color: 0x656c76,
       bumpMap: this.textures.bump,
       bumpScale: 0.03,
-      roughness: 0.85,
+      roughness: 0.82,
       metalness: 0.08,
     });
 
     const curbMat = new THREE.MeshStandardMaterial({
       map: this.textures.hazardCurb,
-      roughness: 0.58,
-      metalness: 0.18,
+      roughness: 0.56,
+      metalness: 0.16,
     });
 
     const gunmetalMat = new THREE.MeshStandardMaterial({
-      color: 0x434c56,
+      color: 0x56616e,
       bumpMap: this.textures.steelPlate,
       bumpScale: 0.025,
       roughness: 0.36,
-      metalness: 0.78,
+      metalness: 0.42,
     });
 
     const cableSteelMat = new THREE.MeshStandardMaterial({
-      color: 0x6b7682,
-      roughness: 0.32,
-      metalness: 0.84,
+      color: 0x828f9d,
+      roughness: 0.3,
+      metalness: 0.46,
     });
 
     const towerMat = new THREE.MeshStandardMaterial({
-      color: 0x9e3426,
+      color: 0xa83829,
       bumpMap: this.textures.steelPlate,
       bumpScale: 0.035,
-      roughness: 0.46,
-      metalness: 0.52,
+      roughness: 0.44,
+      metalness: 0.32,
     });
 
     const lampGlowMat = new THREE.MeshStandardMaterial({

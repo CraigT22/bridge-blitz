@@ -60,7 +60,7 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const idx = (y * w + x) * 4;
-      const u = x / w; // 0..1 across 11.4m bridge width
+      const u = x / w;
 
       // Subtle darkened vehicle tire ruts in left (~0.28) and right (~0.72) lanes
       const leftLaneDist = Math.abs(u - 0.285);
@@ -71,11 +71,11 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
 
       const grain = (rand() - 0.5) * 24 + (rand() - 0.5) * 14;
       const coarse = Math.sin(x * 0.09) * Math.cos(y * 0.07) * 5;
-      const baseVal = 36 - rut * 7 + grain * 0.65 + coarse;
+      const baseVal = 38 - rut * 7 + grain * 0.65 + coarse;
 
-      aImg.data[idx] = Math.max(14, Math.min(82, baseVal + 1));
-      aImg.data[idx + 1] = Math.max(16, Math.min(85, baseVal + 3));
-      aImg.data[idx + 2] = Math.max(20, Math.min(92, baseVal + 8));
+      aImg.data[idx] = Math.max(14, Math.min(86, baseVal + 1));
+      aImg.data[idx + 1] = Math.max(16, Math.min(89, baseVal + 3));
+      aImg.data[idx + 2] = Math.max(20, Math.min(96, baseVal + 8));
       aImg.data[idx + 3] = 255;
 
       const bumpVal = Math.max(0, Math.min(255, 128 + grain * 2.4));
@@ -84,8 +84,7 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
       bImg.data[idx + 2] = bumpVal;
       bImg.data[idx + 3] = 255;
 
-      // Tire ruts are slightly smoother (more specular sheen at golden hour!)
-      const roughVal = Math.max(85, Math.min(245, 218 - rut * 58 + grain * 0.9));
+      const roughVal = Math.max(85, Math.min(245, 212 - rut * 58 + grain * 0.9));
       rImg.data[idx] = roughVal;
       rImg.data[idx + 1] = roughVal;
       rImg.data[idx + 2] = roughVal;
@@ -100,7 +99,7 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
   // Steel expansion joint strip across top of tile + weathered cracks
   aCtx.fillStyle = '#171a1f';
   aCtx.fillRect(0, 0, w, 8);
-  aCtx.fillStyle = '#47515e';
+  aCtx.fillStyle = '#505b69';
   aCtx.fillRect(0, 2, w, 3);
   bCtx.fillStyle = '#282828';
   bCtx.fillRect(0, 0, w, 8);
@@ -129,13 +128,12 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
     bCtx.stroke();
   }
 
-  // Painted worn shoulder lines & center tactical double/dashed markings
-  aCtx.fillStyle = 'rgba(218, 165, 58, 0.78)';
+  // Painted worn shoulder lines & center tactical dashed markings
+  aCtx.fillStyle = 'rgba(218, 165, 58, 0.8)';
   aCtx.fillRect(22, 0, 7, h);
   aCtx.fillRect(w - 29, 0, 7, h);
 
-  // Subtle worn center double-divider guide & dashed lane stripe
-  aCtx.fillStyle = 'rgba(226, 232, 240, 0.85)';
+  aCtx.fillStyle = 'rgba(226, 232, 240, 0.86)';
   for (let dy = 24; dy < h; dy += 128) {
     aCtx.fillRect(w / 2 - 5, dy, 10, 74);
   }
@@ -144,7 +142,7 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(rx, ry);
-    tex.anisotropy = 8;
+    tex.anisotropy = 4;
     if (srgb) {
       tex.colorSpace = THREE.SRGBColorSpace;
     }
@@ -172,7 +170,6 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
     cCtx.closePath();
     cCtx.fill();
   }
-  // Grime & scuff overlay
   cCtx.fillStyle = 'rgba(18, 20, 24, 0.24)';
   for (let i = 0; i < 180; i++) {
     cCtx.fillRect(rand() * 128, rand() * 256, 2 + rand() * 8, 2 + rand() * 6);
@@ -230,67 +227,9 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
 }
 
 /**
- * Generates a rich PBR environment map (PMREM) with warm golden-hour sun horizon,
- * cool slate-blue upper sky, and dark ocean/concrete bounce so gunmetal & armor gleam!
- */
-export function createGoldenHourEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture {
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  pmrem.compileEquirectangularShader();
-
-  const envScene = new THREE.Scene();
-
-  const skyGeo = new THREE.SphereGeometry(40, 32, 24);
-  const skyMat = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    uniforms: {},
-    vertexShader: /* glsl */ `
-      varying vec3 vDir;
-      void main() {
-        vDir = normalize(position);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      varying vec3 vDir;
-      void main() {
-        float y = vDir.y;
-        vec3 zenith = vec3(0.09, 0.15, 0.28);
-        vec3 midSky = vec3(0.32, 0.26, 0.36);
-        vec3 horizon = vec3(1.15, 0.52, 0.22);
-        vec3 ground = vec3(0.08, 0.10, 0.13);
-
-        vec3 col;
-        if (y >= 0.0) {
-          float t1 = smoothstep(0.0, 0.28, y);
-          float t2 = smoothstep(0.22, 0.85, y);
-          col = mix(horizon, midSky, t1);
-          col = mix(col, zenith, t2);
-        } else {
-          col = mix(horizon * 0.45, ground, smoothstep(0.0, -0.35, y));
-        }
-
-        // Intense HDR sun lobe so gunmetal barrels & mech armor catch crisp specular highlights
-        vec3 sunDir = normalize(vec3(-0.38, 0.24, -0.89));
-        float sunDot = max(0.0, dot(normalize(vDir), sunDir));
-        col += vec3(3.6, 2.1, 0.95) * pow(sunDot, 48.0);
-        col += vec3(0.85, 0.42, 0.16) * pow(sunDot, 5.0);
-
-        gl_FragColor = vec4(col, 1.0);
-      }
-    `,
-  });
-  envScene.add(new THREE.Mesh(skyGeo, skyMat));
-
-  const target = pmrem.fromScene(envScene, 0.02);
-  skyGeo.dispose();
-  skyMat.dispose();
-  pmrem.dispose();
-  return target.texture;
-}
-
-/**
  * Dramatic Golden-Hour Sunset Sky Dome with sun disc, drifting cloud bands,
- * and distant jagged bay mountain silhouettes.
+ * and distant jagged bay mountain silhouettes (strictly GLSL ES 3.00 safe:
+ * zero atan(y,0) divisions and strictly positive pow() bases).
  */
 export function createGoldenHourSkyDome(): {
   mesh: THREE.Mesh;
@@ -300,7 +239,7 @@ export function createGoldenHourSkyDome(): {
     uTime: { value: 0 },
   };
 
-  const geo = new THREE.SphereGeometry(235, 40, 28);
+  const geo = new THREE.SphereGeometry(235, 36, 24);
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -355,13 +294,13 @@ export function createGoldenHourSkyDome(): {
 
         // Low-angle blazing sunset ahead-left of the bridge
         vec3 sunDir = normalize(vec3(-0.38, 0.21, -0.90));
-        float sunCos = max(0.0, dot(dir, sunDir));
-        col += vec3(0.95, 0.48, 0.18) * pow(sunCos, 6.0) * 0.65;
-        col += vec3(1.35, 0.92, 0.55) * smoothstep(0.9965, 0.9992, sunCos);
+        float sunCos = max(0.0001, dot(dir, sunDir));
+        col += vec3(0.95, 0.48, 0.18) * pow(sunCos, 6.0) * 0.68;
+        col += vec3(1.38, 0.94, 0.56) * smoothstep(0.9962, 0.9992, sunCos);
 
         // Stratified sunset clouds lit from underneath
         if (y > 0.01) {
-          vec2 cloudUv = dir.xz / (y + 0.16) * 1.45 + vec2(uTime * 0.012, -uTime * 0.006);
+          vec2 cloudUv = dir.xz / (y + 0.18) * 1.45 + vec2(uTime * 0.012, -uTime * 0.006);
           float c1 = noise2(cloudUv * 2.2);
           float c2 = noise2(cloudUv * 5.1 - 3.4);
           float cloud = smoothstep(0.47, 0.78, c1 * 0.68 + c2 * 0.32) * smoothstep(0.01, 0.11, y) * (1.0 - smoothstep(0.38, 0.72, y));
@@ -371,12 +310,14 @@ export function createGoldenHourSkyDome(): {
           col = mix(col, cloudCol, cloud * 0.68);
         }
 
-        // Distant jagged bay headlands / mountain ridge silhouette along the horizon
-        float az = atan(dir.x, -dir.z);
-        float ridge1 = 0.028 + 0.024 * sin(az * 3.1 + 0.7) + 0.012 * sin(az * 8.3 - 1.2) + 0.006 * cos(az * 17.0);
-        // Leave open ocean channel right down the bridge axis (az ~ 0)
-        float channelClear = smoothstep(0.08, 0.34, abs(az));
-        ridge1 *= channelClear;
+        // Distant jagged bay headlands along horizon (computed without atan division!)
+        float ridgeWave =
+          0.028 +
+          0.024 * sin(dir.x * 3.8 + dir.z * 2.1 + 0.7) +
+          0.012 * sin(dir.x * 9.5 - dir.z * 7.4 - 1.2) +
+          0.006 * cos(dir.x * 18.0 + dir.z * 13.0);
+        float channelClear = smoothstep(0.09, 0.36, abs(dir.x));
+        float ridge1 = ridgeWave * channelClear;
 
         if (y > -0.04 && y < ridge1) {
           vec3 mtnCol = mix(vec3(0.11, 0.11, 0.15), vec3(0.24, 0.16, 0.17), pow(sunCos, 3.0));

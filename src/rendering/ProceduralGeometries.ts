@@ -306,15 +306,19 @@ export function createEnemySoldierGeometry(): THREE.BufferGeometry {
  * Sleek aerodynamic tracer bolt geometry (hot core + elongated tail streak).
  */
 export function createTracerBoltGeometry(): THREE.BufferGeometry {
-  const core = new THREE.BoxGeometry(0.075, 0.075, 0.42);
+  const core = new THREE.BoxGeometry(0.068, 0.068, 0.46);
   core.translate(0, 0, -0.08);
-  const streak = new THREE.ConeGeometry(0.055, 0.95, 6);
+  const streak = new THREE.ConeGeometry(0.055, 0.98, 6);
   streak.rotateX(-Math.PI / 2);
   streak.translate(0, 0, 0.24);
+  // Soft outer glow sheath for lush single-pass additive glow without offscreen Bloom FBOs
+  const glowSheath = new THREE.BoxGeometry(0.16, 0.16, 0.76);
+  glowSheath.translate(0, 0, 0.08);
 
   return mergeColoredParts([
     { geometry: core, colorHex: 0xffffff, partId: 0 },
     { geometry: streak, colorHex: 0xffe4b5, partId: 0 },
+    { geometry: glowSheath, colorHex: 0x4d3418, partId: 0 },
   ]);
 }
 
@@ -325,19 +329,19 @@ export function createPadlockMesh(): THREE.Group {
   const group = new THREE.Group();
 
   const casingMat = new THREE.MeshStandardMaterial({
-    color: 0xd99b26,
-    metalness: 0.78,
+    color: 0xe0a634,
+    metalness: 0.45,
     roughness: 0.28,
   });
   const gunmetalMat = new THREE.MeshStandardMaterial({
-    color: 0x2a323d,
-    metalness: 0.85,
-    roughness: 0.3,
+    color: 0x3b4654,
+    metalness: 0.48,
+    roughness: 0.32,
   });
   const chromeMat = new THREE.MeshStandardMaterial({
-    color: 0xdbe4ee,
-    metalness: 0.92,
-    roughness: 0.16,
+    color: 0xe2eaf2,
+    metalness: 0.52,
+    roughness: 0.2,
   });
   const ledMat = new THREE.MeshBasicMaterial({
     color: 0xff3b30,
@@ -376,14 +380,14 @@ export function createWeaponPickupGroup(tier: WeaponTierId): THREE.Group {
   const group = new THREE.Group();
 
   const gunmetal = new THREE.MeshStandardMaterial({
-    color: 0x26303a,
-    metalness: 0.82,
-    roughness: 0.28,
+    color: 0x364352,
+    metalness: 0.46,
+    roughness: 0.3,
   });
   const receiverSteel = new THREE.MeshStandardMaterial({
-    color: 0x455261,
-    metalness: 0.76,
-    roughness: 0.32,
+    color: 0x5c6d80,
+    metalness: 0.48,
+    roughness: 0.28,
   });
 
   const accentColors: Record<WeaponTierId, number> = {
@@ -397,9 +401,9 @@ export function createWeaponPickupGroup(tier: WeaponTierId): THREE.Group {
   const accentMat = new THREE.MeshStandardMaterial({
     color: accentColors[tier],
     emissive: accentColors[tier],
-    emissiveIntensity: tier === 5 ? 1.35 : 0.55,
-    metalness: 0.5,
-    roughness: 0.22,
+    emissiveIntensity: tier === 5 ? 1.35 : 0.65,
+    metalness: 0.38,
+    roughness: 0.24,
   });
 
   if (tier === 1) {
@@ -534,39 +538,53 @@ export function createBossMechRig(): BossMechRig {
   const flashMaterials: THREE.MeshStandardMaterial[] = [];
 
   const crimsonOxide = new THREE.MeshStandardMaterial({
-    color: 0xb82032,
+    color: 0xc22538,
     roughness: 0.36,
-    metalness: 0.58,
+    metalness: 0.36,
   });
   const heavyGunmetal = new THREE.MeshStandardMaterial({
-    color: 0x232a34,
-    roughness: 0.34,
-    metalness: 0.84,
+    color: 0x35404e,
+    roughness: 0.36,
+    metalness: 0.46,
   });
   const brushedSteel = new THREE.MeshStandardMaterial({
-    color: 0x627080,
+    color: 0x7c8b9c,
     roughness: 0.26,
-    metalness: 0.9,
+    metalness: 0.52,
   });
   const hazardGold = new THREE.MeshStandardMaterial({
-    color: 0xe09f24,
-    roughness: 0.42,
-    metalness: 0.55,
+    color: 0xe6a62c,
+    roughness: 0.4,
+    metalness: 0.38,
   });
   const reactorGlow = new THREE.MeshStandardMaterial({
-    color: 0xffaa2b,
-    emissive: 0xff6a00,
-    emissiveIntensity: 2.1,
+    color: 0xffba42,
+    emissive: 0xff7300,
+    emissiveIntensity: 2.3,
     roughness: 0.18,
   });
   const opticCrimson = new THREE.MeshStandardMaterial({
     color: 0xff3b30,
     emissive: 0xff2a1f,
-    emissiveIntensity: 2.4,
+    emissiveIntensity: 2.5,
     roughness: 0.15,
   });
 
   flashMaterials.push(crimsonOxide, heavyGunmetal, brushedSteel, hazardGold);
+
+  // Grounded AO shadow disc beneath the Heavy Siege Mech
+  const mechShadow = new THREE.Mesh(
+    new THREE.CircleGeometry(1.85, 24),
+    new THREE.MeshBasicMaterial({
+      color: 0x05080d,
+      transparent: true,
+      opacity: 0.54,
+      depthWrite: false,
+    })
+  );
+  mechShadow.rotation.x = -Math.PI / 2;
+  mechShadow.position.set(0, 0.02, 0.05);
+  root.add(mechShadow);
 
   // Ground tactical threat ring beneath the Boss
   const hazardRingGeo = new THREE.RingGeometry(1.75, 2.02, 32);
@@ -574,7 +592,7 @@ export function createBossMechRig(): BossMechRig {
   const hazardRingMat = new THREE.MeshBasicMaterial({
     color: 0xff3b30,
     transparent: true,
-    opacity: 0.48,
+    opacity: 0.55,
     side: THREE.DoubleSide,
     depthWrite: false,
   });

@@ -72,15 +72,29 @@ export class TireWeaponStackSlot {
       emissive: 0x000000,
     });
     const rimMat = new THREE.MeshStandardMaterial({
-      color: 0x45515e,
+      color: 0x586778,
       roughness: 0.34,
-      metalness: 0.82,
+      metalness: 0.46,
     });
     const lugMat = new THREE.MeshStandardMaterial({
-      color: 0xcbd5e1,
-      roughness: 0.22,
-      metalness: 0.9,
+      color: 0xdbe5f0,
+      roughness: 0.24,
+      metalness: 0.5,
     });
+
+    // Grounded AO shadow disc beneath tire barricade
+    const stackShadow = new THREE.Mesh(
+      new THREE.CircleGeometry(1.18, 20),
+      new THREE.MeshBasicMaterial({
+        color: 0x05080d,
+        transparent: true,
+        opacity: 0.48,
+        depthWrite: false,
+      })
+    );
+    stackShadow.rotation.x = -Math.PI / 2;
+    stackShadow.position.set(0, 0.02, 0.08);
+    this.root.add(stackShadow);
 
     const tireGeo = new THREE.TorusGeometry(0.74, 0.24, 12, 24);
     tireGeo.rotateX(Math.PI / 2);

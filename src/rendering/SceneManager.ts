@@ -1,12 +1,5 @@
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import {
-  createGoldenHourEnvironment,
-  createGoldenHourSkyDome,
-} from './ProceduralTextures';
+import { createGoldenHourSkyDome } from './ProceduralTextures';
 
 export interface ScreenProjection {
   x: number;
@@ -21,8 +14,6 @@ export class SceneManager {
   public readonly scene: THREE.Scene;
   public readonly camera: THREE.PerspectiveCamera;
   public readonly renderer: THREE.WebGLRenderer;
-  private readonly composer: EffectComposer;
-  private readonly bloomPass: UnrealBloomPass;
   private readonly sunLight: THREE.DirectionalLight;
   private readonly rimLight: THREE.DirectionalLight;
   private readonly skyDome: THREE.Mesh;
@@ -37,31 +28,32 @@ export class SceneManager {
   constructor(canvasContainer: HTMLElement) {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x181924);
-    this.scene.fog = new THREE.FogExp2(0x6d4236, 0.0058);
+    this.scene.fog = new THREE.FogExp2(0x6d4236, 0.0056);
 
     const initW = Math.max(1, window.innerWidth);
     const initH = Math.max(1, window.innerHeight);
 
-    this.camera = new THREE.PerspectiveCamera(47, initW / initH, 0.25, 320);
+    this.camera = new THREE.PerspectiveCamera(47, initW / initH, 0.3, 320);
     this.camera.position.set(0, 9.6, 13.4);
     this.camera.lookAt(0, 0.8, -14);
 
+    // Pure single-pass hardware forward WebGLRenderer (zero offscreen HalfFloat FBOs
+    // for 100% stability and 90-120 FPS efficiency on Pixel / Android WebView GPUs)
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
-      powerPreference: 'high-performance',
+      powerPreference: 'default',
+      stencil: false,
+      alpha: false,
     });
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(initW, initH);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.06;
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.toneMappingExposure = 1.12;
+    this.renderer.domElement.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+    });
     canvasContainer.appendChild(this.renderer.domElement);
-
-    // Procedural Golden-Hour Sunset PBR Environment Reflections
-    this.scene.environment = createGoldenHourEnvironment(this.renderer);
-    this.scene.environmentIntensity = 1.1;
 
     // Golden-Hour Sunset Sky Dome with Mountains & Clouds
     const sky = createGoldenHourSkyDome();
@@ -69,58 +61,23 @@ export class SceneManager {
     this.skyUniforms = sky.uniforms;
     this.scene.add(this.skyDome);
 
-    // Warm Sunset Sky / Dark Asphalt Bounce Hemisphere Light
-    const hemi = new THREE.HemisphereLight(0xffb980, 0x1d232d, 0.78);
+    // 4-Light Golden-Hour Tactical Rig (Warm Sunset + Slate Bounce + Sun + Steel Rim + Fill)
+    const hemi = new THREE.HemisphereLight(0xffcb96, 0x2c384a, 1.38);
     this.scene.add(hemi);
 
-    // Primary Low-Angle Golden-Hour Sun Light + Crisp Soft Shadows
-    this.sunLight = new THREE.DirectionalLight(0xffa95e, 2.9);
-    this.sunLight.position.set(-19, 16, -24);
-    this.sunLight.castShadow = true;
-    this.sunLight.shadow.mapSize.set(1024, 1024);
-    this.sunLight.shadow.camera.near = 2;
-    this.sunLight.shadow.camera.far = 92;
-    this.sunLight.shadow.camera.left = -11.0;
-    this.sunLight.shadow.camera.right = 11.0;
-    this.sunLight.shadow.camera.top = 32;
-    this.sunLight.shadow.camera.bottom = -16;
-    this.sunLight.shadow.bias = -0.0006;
-    this.sunLight.shadow.normalBias = 0.025;
-    this.sunLight.shadow.radius = 2.2;
+    this.sunLight = new THREE.DirectionalLight(0xffad5e, 2.75);
+    this.sunLight.position.set(-19, 17, -24);
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
-    // Cool Steel-Blue Rim Light for Tactical Gunmetal Contrast
-    this.rimLight = new THREE.DirectionalLight(0x689fd6, 1.05);
-    this.rimLight.position.set(18, 12, 16);
+    this.rimLight = new THREE.DirectionalLight(0x74b0ea, 1.45);
+    this.rimLight.position.set(18, 13, 18);
     this.scene.add(this.rimLight);
     this.scene.add(this.rimLight.target);
 
-    // Multisampled Half-Float Post-Processing Pipeline (Adaptive MSAA + Selective HDR Bloom)
-    const renderTarget = new THREE.WebGLRenderTarget(
-      Math.max(1, Math.floor(initW * dpr)),
-      Math.max(1, Math.floor(initH * dpr)),
-      {
-        type: THREE.HalfFloatType,
-        samples: dpr > 1.5 ? 2 : 4,
-      }
-    );
-    this.composer = new EffectComposer(this.renderer, renderTarget);
-    this.composer.setPixelRatio(dpr);
-    this.composer.setSize(initW, initH);
-
-    const renderPass = new RenderPass(this.scene, this.camera);
-    this.bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(Math.max(1, Math.floor(initW * 0.5)), Math.max(1, Math.floor(initH * 0.5))),
-      0.35,
-      0.38,
-      1.12
-    );
-    const outputPass = new OutputPass();
-
-    this.composer.addPass(renderPass);
-    this.composer.addPass(this.bloomPass);
-    this.composer.addPass(outputPass);
+    const frontalFill = new THREE.DirectionalLight(0xffdfb8, 0.55);
+    frontalFill.position.set(0, 10, 22);
+    this.scene.add(frontalFill);
 
     this.applyViewportFraming();
     window.addEventListener('resize', this.handleResize);
@@ -130,7 +87,7 @@ export class SceneManager {
     const w = Math.max(1, window.innerWidth);
     const h = Math.max(1, window.innerHeight);
     const aspect = w / h;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
 
     this.camera.aspect = aspect;
 
@@ -141,9 +98,6 @@ export class SceneManager {
 
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h);
-    this.composer.setPixelRatio(dpr);
-    this.composer.setSize(w, h);
-    this.bloomPass.resolution.set(Math.max(1, Math.floor(w * 0.5)), Math.max(1, Math.floor(h * 0.5)));
   }
 
   private readonly handleResize = (): void => {
@@ -188,13 +142,11 @@ export class SceneManager {
     // Keep Sky Dome centered on camera
     this.skyDome.position.copy(this.camera.position);
 
-    // Texel-snapped directional shadow frustum tracking the active battlefield
-    const snappedZ = Math.round(squadZ * 2) * 0.5;
-    this.sunLight.position.set(-19, 18, snappedZ - 36);
-    this.sunLight.target.position.set(0, 0, snappedZ - 12);
+    this.sunLight.position.set(-19, 18, squadZ - 36);
+    this.sunLight.target.position.set(0, 0, squadZ - 12);
 
-    this.rimLight.position.set(18, 12, snappedZ + 14);
-    this.rimLight.target.position.set(0, 0, snappedZ - 10);
+    this.rimLight.position.set(18, 13, squadZ + 14);
+    this.rimLight.target.position.set(0, 0, squadZ - 10);
   }
 
   /**
@@ -220,6 +172,6 @@ export class SceneManager {
   }
 
   public render(): void {
-    this.composer.render();
+    this.renderer.render(this.scene, this.camera);
   }
 }

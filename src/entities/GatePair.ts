@@ -61,20 +61,34 @@ export class GatePairSlot {
 
   constructor(pairIndex: number) {
     const gunmetalMat = new THREE.MeshStandardMaterial({
-      color: 0x2c3540,
-      metalness: 0.82,
-      roughness: 0.32,
+      color: 0x3b4754,
+      metalness: 0.44,
+      roughness: 0.34,
     });
     const steelTrimMat = new THREE.MeshStandardMaterial({
-      color: 0x738294,
-      metalness: 0.86,
-      roughness: 0.24,
+      color: 0x8595a8,
+      metalness: 0.48,
+      roughness: 0.26,
     });
     const hazardFootMat = new THREE.MeshStandardMaterial({
       color: 0xd49424,
-      metalness: 0.45,
+      metalness: 0.32,
       roughness: 0.48,
     });
+
+    // Grounded gantry contact shadow strip across roadway
+    const gantryShadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(10.6, 0.9),
+      new THREE.MeshBasicMaterial({
+        color: 0x05080d,
+        transparent: true,
+        opacity: 0.38,
+        depthWrite: false,
+      })
+    );
+    gantryShadow.rotation.x = -Math.PI / 2;
+    gantryShadow.position.set(0, 0.018, 0.12);
+    this.root.add(gantryShadow);
 
     // Heavy Industrial Tactical Gantry Stanchions (Left, Center, Right)
     for (const px of [-4.96, 0, 4.96]) {

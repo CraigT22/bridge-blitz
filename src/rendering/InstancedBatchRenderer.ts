@@ -24,29 +24,41 @@ function createContactShadowTexture(): THREE.CanvasTexture {
   canvas.height = 64;
   const ctx = canvas.getContext('2d')!;
   const grad = ctx.createRadialGradient(32, 32, 3, 32, 32, 30);
-  grad.addColorStop(0, 'rgba(6, 9, 14, 0.68)');
-  grad.addColorStop(0.55, 'rgba(6, 9, 14, 0.34)');
+  grad.addColorStop(0, 'rgba(6, 9, 14, 0.76)');
+  grad.addColorStop(0.55, 'rgba(6, 9, 14, 0.38)');
   grad.addColorStop(1, 'rgba(6, 9, 14, 0.0)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 64, 64);
   return new THREE.CanvasTexture(canvas);
 }
 
+interface StrideUniforms {
+  uStrideTime: { value: number };
+  uStrideAmp: { value: number };
+}
+
 /**
- * Injects zero-overhead GPU vertex limb animation (`aPartId` + `aStridePhase`)
+ * Injects zero-overhead GPU vertex limb animation (`aPartId` + `gl_InstanceID`)
  * so 150+ friendly operators and 260+ charging enemies sprint with articulated legs & arms
- * in a single instanced draw call.
+ * in a single instanced draw call with zero extra dynamic vertex buffer uploads.
  */
-function applyLimbStrideShader(mat: THREE.MeshStandardMaterial, cacheKey: string): void {
+function applyLimbStrideShader(
+  mat: THREE.MeshStandardMaterial,
+  uniforms: StrideUniforms,
+  cacheKey: string
+): void {
   mat.customProgramCacheKey = () => cacheKey;
   mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uStrideTime = uniforms.uStrideTime;
+    shader.uniforms.uStrideAmp = uniforms.uStrideAmp;
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
         /* glsl */ `
         #include <common>
         attribute float aPartId;
-        attribute float aStridePhase;
+        uniform float uStrideTime;
+        uniform float uStrideAmp;
         `
       )
       .replace(
@@ -54,13 +66,14 @@ function applyLimbStrideShader(mat: THREE.MeshStandardMaterial, cacheKey: string
         /* glsl */ `
         #include <beginnormal_vertex>
         {
+          float strideVal = sin(uStrideTime + float(gl_InstanceID) * 0.92) * uStrideAmp;
           float nAngle = 0.0;
           if (aPartId > 0.5 && aPartId < 1.5) {
-            nAngle = aStridePhase;
+            nAngle = strideVal;
           } else if (aPartId > 1.5 && aPartId < 2.5) {
-            nAngle = -aStridePhase;
+            nAngle = -strideVal;
           } else if (aPartId > 2.5) {
-            nAngle = -aStridePhase * 0.28;
+            nAngle = -strideVal * 0.28;
           }
           if (abs(nAngle) > 0.001) {
             float cn = cos(nAngle);
@@ -78,14 +91,15 @@ function applyLimbStrideShader(mat: THREE.MeshStandardMaterial, cacheKey: string
         /* glsl */ `
         #include <begin_vertex>
         {
+          float strideVal = sin(uStrideTime + float(gl_InstanceID) * 0.92) * uStrideAmp;
           float limbAngle = 0.0;
           float pivotY = 0.35;
           if (aPartId > 0.5 && aPartId < 1.5) {
-            limbAngle = aStridePhase;
+            limbAngle = strideVal;
           } else if (aPartId > 1.5 && aPartId < 2.5) {
-            limbAngle = -aStridePhase;
+            limbAngle = -strideVal;
           } else if (aPartId > 2.5) {
-            limbAngle = -aStridePhase * 0.28;
+            limbAngle = -strideVal * 0.28;
             pivotY = 0.48;
           }
           if (abs(limbAngle) > 0.001) {
@@ -107,10 +121,14 @@ export class InstancedBatchRenderer {
   public readonly bulletMesh: THREE.InstancedMesh;
   public readonly particleMesh: THREE.InstancedMesh;
 
-  private readonly playerStrideArray = new Float32Array(MAX_VISUAL_SOLDIERS);
-  private readonly playerStrideAttr: THREE.InstancedBufferAttribute;
-  private readonly enemyStrideArray = new Float32Array(MAX_ENEMY_INSTANCES);
-  private readonly enemyStrideAttr: THREE.InstancedBufferAttribute;
+  private readonly playerStrideUniforms: StrideUniforms = {
+    uStrideTime: { value: 0 },
+    uStrideAmp: { value: 0 },
+  };
+  private readonly enemyStrideUniforms: StrideUniforms = {
+    uStrideTime: { value: 0 },
+    uStrideAmp: { value: 0.68 },
+  };
 
   private readonly shadowDiscMesh: THREE.InstancedMesh;
   private shadowDiscCursor = 0;
@@ -122,48 +140,36 @@ export class InstancedBatchRenderer {
   ) {
     // 1. Player Squad InstancedMesh (Tactical SpecOps Operators)
     const playerGeo = createPlayerSoldierGeometry();
-    this.playerStrideAttr = new THREE.InstancedBufferAttribute(this.playerStrideArray, 1);
-    this.playerStrideAttr.setUsage(THREE.DynamicDrawUsage);
-    playerGeo.setAttribute('aStridePhase', this.playerStrideAttr);
-
     const playerMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.44,
-      metalness: 0.28,
+      roughness: 0.42,
+      metalness: 0.24,
     });
-    applyLimbStrideShader(playerMat, 'soldier-stride-player-v2');
+    applyLimbStrideShader(playerMat, this.playerStrideUniforms, 'soldier-stride-player-v21');
 
     this.playerMesh = new THREE.InstancedMesh(playerGeo, playerMat, MAX_VISUAL_SOLDIERS);
     this.playerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.playerMesh.frustumCulled = false;
-    this.playerMesh.castShadow = true;
-    this.playerMesh.receiveShadow = true;
     this.playerMesh.count = 0;
     scene.add(this.playerMesh);
 
     // 2. Enemy Horde InstancedMesh (Armored Crimson-Guard Shock Troopers)
     const enemyGeo = createEnemySoldierGeometry();
-    this.enemyStrideAttr = new THREE.InstancedBufferAttribute(this.enemyStrideArray, 1);
-    this.enemyStrideAttr.setUsage(THREE.DynamicDrawUsage);
-    enemyGeo.setAttribute('aStridePhase', this.enemyStrideAttr);
-
     const enemyMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.4,
-      metalness: 0.34,
+      metalness: 0.28,
     });
-    applyLimbStrideShader(enemyMat, 'soldier-stride-enemy-v2');
+    applyLimbStrideShader(enemyMat, this.enemyStrideUniforms, 'soldier-stride-enemy-v21');
 
     this.enemyMesh = new THREE.InstancedMesh(enemyGeo, enemyMat, MAX_ENEMY_INSTANCES);
     this.enemyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.enemyMesh.frustumCulled = false;
-    this.enemyMesh.castShadow = true;
-    this.enemyMesh.receiveShadow = true;
     this.enemyMesh.count = 0;
     scene.add(this.enemyMesh);
 
     // 3. Soft AO Contact-Shadow Discs under all active troopers
-    const discGeo = new THREE.PlaneGeometry(0.56, 0.56);
+    const discGeo = new THREE.PlaneGeometry(0.68, 0.68);
     discGeo.rotateX(-Math.PI / 2);
     const discMat = new THREE.MeshBasicMaterial({
       map: createContactShadowTexture(),
@@ -223,14 +229,16 @@ export class InstancedBatchRenderer {
     this.playerMesh.count = safeCount;
     this.shadowDiscCursor = 0;
 
+    this.playerStrideUniforms.uStrideTime.value = marchPhase * 12.5;
+    this.playerStrideUniforms.uStrideAmp.value = isMoving ? 0.68 : 0.0;
+    this.enemyStrideUniforms.uStrideTime.value = marchPhase * 11.2;
+
     for (let i = 0; i < safeCount; i++) {
       const bobPhase = marchPhase * 12.5 + i * 0.92;
       const bobY = isMoving
         ? Math.abs(Math.sin(bobPhase)) * 0.068
         : Math.sin(marchPhase * 3 + i) * 0.012;
       const swayZ = isMoving ? Math.sin(bobPhase) * 0.048 : 0;
-
-      this.playerStrideArray[i] = isMoving ? Math.sin(bobPhase) * 0.68 : 0;
 
       _pos.set(worldX[i], bobY, worldZ[i]);
       _euler.set(isMoving ? -0.09 : 0, 0, swayZ);
@@ -249,7 +257,6 @@ export class InstancedBatchRenderer {
     }
 
     this.playerMesh.instanceMatrix.needsUpdate = true;
-    this.playerStrideAttr.needsUpdate = true;
   }
 
   public beginEnemyFrame(): void {
@@ -270,7 +277,6 @@ export class InstancedBatchRenderer {
 
     const bob = Math.abs(Math.sin(phase)) * 0.068;
     const scalePop = 1 + hitFlash * 0.16;
-    this.enemyStrideArray[idx] = Math.sin(phase) * 0.68;
 
     _pos.set(x, bob, z);
     _euler.set(0.09, 0, Math.sin(phase) * 0.05);
@@ -291,7 +297,6 @@ export class InstancedBatchRenderer {
 
   public finishEnemyFrame(): void {
     this.enemyMesh.instanceMatrix.needsUpdate = true;
-    this.enemyStrideAttr.needsUpdate = true;
     this.shadowDiscMesh.count = this.shadowDiscCursor;
     this.shadowDiscMesh.instanceMatrix.needsUpdate = true;
   }
