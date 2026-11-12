@@ -95,24 +95,27 @@ export class SoundSynthesizer {
       return;
     }
     const now = ctx.currentTime;
-    if (now - this.lastGateTickTime < 0.04) {
+    if (now - this.lastGateTickTime < 0.038) {
       return;
     }
     this.lastGateTickTime = now;
 
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = 'sine';
+    osc.type = 'triangle';
     const clampedVal = Math.max(-25, Math.min(35, currentValue));
-    const freq = 420 + (clampedVal + 25) * 9;
+    const freq =
+      currentValue > 0 && currentValue < 4
+        ? 540 + (currentValue - 1.0) * 320
+        : 420 + (clampedVal + 25) * 11;
     osc.frequency.setValueAtTime(freq, now);
-    osc.frequency.exponentialRampToValueAtTime(freq * 1.15, now + 0.04);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.18, now + 0.042);
 
-    gain.gain.setValueAtTime(0.04, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+    gain.gain.setValueAtTime(0.048, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.048);
     osc.connect(gain).connect(ctx.destination);
     osc.start(now);
-    osc.stop(now + 0.05);
+    osc.stop(now + 0.052);
   }
 
   public playGateFlipChime(): void {
@@ -309,24 +312,27 @@ export class SoundSynthesizer {
     }
   }
 
-  public playUpgradeBuy(): void {
+  public playUpgradeBuy(newLevel = 1): void {
+    this.vibrate(10);
     const ctx = this.ensureReady();
     if (!ctx) {
       return;
     }
     const base = ctx.currentTime;
-    const tones = [659.25, 880];
+    const pipStep = ((Math.max(1, newLevel) - 1) % 5) * 0.06;
+    const pitchMult = 1 + pipStep;
+    const tones = [587.33 * pitchMult, 783.99 * pitchMult, 1174.66 * pitchMult];
     for (let i = 0; i < tones.length; i++) {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'triangle';
-      const t = base + i * 0.045;
+      const t = base + i * 0.042;
       osc.frequency.setValueAtTime(tones[i], t);
-      gain.gain.setValueAtTime(0.065, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.11);
+      gain.gain.setValueAtTime(0.072, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
       osc.connect(gain).connect(ctx.destination);
       osc.start(t);
-      osc.stop(t + 0.12);
+      osc.stop(t + 0.14);
     }
   }
 }

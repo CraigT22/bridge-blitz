@@ -78,6 +78,38 @@ interface BossWarheadSlot {
   damage: number;
 }
 
+function createSalvoChevronTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, 128, 128);
+
+  // Subtle translucent crimson danger lane fill
+  ctx.fillStyle = 'rgba(255, 36, 66, 0.34)';
+  ctx.fillRect(0, 0, 128, 128);
+
+  // Bold forward-pointing warning chevrons scrolling down the locked lane (+Z -> V decreases)
+  ctx.fillStyle = 'rgba(255, 196, 72, 0.88)';
+  for (const cy of [26, 90]) {
+    ctx.beginPath();
+    ctx.moveTo(14, cy - 18);
+    ctx.lineTo(64, cy + 16);
+    ctx.lineTo(114, cy - 18);
+    ctx.lineTo(114, cy + 4);
+    ctx.lineTo(64, cy + 38);
+    ctx.lineTo(14, cy + 4);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 export class BossEntity {
   public readonly entityId = 999;
   public readonly rigs: Record<BossChassisId, BossChassisRig>;
@@ -105,6 +137,7 @@ export class BossEntity {
 
   // Telegraphed Lane Salvo State (Zero-GC pre-allocated pools)
   private readonly laneVisuals: TelegraphLaneVisual[] = [];
+  private readonly chevronTex: THREE.CanvasTexture;
   private readonly warheads: BossWarheadSlot[] = [];
   private lockedLaneMask: LaneMask3 = [false, false, false];
   private telegraphTimer = 0;
@@ -119,6 +152,7 @@ export class BossEntity {
   public lastStepSalvoHitX = 0;
   public lastStepSalvoDodgedCount = 0;
   public lastStepSalvoDodgeX = 0;
+  public lastStepSegmentBroken = false;
 
   constructor(scene: THREE.Scene) {
     this.rigs = createAllBossChassisRigs();
@@ -127,10 +161,12 @@ export class BossEntity {
       scene.add(this.rigs[key].root);
     }
 
-    // 1. Pre-allocate 3 Roadway Crimson Hazard Telegraph Strips
+    this.chevronTex = createSalvoChevronTexture();
+
+    // 1. Pre-allocate 3 Roadway Crimson Hazard-Chevron Telegraph Strips
     const carpetGeo = new THREE.PlaneGeometry(2.44, 1.0);
     carpetGeo.rotateX(-Math.PI / 2);
-    const railGeo = new THREE.PlaneGeometry(0.14, 1.0);
+    const railGeo = new THREE.PlaneGeometry(0.16, 1.0);
     railGeo.rotateX(-Math.PI / 2);
     const reticleGeo = new THREE.RingGeometry(0.55, 1.08, 24);
     reticleGeo.rotateX(-Math.PI / 2);
@@ -140,9 +176,10 @@ export class BossEntity {
       root.visible = false;
 
       const carpetMat = new THREE.MeshBasicMaterial({
-        color: 0xff2942,
+        color: 0xffffff,
+        map: this.chevronTex,
         transparent: true,
-        opacity: 0.24,
+        opacity: 0.56,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
         depthWrite: false,
@@ -514,6 +551,10 @@ export class BossEntity {
     const stripLen = Math.max(2.0, zEnd - zStart);
     const stripMidZ = (zStart + zEnd) * 0.5;
 
+    // Scroll warning chevrons rapidly down locked lanes toward the player squad
+    this.chevronTex.repeat.set(1, Math.max(2, stripLen * 0.42));
+    this.chevronTex.offset.y = (this.chevronTex.offset.y + dt * 3.6) % 1;
+
     for (let lane = 0; lane < 3; lane++) {
       const vis = this.laneVisuals[lane];
       const hasFlight =
@@ -525,18 +566,18 @@ export class BossEntity {
       }
 
       const laneX = BOSS_SALVO_LANE_CENTERS[lane];
-      vis.carpetGroup.position.set(laneX, 0.042, stripMidZ);
+      vis.carpetGroup.position.set(laneX, 0.045, stripMidZ);
       vis.carpetGroup.scale.set(1, 1, stripLen);
 
       vis.carpetMat.opacity = isCharging
-        ? 0.16 + 0.24 * chargeRatio * pulse
-        : 0.15;
-      vis.railMat.opacity = isCharging ? 0.48 + 0.48 * pulse : 0.42;
+        ? 0.38 + 0.42 * chargeRatio * pulse
+        : 0.34;
+      vis.railMat.opacity = isCharging ? 0.55 + 0.45 * pulse : 0.48;
 
       const retScale = isCharging ? 1.25 - 0.35 * chargeRatio : 0.92;
-      vis.reticleRing.position.set(laneX, 0.052, squadZ);
+      vis.reticleRing.position.set(laneX, 0.055, squadZ);
       vis.reticleRing.scale.set(retScale, retScale, 1);
-      vis.reticleMat.opacity = isCharging ? 0.5 + 0.45 * pulse : 0.45;
+      vis.reticleMat.opacity = isCharging ? 0.55 + 0.42 * pulse : 0.48;
     }
   }
 
@@ -631,6 +672,7 @@ export class BossEntity {
     bossArmorFactor: number,
     lastHitId: number
   ): 'NONE' | 'HIT' | 'DEFEATED' {
+    this.lastStepSegmentBroken = false;
     if (!this.active || this.defeated || lastHitId === this.entityId) {
       return 'NONE';
     }
@@ -650,7 +692,13 @@ export class BossEntity {
       return 'NONE';
     }
 
+    const segCount = Math.max(1, this.segments);
+    const prevSeg = Math.ceil((this.currentHp / Math.max(1, this.maxHp)) * segCount);
     this.currentHp -= damage * bossArmorFactor;
+    const nextSeg = Math.ceil(
+      (Math.max(0, this.currentHp) / Math.max(1, this.maxHp)) * segCount
+    );
+
     if (this.hitFlashCooldown <= 0) {
       this.hitFlash = 1.0;
       this.hitFlashCooldown = 0.14;
@@ -663,6 +711,10 @@ export class BossEntity {
       this.active = false;
       this.hide();
       return 'DEFEATED';
+    }
+
+    if (nextSeg < prevSeg) {
+      this.lastStepSegmentBroken = true;
     }
 
     return 'HIT';

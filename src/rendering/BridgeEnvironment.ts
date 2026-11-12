@@ -256,14 +256,28 @@ export class BridgeEnvironment {
       moteColors[i * 3 + 1] = cEmber.g;
       moteColors[i * 3 + 2] = cEmber.b;
     }
+    // Soft circular bokeh sprite so atmosphere motes never render as harsh square pixels
+    const moteSpriteCanvas = document.createElement('canvas');
+    moteSpriteCanvas.width = 64;
+    moteSpriteCanvas.height = 64;
+    const mCtx = moteSpriteCanvas.getContext('2d')!;
+    const mGrad = mCtx.createRadialGradient(32, 32, 2, 32, 32, 30);
+    mGrad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    mGrad.addColorStop(0.38, 'rgba(255, 236, 198, 0.65)');
+    mGrad.addColorStop(1, 'rgba(255, 200, 140, 0.0)');
+    mCtx.fillStyle = mGrad;
+    mCtx.fillRect(0, 0, 64, 64);
+    const moteTex = new THREE.CanvasTexture(moteSpriteCanvas);
+
     const moteGeo = new THREE.BufferGeometry();
     moteGeo.setAttribute('position', new THREE.BufferAttribute(this.motePositions, 3));
     moteGeo.setAttribute('color', new THREE.BufferAttribute(moteColors, 3));
     const moteMat = new THREE.PointsMaterial({
-      size: 0.16,
+      size: 0.24,
+      map: moteTex,
       vertexColors: true,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.76,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -387,40 +401,40 @@ export class BridgeEnvironment {
 
       for (const sign of [-1, 1]) {
         // Stepped Industrial Tower Legs
-        const lowerLeg = new THREE.Mesh(new THREE.BoxGeometry(1.55, 11.5, 1.75), towerMat);
-        lowerLeg.position.set(sign * 6.05, 4.2, 0);
+        const lowerLeg = new THREE.Mesh(new THREE.BoxGeometry(1.55, 13.0, 1.75), towerMat);
+        lowerLeg.position.set(sign * 6.05, 4.95, 0);
         lowerLeg.castShadow = true;
         lowerLeg.receiveShadow = true;
         group.add(lowerLeg);
 
-        const upperLeg = new THREE.Mesh(new THREE.BoxGeometry(1.22, 9.2, 1.4), towerMat);
-        upperLeg.position.set(sign * 6.05, 13.6, 0);
+        const upperLeg = new THREE.Mesh(new THREE.BoxGeometry(1.22, 8.6, 1.4), towerMat);
+        upperLeg.position.set(sign * 6.05, 14.8, 0);
         upperLeg.castShadow = true;
         group.add(upperLeg);
 
         // Steel Cable Saddle & Aviation Warning Beacon on Peak
         const saddle = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.55, 1.65), gunmetalMat);
-        saddle.position.set(sign * 6.05, 18.25, 0);
+        saddle.position.set(sign * 6.05, 19.25, 0);
         group.add(saddle);
 
         const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), beaconGlowMat);
-        beacon.position.set(sign * 6.05, 18.72, 0);
+        beacon.position.set(sign * 6.05, 19.72, 0);
         group.add(beacon);
       }
 
-      // Portal Crossbeams + Diagonal Steel X-Bracing Trusses
-      for (const beamY of [8.8, 13.2, 17.1]) {
-        const beam = new THREE.Mesh(new THREE.BoxGeometry(13.4, 0.92, 1.15), towerMat);
+      // Portal Crossbeams + Diagonal Steel X-Bracing Trusses (raised >= 11.6m to keep sightline clear!)
+      for (const beamY of [11.6, 15.0, 18.1]) {
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(13.4, 0.90, 1.12), towerMat);
         beam.position.set(0, beamY, 0);
         beam.castShadow = true;
         group.add(beam);
       }
 
-      for (const bayMidY of [11.0, 15.15]) {
+      for (const bayMidY of [13.3, 16.55]) {
         for (const diagSign of [-1, 1]) {
           const strut = new THREE.Mesh(new THREE.BoxGeometry(11.6, 0.26, 0.34), gunmetalMat);
           strut.position.set(0, bayMidY, 0);
-          strut.rotation.z = diagSign * 0.32;
+          strut.rotation.z = diagSign * 0.28;
           group.add(strut);
         }
       }

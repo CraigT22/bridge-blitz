@@ -18,20 +18,20 @@ describe('weaponMath', () => {
     expect(res.bonusSquad).toBe(0);
   });
 
-  it('enforces Mandatory Weapon Lock Rule: never downgrades on lower or equal tier and awards +50 coins + 1 commando', () => {
+  it('enforces Mandatory Weapon Lock Rule: never downgrades on lower or equal tier and awards +25 coins + 1 commando', () => {
     const lowerPickup = resolveWeaponPickup(4, 2);
     expect(lowerPickup.equippedTier).toBe(4);
     expect(lowerPickup.upgraded).toBe(false);
     expect(lowerPickup.lockedBonusTriggered).toBe(true);
     expect(lowerPickup.bonusCoins).toBe(WEAPON_LOCK_BONUS_COINS);
     expect(lowerPickup.bonusSquad).toBe(WEAPON_LOCK_BONUS_SQUAD);
-    expect(lowerPickup.bannerText).toContain('WEAPON LOCKED: +50 COINS');
+    expect(lowerPickup.bannerText).toContain('WEAPON LOCKED: +25 COINS');
 
     const equalPickup = resolveWeaponPickup(3, 3);
     expect(equalPickup.equippedTier).toBe(3);
     expect(equalPickup.upgraded).toBe(false);
     expect(equalPickup.lockedBonusTriggered).toBe(true);
-    expect(equalPickup.bonusCoins).toBe(50);
+    expect(equalPickup.bonusCoins).toBe(25);
     expect(equalPickup.bonusSquad).toBe(1);
   });
 

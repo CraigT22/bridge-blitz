@@ -91,14 +91,18 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     title: 'Golden Span Outpost',
     trackLength: 260,
     supplyDrums: [
-      { z: -17.5, lane: 'LEFT_MID', hp: 22, rewardType: 'COINS', rewardValue: 22 },
-      { z: -17.5, lane: 'RIGHT_MID', hp: 36, rewardType: 'COINS', rewardValue: 30 },
-      { z: -74, lane: 'LEFT', hp: 40, rewardType: 'WEAPON', rewardValue: 2 },
-      { z: -74, lane: 'CENTER', hp: 30, rewardType: 'COINS', rewardValue: 24 },
-      { z: -74, lane: 'RIGHT', hp: 44, rewardType: 'RECRUIT', rewardValue: 1 },
-      { z: -168, lane: 'LEFT', hp: 92, rewardType: 'COINS', rewardValue: 36 },
-      { z: -168, lane: 'CENTER', hp: 115, rewardType: 'RECRUIT', rewardValue: 1 },
-      { z: -168, lane: 'RIGHT', hp: 96, rewardType: 'COINS', rewardValue: 38 },
+      { z: -17.5, lane: 'LEFT_MID', hp: 22, rewardType: 'COINS', rewardValue: 20 },
+      { z: -19.2, lane: 'RIGHT_MID', hp: 34, rewardType: 'COINS', rewardValue: 24 },
+      { z: -44, lane: 'LEFT', hp: 32, rewardType: 'COINS', rewardValue: 16 },
+      { z: -45.5, lane: 'RIGHT', hp: 38, rewardType: 'WEAPON', rewardValue: 2 },
+      { z: -72, lane: 'CENTER', hp: 30, rewardType: 'COINS', rewardValue: 16 },
+      { z: -75.5, lane: 'LEFT', hp: 42, rewardType: 'WEAPON', rewardValue: 2 },
+      { z: -75.5, lane: 'RIGHT', hp: 44, rewardType: 'RECRUIT', rewardValue: 1 },
+      { z: -131, lane: 'LEFT_MID', hp: 72, rewardType: 'COINS', rewardValue: 18 },
+      { z: -133, lane: 'RIGHT_MID', hp: 80, rewardType: 'RECRUIT', rewardValue: 1 },
+      { z: -167, lane: 'CENTER', hp: 96, rewardType: 'COINS', rewardValue: 20 },
+      { z: -171, lane: 'LEFT', hp: 108, rewardType: 'WEAPON', rewardValue: 3 },
+      { z: -171, lane: 'RIGHT', hp: 102, rewardType: 'RECRUIT', rewardValue: 1 },
     ],
     gatePairs: [
       { z: -53, left: null, right: null, full: shootMulGate(1.0, 11.5) },
@@ -106,20 +110,20 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
       { z: -232, left: divGate(2), right: shootMulGate(1.1, 16) },
     ],
     tireStacks: [
-      ...tireWall3(-118, 290, 265, 310, 'CENTER', 3, 55),
-      ...tireWall3(-212, 440, 520, 355, 'CENTER', 4, 75),
+      ...tireWall3(-118, 290, 265, 310, 'CENTER', 3, 40),
+      ...tireWall3(-212, 440, 520, 355, 'CENTER', 4, 55),
     ],
     enemyWaves: [
-      { z: -36, lane: 'CENTER', count: 5, hpPerEnemy: 8.5, heavyCount: 0, speed: 1.65, coinPerKill: 7 },
-      { z: -96, lane: 'CENTER', count: 8, hpPerEnemy: 15.5, heavyCount: 2, speed: 1.95, coinPerKill: 8 },
-      { z: -190, lane: 'CENTER', count: 12, hpPerEnemy: 22, heavyCount: 3, speed: 2.15, coinPerKill: 8 },
-      { z: -246, lane: 'CENTER', count: 14, hpPerEnemy: 24, heavyCount: 4, speed: 2.2, coinPerKill: 9 },
+      { z: -36, lane: 'CENTER', count: 5, hpPerEnemy: 8.5, heavyCount: 0, speed: 1.65, coinPerKill: 6 },
+      { z: -96, lane: 'CENTER', count: 8, hpPerEnemy: 15.5, heavyCount: 2, speed: 1.95, coinPerKill: 4 },
+      { z: -190, lane: 'CENTER', count: 12, hpPerEnemy: 22, heavyCount: 3, speed: 2.15, coinPerKill: 3 },
+      { z: -246, lane: 'CENTER', count: 14, hpPerEnemy: 24, heavyCount: 4, speed: 2.2, coinPerKill: 3 },
     ],
     boss: {
       name: 'Iron Warden Mk-I',
       chassis: 'WARDEN_MECH',
-      primaryHex: 0x384352,
-      accentHex: 0xc92a3e,
+      primaryHex: 0x485669,
+      accentHex: 0xd93046,
       trimHex: 0xf5b42e,
       maxHp: 2200,
       segments: 5,
@@ -127,7 +131,7 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
       salvoLanes: 1,
       salvoInterval: 2.45,
       salvoDamage: 2,
-      rewardCoins: 120,
+      rewardCoins: 55,
     },
   },
   {
@@ -524,9 +528,68 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
   },
 ];
 
+function enrichSectorWithStaggeredDrums(stage: StageDefinition): StageDefinition {
+  if (stage.stageNumber === 1 || stage.supplyDrums.length >= 11) {
+    return stage;
+  }
+  // Staggered foreground/midground drums fill the -46m and -136m spans cleanly
+  const firstDrumHp = stage.supplyDrums[0]?.hp ?? 60;
+  const firstCoin = stage.supplyDrums[0]?.rewardType === 'COINS' ? stage.supplyDrums[0].rewardValue : 36;
+  const midTier = Math.min(5, 2 + Math.floor(stage.stageNumber / 3)) as WeaponTierId;
+
+  const staggered: SupplyDrumDefinition[] = stage.supplyDrums.map((d, idx) => ({
+    ...d,
+    z: idx % 2 === 1 ? d.z - 1.8 : d.z,
+  }));
+
+  staggered.push(
+    {
+      z: -45,
+      lane: stage.stageNumber % 2 === 0 ? 'LEFT_MID' : 'LEFT',
+      hp: Math.round(firstDrumHp * 0.92),
+      rewardType: 'COINS',
+      rewardValue: Math.round(firstCoin * 0.9),
+    },
+    {
+      z: -47,
+      lane: stage.stageNumber % 2 === 0 ? 'RIGHT_MID' : 'RIGHT',
+      hp: Math.round(firstDrumHp * 1.08),
+      rewardType: 'RECRUIT',
+      rewardValue: 1,
+    },
+    {
+      z: -136,
+      lane: 'LEFT',
+      hp: Math.round(firstDrumHp * 1.85),
+      rewardType: 'COINS',
+      rewardValue: Math.round(firstCoin * 1.25),
+    },
+    {
+      z: -138.5,
+      lane: 'RIGHT',
+      hp: Math.round(firstDrumHp * 2.05),
+      rewardType: 'WEAPON',
+      rewardValue: midTier,
+    }
+  );
+  staggered.sort((a, b) => b.z - a.z);
+
+  return {
+    ...stage,
+    supplyDrums: staggered,
+  };
+}
+
+const POLISHED_CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = CAMPAIGN_STAGES.map(
+  enrichSectorWithStaggeredDrums
+);
+
 export function getCampaignStage(stageNumber: number): StageDefinition {
-  const idx = Math.max(0, Math.min(CAMPAIGN_STAGES.length - 1, Math.floor(stageNumber) - 1));
-  return CAMPAIGN_STAGES[idx];
+  const idx = Math.max(
+    0,
+    Math.min(POLISHED_CAMPAIGN_STAGES.length - 1, Math.floor(stageNumber) - 1)
+  );
+  return POLISHED_CAMPAIGN_STAGES[idx];
 }
 
 const ENDLESS_CHASSIS_ROTATION: ReadonlyArray<{
@@ -536,10 +599,10 @@ const ENDLESS_CHASSIS_ROTATION: ReadonlyArray<{
   accentHex: number;
   trimHex: number;
 }> = [
-  { chassis: 'WARDEN_MECH', label: 'Warden', primaryHex: 0x344050, accentHex: 0xd9384a, trimHex: 0xf5b42e },
-  { chassis: 'SIEGE_TANK', label: 'Juggernaut', primaryHex: 0x5c2432, accentHex: 0xff8c38, trimHex: 0xffd15c },
-  { chassis: 'KRAKEN_WALKER', label: 'Kraken', primaryHex: 0x24364a, accentHex: 0x36f3ff, trimHex: 0xff4757 },
-  { chassis: 'SOVEREIGN_TITAN', label: 'Sovereign', primaryHex: 0x3d2342, accentHex: 0xf5b82e, trimHex: 0x38f6ff },
+  { chassis: 'WARDEN_MECH', label: 'Warden', primaryHex: 0x465468, accentHex: 0xd9384a, trimHex: 0xf5b42e },
+  { chassis: 'SIEGE_TANK', label: 'Juggernaut', primaryHex: 0x6e2b3b, accentHex: 0xff8c38, trimHex: 0xffd15c },
+  { chassis: 'KRAKEN_WALKER', label: 'Kraken', primaryHex: 0x2c425a, accentHex: 0x36f3ff, trimHex: 0xff4757 },
+  { chassis: 'SOVEREIGN_TITAN', label: 'Sovereign', primaryHex: 0x4a2b50, accentHex: 0xf5b82e, trimHex: 0x38f6ff },
 ];
 
 /**
@@ -557,49 +620,77 @@ export function generateEndlessWaveStage(waveNumber: number): StageDefinition {
 
   const supplyDrums: SupplyDrumDefinition[] = [
     {
-      z: -18,
+      z: -17.5,
       lane: 'LEFT_MID',
       hp: Math.round(28 * scale),
       rewardType: 'COINS',
-      rewardValue: Math.round(20 + w * 8),
+      rewardValue: Math.round(18 + w * 7),
     },
     {
-      z: -18,
+      z: -19.5,
       lane: 'RIGHT_MID',
       hp: Math.round(38 * scale),
       rewardType: w % 2 === 1 ? 'COINS' : 'RECRUIT',
-      rewardValue: w % 2 === 1 ? Math.round(28 + w * 10) : 1,
+      rewardValue: w % 2 === 1 ? Math.round(24 + w * 8) : 1,
     },
     {
-      z: -80,
+      z: -45,
       lane: 'LEFT',
-      hp: Math.round(52 * scale),
+      hp: Math.round(42 * scale),
+      rewardType: 'COINS',
+      rewardValue: Math.round(20 + w * 7),
+    },
+    {
+      z: -47,
+      lane: 'RIGHT',
+      hp: Math.round(48 * scale),
+      rewardType: 'RECRUIT',
+      rewardValue: 1,
+    },
+    {
+      z: -78,
+      lane: 'CENTER',
+      hp: Math.round(44 * scale),
+      rewardType: 'COINS',
+      rewardValue: Math.round(24 + w * 8),
+    },
+    {
+      z: -81.5,
+      lane: 'LEFT',
+      hp: Math.round(54 * scale),
       rewardType: 'WEAPON',
       rewardValue: tierA,
     },
     {
-      z: -80,
-      lane: 'CENTER',
-      hp: Math.round(44 * scale),
-      rewardType: 'COINS',
-      rewardValue: Math.round(26 + w * 10),
-    },
-    {
-      z: -80,
+      z: -81.5,
       lane: 'RIGHT',
       hp: Math.round(58 * scale),
       rewardType: 'RECRUIT',
       rewardValue: 1,
     },
     {
+      z: -138,
+      lane: 'LEFT_MID',
+      hp: Math.round(88 * scale),
+      rewardType: 'COINS',
+      rewardValue: Math.round(32 + w * 10),
+    },
+    {
+      z: -140,
+      lane: 'RIGHT_MID',
+      hp: Math.round(96 * scale),
+      rewardType: 'WEAPON',
+      rewardValue: tierB,
+    },
+    {
       z: -182,
       lane: 'LEFT_MID',
       hp: Math.round(115 * scale),
       rewardType: 'COINS',
-      rewardValue: Math.round(40 + w * 14),
+      rewardValue: Math.round(36 + w * 12),
     },
     {
-      z: -182,
+      z: -184.5,
       lane: 'RIGHT_MID',
       hp: Math.round(128 * scale),
       rewardType: 'RECRUIT',

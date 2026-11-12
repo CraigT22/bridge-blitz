@@ -45,6 +45,19 @@ export class CombatTextOverlay {
     variant: PopupVariant,
     duration = 0.82
   ): void {
+    // Nudge any recent nearby popups upward so rapid taps or multi-hits stack cleanly
+    for (let i = 0; i < POPUP_POOL_SIZE; i++) {
+      const other = this.pool[i];
+      if (
+        other.active &&
+        other.age < 0.45 &&
+        Math.abs(other.worldX - worldX) < 1.6 &&
+        Math.abs(other.worldZ - worldZ) < 2.8
+      ) {
+        other.worldY += 0.56;
+      }
+    }
+
     const slot = this.pool[this.cursor];
     this.cursor = (this.cursor + 1) % POPUP_POOL_SIZE;
 
@@ -80,10 +93,21 @@ export class CombatTextOverlay {
         continue;
       }
 
+      const marginX = 64;
+      const marginY = 64;
+      const clampedX = Math.max(
+        marginX,
+        Math.min(Math.max(marginX, window.innerWidth - marginX), _screenProj.x)
+      );
+      const clampedY = Math.max(
+        marginY,
+        Math.min(Math.max(marginY, window.innerHeight - marginY), _screenProj.y)
+      );
+
       const alpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
       const scale = t < 0.16 ? 0.75 + (t / 0.16) * 0.35 : 1.1 - t * 0.12;
       slot.el.style.opacity = alpha.toFixed(2);
-      slot.el.style.transform = `translate3d(${_screenProj.x.toFixed(1)}px, ${_screenProj.y.toFixed(1)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(2)})`;
+      slot.el.style.transform = `translate3d(${clampedX.toFixed(1)}px, ${clampedY.toFixed(1)}px, 0) translate(-50%, -50%) scale(${scale.toFixed(2)})`;
     }
   }
 

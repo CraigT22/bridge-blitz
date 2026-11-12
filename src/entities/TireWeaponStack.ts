@@ -64,6 +64,7 @@ export class TireWeaponStackSlot {
   private readonly badgeMeshes: Record<WeaponTierId, THREE.Mesh>;
   private flashTimer = 0;
   private spinAngle = 0;
+  private retiring = false;
 
   constructor(slotIndex: number) {
     this.entityId = 500 + slotIndex;
@@ -192,6 +193,7 @@ export class TireWeaponStackSlot {
   public configure(def: TireStackDefinition): void {
     this.active = true;
     this.broken = false;
+    this.retiring = false;
     this.z = def.z;
     this.x = def.lane === 'LEFT' ? -3.15 : def.lane === 'RIGHT' ? 3.15 : 0;
     this.initialBreakCount = Math.max(1, def.breakCount);
@@ -230,6 +232,17 @@ export class TireWeaponStackSlot {
     this.root.visible = false;
   }
 
+  /**
+   * Retires sibling Tire Stacks in the same 3-lane checkpoint row once one lane is breached,
+   * sinking them smoothly into the bridge deck so wide-spread squads cannot triple-farm one wall.
+   */
+  public retireCheckpointSibling(): void {
+    if (!this.active || this.broken) {
+      return;
+    }
+    this.retiring = true;
+  }
+
   private syncStackHeight(): void {
     const ratio = Math.max(0, this.remainingBreakCount / this.initialBreakCount);
     const totalLayers =
@@ -249,27 +262,29 @@ export class TireWeaponStackSlot {
     if (!this.active || this.broken) {
       return;
     }
-    if (squadZ < this.z - 3.8) {
-      this.root.position.y -= dt * 16.0;
-      if (this.root.position.y <= -3.8 || squadZ < this.z - 5.8) {
+    if (this.retiring || squadZ < this.z - 2.6) {
+      this.retiring = true;
+      this.root.position.y -= dt * 18.0;
+      if (this.root.position.y <= -3.8 || squadZ < this.z - 5.4) {
         this.hide();
       }
       return;
     }
-    this.spinAngle += dt * 2.15;
-    this.outerHoloRing.rotation.z = -this.spinAngle * 0.8;
+    this.spinAngle += dt * 2.35;
+    this.outerHoloRing.rotation.z = -this.spinAngle * 0.85;
 
     if (this.weaponTier) {
       const activeRig = this.weaponRigs[this.weaponTier];
       if (activeRig.root.visible) {
-        activeRig.root.rotation.y = this.spinAngle;
+        activeRig.root.rotation.y = Math.sin(this.spinAngle * 0.9) * 0.68;
         activeRig.root.position.y = 0.08 + Math.sin(this.spinAngle * 1.6) * 0.09;
         if (activeRig.spinCluster) {
           activeRig.spinCluster.rotation.x += dt * 14.0;
         }
       }
     } else if (this.coinPickupGroup.visible) {
-      this.coinPickupGroup.rotation.y = this.spinAngle * 1.15;
+      this.coinPickupGroup.rotation.y = Math.sin(this.spinAngle * 1.15) * 0.58;
+      this.coinPickupGroup.position.y = Math.sin(this.spinAngle * 1.8) * 0.07;
     }
 
     if (this.flashTimer > 0) {
@@ -290,7 +305,7 @@ export class TireWeaponStackSlot {
     damage: number,
     lastHitId: number
   ): 'NONE' | 'HIT' | 'SHATTERED' {
-    if (!this.active || this.broken || lastHitId === this.entityId) {
+    if (!this.active || this.broken || this.retiring || lastHitId === this.entityId) {
       return 'NONE';
     }
     const minZ = Math.min(bz, prevBz) - 1.25;
@@ -327,7 +342,7 @@ export class TireWeaponStackSlot {
     squadZ: number,
     squadRadius: number
   ): number {
-    if (!this.active || this.broken) {
+    if (!this.active || this.broken || this.retiring) {
       return 0;
     }
     if (

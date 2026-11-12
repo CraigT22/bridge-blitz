@@ -4,19 +4,90 @@ import type { WeaponTierId } from '../core/types';
 import { createShowcaseWeaponGroup } from './WeaponRigFactory';
 
 /**
- * Tags a geometry slice with vertex colors and an articulated limb animation part ID:
- * - partId 0: static torso, helmet, visor, shoulder pauldrons & tactical backpack
- * - partId 1: left leg (+ stride phase + vertical boot lift)
- * - partId 2: right leg (- stride phase + vertical boot lift)
- * - partId 3: rear/off-hand tactical gear sway
- * - partId 4: forward weapon-cradling arms & gloves (receives volley recoil kickback!)
+ * Computes a position-welded `aOutlineNormal` (`vec3`) attribute across colocated vertices
+ * sharing the same limb/spin group (`groupAttrName`) so `BackSide` inverted-hull cel-outlines
+ * extrude 100% watertight at sharp `BoxGeometry` corners with zero speckles or gaps!
+ */
+export function attachWeldedOutlineNormals(
+  geo: THREE.BufferGeometry,
+  groupAttrName?: string
+): void {
+  const posAttr = geo.attributes.position as THREE.BufferAttribute;
+  const normAttr = geo.attributes.normal as THREE.BufferAttribute;
+  const groupAttr = groupAttrName
+    ? (geo.attributes[groupAttrName] as THREE.BufferAttribute | undefined)
+    : undefined;
+
+  const count = posAttr.count;
+  const sumMap = new Map<string, [number, number, number]>();
+  const keys = new Array<string>(count);
+
+  for (let i = 0; i < count; i++) {
+    const qx = Math.round(posAttr.getX(i) * 800);
+    const qy = Math.round(posAttr.getY(i) * 800);
+    const qz = Math.round(posAttr.getZ(i) * 800);
+    const g = groupAttr ? Math.round(groupAttr.getX(i) * 10) : 0;
+    const key = `${g}:${qx},${qy},${qz}`;
+    keys[i] = key;
+
+    const nx = normAttr.getX(i);
+    const ny = normAttr.getY(i);
+    const nz = normAttr.getZ(i);
+
+    let acc = sumMap.get(key);
+    if (!acc) {
+      acc = [nx, ny, nz];
+      sumMap.set(key, acc);
+    } else {
+      acc[0] += nx;
+      acc[1] += ny;
+      acc[2] += nz;
+    }
+  }
+
+  const outNormals = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const acc = sumMap.get(keys[i])!;
+    let ax = acc[0];
+    let ay = acc[1];
+    let az = acc[2];
+    let len = Math.hypot(ax, ay, az);
+    if (len < 0.0001) {
+      ax = normAttr.getX(i);
+      ay = normAttr.getY(i);
+      az = normAttr.getZ(i);
+      len = Math.max(0.0001, Math.hypot(ax, ay, az));
+    }
+    outNormals[i * 3] = ax / len;
+    outNormals[i * 3 + 1] = ay / len;
+    outNormals[i * 3 + 2] = az / len;
+  }
+
+  geo.setAttribute('aOutlineNormal', new THREE.BufferAttribute(outNormals, 3));
+}
+
+/**
+ * Tags an indexed primitive with smooth vertex normals BEFORE `toNonIndexed()` so spheres,
+ * capsules, and cylinders retain silky-smooth Gouraud/Phong shading instead of flat facets!
  */
 function tagPartGeometry(
   geo: THREE.BufferGeometry,
   hexColor: number,
   partId = 0
 ): THREE.BufferGeometry {
+  if (!geo.attributes.normal) {
+    geo.computeVertexNormals();
+  }
   const nonIndexed = geo.index ? geo.toNonIndexed() : geo.clone();
+  const nAttr = nonIndexed.attributes.normal as THREE.BufferAttribute;
+  for (let i = 0; i < nAttr.count; i++) {
+    const nx = nAttr.getX(i);
+    const ny = nAttr.getY(i);
+    const nz = nAttr.getZ(i);
+    const len = Math.max(0.0001, Math.hypot(nx, ny, nz));
+    nAttr.setXYZ(i, nx / len, ny / len, nz / len);
+  }
+
   const count = nonIndexed.attributes.position.count;
   const colors = new Float32Array(count * 3);
   const parts = new Float32Array(count);
@@ -37,196 +108,172 @@ function tagPartGeometry(
 
 /**
  * Stylized-Heroic Tactical Commando (Player Elite Squad, facing -Z):
- * - Crisp high-contrast palette tuned for close over-the-shoulder camera + cel-outline pass:
- *   sky-cobalt tactical helmet & trousers, cool tactical grey combat shirt, emerald/gold plate carrier,
- *   warm human skin, and weapon-cradling hands aligned to live 3D Tier 1-5 guns!
+ * - Smooth glossy rounded sky-cobalt helmet (`24x16`), sleek athletic cool-slate combat jacket
+ *   with crisp tactical web straps (no oversized football shoulder balls or bulky box rucksack),
+ *   vivid cobalt trousers, and right-offset two-handed firing arms (`x = +0.255`) so the live
+ *   equipped 3D Tier 1-5 gun & muzzle flash read unmistakably beside the commando's silhouette!
  */
 export function createPlayerSoldierGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
 
-  const helmetCobalt = 0x1e8fff;
-  const armorTeal = 0x24b87a;
-  const shirtSlate = 0x7b8c9e;
-  const pantsCobalt = 0x1b74d8;
-  const darkWebbing = 0x161e29;
-  const gunmetal = 0x3b4959;
-  const skinWarm = 0xeab088;
-  const goldTrim = 0xffcf56;
-  const visorCyan = 0x62f8ff;
+  const helmetCobalt = 0x1a96ff;
+  const helmetBand = 0x0f6ad6;
+  const jacketSlate = 0x90a5b8;
+  const vestSlateDark = 0x5c7185;
+  const pantsCobalt = 0x1680f0;
+  const darkWebbing = 0x19222e;
+  const skinWarm = 0xf0ba92;
+  const visorCyan = 0x6efbff;
+  const accentGold = 0xffcf56;
 
   // --- LEGS (partId 1 = Left, partId 2 = Right) ---
   for (const [sideSign, partId] of [
     [-1, 1],
     [1, 2],
   ] as const) {
-    const lx = sideSign * 0.102;
+    const lx = sideSign * 0.096;
 
-    const thigh = new THREE.CapsuleGeometry(0.068, 0.13, 5, 10);
+    const thigh = new THREE.CapsuleGeometry(0.064, 0.135, 8, 14);
     thigh.translate(lx, 0.30, 0);
     parts.push(tagPartGeometry(thigh, pantsCobalt, partId));
 
-    const kneePad = new THREE.BoxGeometry(0.098, 0.075, 0.068);
-    kneePad.translate(lx, 0.21, -0.052);
-    parts.push(tagPartGeometry(kneePad, darkWebbing, partId));
-
-    const shin = new THREE.CapsuleGeometry(0.058, 0.12, 5, 10);
-    shin.translate(lx, 0.13, 0.008);
+    const shin = new THREE.CapsuleGeometry(0.054, 0.125, 8, 14);
+    shin.translate(lx, 0.135, 0.008);
     parts.push(tagPartGeometry(shin, pantsCobalt, partId));
 
-    const boot = new THREE.BoxGeometry(0.12, 0.088, 0.195);
-    boot.translate(lx, 0.044, -0.032);
+    const boot = new THREE.CapsuleGeometry(0.056, 0.09, 8, 12);
+    boot.rotateX(Math.PI / 2);
+    boot.scale(1.04, 0.84, 1.08);
+    boot.translate(lx, 0.046, -0.032);
     parts.push(tagPartGeometry(boot, darkWebbing, partId));
   }
 
-  // --- PELVIS & TACTICAL WAR BELT (partId 0) ---
-  const pelvis = new THREE.CylinderGeometry(0.152, 0.138, 0.11, 10);
-  pelvis.scale(1.15, 1, 0.86);
+  // --- PELVIS & TACTICAL BELT (partId 0) ---
+  const pelvis = new THREE.CylinderGeometry(0.142, 0.128, 0.105, 16);
+  pelvis.scale(1.10, 1, 0.84);
   pelvis.translate(0, 0.40, 0);
-  parts.push(tagPartGeometry(pelvis, darkWebbing, 0));
+  parts.push(tagPartGeometry(pelvis, pantsCobalt, 0));
 
-  const beltBuckle = new THREE.BoxGeometry(0.08, 0.05, 0.035);
-  beltBuckle.translate(0, 0.41, -0.12);
-  parts.push(tagPartGeometry(beltBuckle, goldTrim, 0));
+  const belt = new THREE.CylinderGeometry(0.149, 0.146, 0.044, 16);
+  belt.scale(1.11, 1, 0.86);
+  belt.translate(0, 0.432, 0);
+  parts.push(tagPartGeometry(belt, darkWebbing, 0));
 
-  const hipPouch = new THREE.BoxGeometry(0.068, 0.10, 0.095);
-  hipPouch.translate(-0.178, 0.39, 0.02);
-  parts.push(tagPartGeometry(hipPouch, gunmetal, 3));
+  // --- SLEEK ATHLETIC COMBAT JACKET & LIGHT HARNESS (partId 0) ---
+  const torsoCore = new THREE.CylinderGeometry(0.178, 0.140, 0.33, 18);
+  torsoCore.scale(1.12, 1, 0.84);
+  torsoCore.translate(0, 0.565, 0);
+  parts.push(tagPartGeometry(torsoCore, jacketSlate, 0));
 
-  // --- HEROIC V-TAPER TORSO & TACTICAL VEST (partId 0) ---
-  const torsoCore = new THREE.CylinderGeometry(0.194, 0.146, 0.34, 12);
-  torsoCore.scale(1.18, 1, 0.86);
-  torsoCore.translate(0, 0.56, 0);
-  parts.push(tagPartGeometry(torsoCore, shirtSlate, 0));
+  const shoulderYoke = new THREE.SphereGeometry(0.176, 18, 12);
+  shoulderYoke.scale(1.16, 0.46, 0.82);
+  shoulderYoke.translate(0, 0.695, 0);
+  parts.push(tagPartGeometry(shoulderYoke, jacketSlate, 0));
 
-  const frontVest = new THREE.BoxGeometry(0.30, 0.24, 0.175);
-  frontVest.translate(0, 0.57, -0.048);
-  parts.push(tagPartGeometry(frontVest, armorTeal, 0));
+  // Low-profile front plate + sleek back harness straps (keeps back silhouette super clean!)
+  const frontChest = new THREE.BoxGeometry(0.24, 0.20, 0.06);
+  frontChest.translate(0, 0.575, -0.115);
+  parts.push(tagPartGeometry(frontChest, vestSlateDark, 0));
 
-  for (const mx of [-0.085, 0, 0.085]) {
-    const pouch = new THREE.BoxGeometry(0.064, 0.105, 0.05);
-    pouch.translate(mx, 0.51, -0.145);
-    parts.push(tagPartGeometry(pouch, darkWebbing, 0));
+  for (const sx of [-0.088, 0.088]) {
+    const strap = new THREE.BoxGeometry(0.036, 0.25, 0.195);
+    strap.translate(sx, 0.595, 0.0);
+    parts.push(tagPartGeometry(strap, darkWebbing, 0));
   }
 
-  // Beveled Shoulder Pauldrons
-  for (const sideSign of [-1, 1]) {
-    const pauldron = new THREE.SphereGeometry(0.104, 10, 8);
-    pauldron.scale(1.05, 0.82, 1.08);
-    pauldron.translate(sideSign * 0.228, 0.665, -0.01);
-    parts.push(tagPartGeometry(pauldron, shirtSlate, 0));
+  const radioClip = new THREE.BoxGeometry(0.06, 0.09, 0.042);
+  radioClip.translate(-0.088, 0.56, 0.105);
+  parts.push(tagPartGeometry(radioClip, accentGold, 0));
 
-    const chevron = new THREE.BoxGeometry(0.055, 0.036, 0.13);
-    chevron.rotateZ(-sideSign * 0.28);
-    chevron.translate(sideSign * 0.27, 0.685, -0.01);
-    parts.push(tagPartGeometry(chevron, goldTrim, 0));
-  }
-
-  // Compact Tactical Radio Pack (+Z Rear — kept sleek so shirt & helmet silhouette read super clean!)
-  const rucksack = new THREE.BoxGeometry(0.21, 0.20, 0.10);
-  rucksack.translate(0, 0.57, 0.145);
-  parts.push(tagPartGeometry(rucksack, gunmetal, 0));
-
-  const packFlap = new THREE.BoxGeometry(0.195, 0.055, 0.108);
-  packFlap.translate(0, 0.648, 0.145);
-  parts.push(tagPartGeometry(packFlap, armorTeal, 0));
-
-  // --- NECK, WARM SKIN HEAD & CHUNKY FAST HELMET (partId 0) ---
-  const neck = new THREE.CylinderGeometry(0.076, 0.088, 0.09, 10);
-  neck.translate(0, 0.75, -0.01);
+  // --- NECK, WARM SKIN HEAD & SMOOTH GLOSSY COBALT HELMET (partId 0) ---
+  const neck = new THREE.CylinderGeometry(0.072, 0.082, 0.09, 14);
+  neck.translate(0, 0.745, -0.008);
   parts.push(tagPartGeometry(neck, skinWarm, 0));
 
-  const head = new THREE.SphereGeometry(0.142, 12, 10);
+  const head = new THREE.SphereGeometry(0.142, 20, 16);
   head.scale(0.98, 1.02, 0.98);
-  head.translate(0, 0.86, -0.015);
+  head.translate(0, 0.855, -0.012);
   parts.push(tagPartGeometry(head, skinWarm, 0));
 
-  // Bold Rounded Tactical Helmet Dome (reads unmistakably from over-the-shoulder camera!)
   const helmetCrown = new THREE.SphereGeometry(
-    0.178,
-    16,
-    12,
+    0.180,
+    24,
+    18,
     0,
     Math.PI * 2,
     0,
-    Math.PI * 0.62
+    Math.PI * 0.60
   );
-  helmetCrown.scale(1.04, 0.98, 1.08);
-  helmetCrown.translate(0, 0.88, -0.005);
+  helmetCrown.scale(1.04, 0.98, 1.07);
+  helmetCrown.rotateX(-0.08);
+  helmetCrown.translate(0, 0.885, -0.006);
   parts.push(tagPartGeometry(helmetCrown, helmetCobalt, 0));
 
-  const helmetRim = new THREE.TorusGeometry(0.168, 0.022, 8, 18);
-  helmetRim.rotateX(Math.PI / 2 - 0.12);
-  helmetRim.translate(0, 0.845, -0.005);
-  parts.push(tagPartGeometry(helmetRim, 0x1565c0, 0));
+  const helmetRim = new THREE.TorusGeometry(0.172, 0.024, 12, 24);
+  helmetRim.rotateX(Math.PI / 2 - 0.08);
+  helmetRim.translate(0, 0.850, -0.008);
+  parts.push(tagPartGeometry(helmetRim, helmetBand, 0));
 
-  for (const sideSign of [-1, 1]) {
-    const arcRail = new THREE.BoxGeometry(0.032, 0.038, 0.17);
-    arcRail.translate(sideSign * 0.168, 0.90, -0.01);
-    parts.push(tagPartGeometry(arcRail, gunmetal, 0));
-  }
-
-  const gogglesFrame = new THREE.BoxGeometry(0.23, 0.076, 0.08);
-  gogglesFrame.translate(0, 0.868, -0.135);
-  parts.push(tagPartGeometry(gogglesFrame, darkWebbing, 0));
-
-  const visorLens = new THREE.BoxGeometry(0.20, 0.052, 0.032);
-  visorLens.translate(0, 0.868, -0.168);
+  const visorLens = new THREE.CapsuleGeometry(0.026, 0.14, 6, 10);
+  visorLens.rotateZ(Math.PI / 2);
+  visorLens.translate(0, 0.865, -0.155);
   parts.push(tagPartGeometry(visorLens, visorCyan, 0));
 
-  // --- TWO-HANDED FIRING ARMS & GLOVES (partId 4 — aligned to +0.178 X weapon grip!) ---
-  const rUpperArm = new THREE.CapsuleGeometry(0.055, 0.11, 5, 8);
-  rUpperArm.rotateX(0.45);
-  rUpperArm.translate(0.228, 0.59, -0.06);
-  parts.push(tagPartGeometry(rUpperArm, shirtSlate, 4));
+  // --- RIGHT-SIDE TWO-HANDED FIRING ARMS (partId 4 — aligned to EQUIPPED_GUN_PIVOT_X = +0.255!) ---
+  const rUpperArm = new THREE.CapsuleGeometry(0.052, 0.125, 8, 12);
+  rUpperArm.rotateZ(0.32);
+  rUpperArm.rotateX(0.48);
+  rUpperArm.translate(0.215, 0.61, -0.05);
+  parts.push(tagPartGeometry(rUpperArm, jacketSlate, 4));
 
-  const rForearm = new THREE.CapsuleGeometry(0.048, 0.12, 5, 8);
-  rForearm.rotateX(1.25);
-  rForearm.rotateY(0.15);
-  rForearm.translate(0.20, 0.55, -0.16);
-  parts.push(tagPartGeometry(rForearm, shirtSlate, 4));
+  const rForearm = new THREE.CapsuleGeometry(0.046, 0.135, 8, 12);
+  rForearm.rotateX(1.28);
+  rForearm.rotateY(-0.08);
+  rForearm.translate(0.255, 0.555, -0.165);
+  parts.push(tagPartGeometry(rForearm, jacketSlate, 4));
 
-  const rGlove = new THREE.SphereGeometry(0.054, 8, 6);
-  rGlove.translate(0.178, 0.545, -0.24);
+  const rGlove = new THREE.SphereGeometry(0.052, 12, 10);
+  rGlove.translate(0.255, 0.55, -0.245);
   parts.push(tagPartGeometry(rGlove, darkWebbing, 4));
 
-  const lUpperArm = new THREE.CapsuleGeometry(0.054, 0.12, 5, 8);
-  lUpperArm.rotateX(0.75);
-  lUpperArm.rotateZ(-0.42);
-  lUpperArm.translate(-0.175, 0.585, -0.09);
-  parts.push(tagPartGeometry(lUpperArm, shirtSlate, 4));
+  const lUpperArm = new THREE.CapsuleGeometry(0.050, 0.135, 8, 12);
+  lUpperArm.rotateX(0.82);
+  lUpperArm.rotateZ(-0.55);
+  lUpperArm.translate(-0.145, 0.60, -0.095);
+  parts.push(tagPartGeometry(lUpperArm, jacketSlate, 4));
 
-  const lForearm = new THREE.CapsuleGeometry(0.046, 0.17, 5, 8);
+  const lForearm = new THREE.CapsuleGeometry(0.044, 0.19, 8, 12);
   lForearm.rotateX(1.38);
-  lForearm.rotateZ(-0.85);
-  lForearm.translate(0.01, 0.555, -0.28);
-  parts.push(tagPartGeometry(lForearm, shirtSlate, 4));
+  lForearm.rotateZ(-0.95);
+  lForearm.translate(0.075, 0.56, -0.285);
+  parts.push(tagPartGeometry(lForearm, jacketSlate, 4));
 
-  const lGlove = new THREE.SphereGeometry(0.052, 8, 6);
-  lGlove.translate(0.155, 0.555, -0.40);
+  const lGlove = new THREE.SphereGeometry(0.050, 12, 10);
+  lGlove.translate(0.235, 0.56, -0.405);
   parts.push(tagPartGeometry(lGlove, darkWebbing, 4));
 
   const merged = mergeGeometries(parts, false);
   for (const p of parts) {
     p.dispose();
   }
-  merged.computeVertexNormals();
+  attachWeldedOutlineNormals(merged, 'aPartId');
   return merged;
 }
 
 /**
  * Crimson Shock Breacher (Standard Enemy Trooper, facing +Z toward player):
- * Bright crimson helmet & combat pants, light tactical vest, dark carbine.
+ * Smooth glossy crimson helmet, bright tactical vest & trousers, dark carbine.
  */
 export function createEnemySoldierGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
 
-  const crimsonBright = 0xe82c42;
-  const crimsonDeep = 0xb81d30;
-  const vestTan = 0xd8c3a5;
-  const obsidian = 0x1e2430;
-  const gunmetal = 0x36404f;
-  const visorRed = 0xff6b78;
-  const skinWarm = 0xe2a884;
+  const crimsonBright = 0xf02e46;
+  const crimsonDeep = 0xc41e35;
+  const vestLight = 0xe8d5bc;
+  const obsidian = 0x1d232e;
+  const gunmetal = 0x384352;
+  const visorRed = 0xff7582;
+  const skinWarm = 0xebb490;
 
   for (const [sideSign, partId] of [
     [-1, 1],
@@ -234,92 +281,96 @@ export function createEnemySoldierGeometry(): THREE.BufferGeometry {
   ] as const) {
     const lx = sideSign * 0.098;
 
-    const thigh = new THREE.CapsuleGeometry(0.064, 0.13, 5, 10);
+    const thigh = new THREE.CapsuleGeometry(0.064, 0.13, 8, 12);
     thigh.translate(lx, 0.30, 0);
     parts.push(tagPartGeometry(thigh, crimsonBright, partId));
 
-    const kneePad = new THREE.BoxGeometry(0.095, 0.075, 0.065);
-    kneePad.translate(lx, 0.21, 0.052);
-    parts.push(tagPartGeometry(kneePad, obsidian, partId));
-
-    const shin = new THREE.CapsuleGeometry(0.054, 0.12, 5, 10);
+    const shin = new THREE.CapsuleGeometry(0.054, 0.12, 8, 12);
     shin.translate(lx, 0.13, -0.008);
     parts.push(tagPartGeometry(shin, crimsonBright, partId));
 
-    const boot = new THREE.BoxGeometry(0.115, 0.085, 0.19);
-    boot.translate(lx, 0.042, 0.032);
+    const boot = new THREE.CapsuleGeometry(0.054, 0.085, 8, 10);
+    boot.rotateX(Math.PI / 2);
+    boot.scale(1.04, 0.84, 1.08);
+    boot.translate(lx, 0.044, 0.032);
     parts.push(tagPartGeometry(boot, obsidian, partId));
   }
 
-  const pelvis = new THREE.CylinderGeometry(0.148, 0.135, 0.11, 10);
-  pelvis.scale(1.15, 1, 0.85);
+  const pelvis = new THREE.CylinderGeometry(0.146, 0.132, 0.11, 14);
+  pelvis.scale(1.14, 1, 0.85);
   pelvis.translate(0, 0.40, 0);
   parts.push(tagPartGeometry(pelvis, crimsonDeep, 0));
 
-  const torsoCore = new THREE.CylinderGeometry(0.19, 0.145, 0.34, 12);
-  torsoCore.scale(1.18, 1, 0.85);
+  const torsoCore = new THREE.CylinderGeometry(0.186, 0.142, 0.33, 16);
+  torsoCore.scale(1.16, 1, 0.85);
   torsoCore.translate(0, 0.56, 0);
-  parts.push(tagPartGeometry(torsoCore, vestTan, 0));
+  parts.push(tagPartGeometry(torsoCore, vestLight, 0));
 
-  const breacherChest = new THREE.BoxGeometry(0.29, 0.22, 0.175);
-  breacherChest.translate(0, 0.56, 0.045);
-  parts.push(tagPartGeometry(breacherChest, crimsonDeep, 0));
+  const shoulderYoke = new THREE.SphereGeometry(0.18, 16, 10);
+  shoulderYoke.scale(1.16, 0.45, 0.82);
+  shoulderYoke.translate(0, 0.685, 0);
+  parts.push(tagPartGeometry(shoulderYoke, vestLight, 0));
 
-  const neck = new THREE.CylinderGeometry(0.072, 0.084, 0.09, 10);
+  const chestStrap = new THREE.BoxGeometry(0.24, 0.18, 0.06);
+  chestStrap.translate(0, 0.56, 0.115);
+  parts.push(tagPartGeometry(chestStrap, crimsonDeep, 0));
+
+  const neck = new THREE.CylinderGeometry(0.072, 0.084, 0.09, 12);
   neck.translate(0, 0.75, 0.01);
   parts.push(tagPartGeometry(neck, skinWarm, 0));
 
-  const head = new THREE.SphereGeometry(0.135, 12, 10);
+  const head = new THREE.SphereGeometry(0.136, 18, 14);
   head.translate(0, 0.855, 0.015);
   parts.push(tagPartGeometry(head, skinWarm, 0));
 
-  const helmet = new THREE.SphereGeometry(0.172, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.62);
+  const helmet = new THREE.SphereGeometry(0.174, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.62);
   helmet.scale(1.04, 0.98, 1.08);
-  helmet.translate(0, 0.88, 0.0);
+  helmet.translate(0, 0.882, 0.0);
   parts.push(tagPartGeometry(helmet, crimsonBright, 0));
 
-  const visor = new THREE.BoxGeometry(0.21, 0.058, 0.06);
-  visor.translate(0, 0.865, 0.145);
+  const visor = new THREE.CapsuleGeometry(0.025, 0.13, 6, 10);
+  visor.rotateZ(Math.PI / 2);
+  visor.translate(0, 0.865, 0.148);
   parts.push(tagPartGeometry(visor, visorRed, 0));
 
-  const rArm = new THREE.CapsuleGeometry(0.05, 0.18, 5, 8);
+  const rArm = new THREE.CapsuleGeometry(0.05, 0.18, 8, 10);
   rArm.rotateX(-0.95);
   rArm.translate(0.185, 0.56, 0.13);
   parts.push(tagPartGeometry(rArm, skinWarm, 4));
 
-  const lArm = new THREE.CapsuleGeometry(0.048, 0.18, 5, 8);
+  const lArm = new THREE.CapsuleGeometry(0.048, 0.18, 8, 10);
   lArm.rotateX(-1.05);
   lArm.rotateZ(0.38);
   lArm.translate(-0.14, 0.56, 0.16);
   parts.push(tagPartGeometry(lArm, skinWarm, 4));
 
-  const enemyRifle = new THREE.BoxGeometry(0.068, 0.09, 0.44);
-  enemyRifle.translate(0.10, 0.55, 0.31);
+  const enemyRifle = new THREE.BoxGeometry(0.068, 0.088, 0.42);
+  enemyRifle.translate(0.10, 0.55, 0.30);
   parts.push(tagPartGeometry(enemyRifle, gunmetal, 4));
 
   const merged = mergeGeometries(parts, false);
   for (const p of parts) {
     p.dispose();
   }
-  merged.computeVertexNormals();
+  attachWeldedOutlineNormals(merged, 'aPartId');
   return merged;
 }
 
 /**
  * Armored Heavy Juggernaut (Elite Brute Enemy, facing +Z toward player):
- * Hulking olive-drab & crimson-helmeted exo-trooper with broad siege pauldrons,
- * reinforced blast collar, and heavy twin-barrel autocannon — carries floating HP bar!
+ * Hulking vibrant olive-emerald & crimson-helmeted exo-trooper with smooth siege pauldrons,
+ * reinforced blast collar, and twin-barrel autocannon — carries floating red HP bar!
  */
 export function createHeavyEnemyGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
 
-  const oliveArmor = 0x5d8a3a;
-  const oliveDark = 0x3b5c23;
-  const crimsonHelmet = 0xd92b3a;
-  const bronzeTrim = 0xe59b28;
+  const oliveArmor = 0x67a138;
+  const oliveDark = 0x457024;
+  const crimsonHelmet = 0xe62e42;
+  const bronzeTrim = 0xf5aa2a;
   const obsidian = 0x1a2029;
   const gunmetal = 0x3d4856;
-  const visorGlow = 0xffae33;
+  const visorGlow = 0xffbe3b;
 
   for (const [sideSign, partId] of [
     [-1, 1],
@@ -327,89 +378,90 @@ export function createHeavyEnemyGeometry(): THREE.BufferGeometry {
   ] as const) {
     const lx = sideSign * 0.135;
 
-    const thigh = new THREE.CapsuleGeometry(0.088, 0.14, 5, 10);
+    const thigh = new THREE.CapsuleGeometry(0.088, 0.14, 8, 12);
     thigh.translate(lx, 0.31, 0);
     parts.push(tagPartGeometry(thigh, oliveDark, partId));
 
-    const kneePlate = new THREE.BoxGeometry(0.13, 0.095, 0.095);
-    kneePlate.translate(lx, 0.21, 0.065);
+    const kneePlate = new THREE.SphereGeometry(0.072, 10, 8);
+    kneePlate.scale(1.0, 0.85, 0.85);
+    kneePlate.translate(lx, 0.21, 0.062);
     parts.push(tagPartGeometry(kneePlate, crimsonHelmet, partId));
 
-    const shin = new THREE.CapsuleGeometry(0.078, 0.13, 5, 10);
+    const shin = new THREE.CapsuleGeometry(0.078, 0.13, 8, 12);
     shin.translate(lx, 0.13, 0);
     parts.push(tagPartGeometry(shin, oliveArmor, partId));
 
-    const boot = new THREE.BoxGeometry(0.155, 0.098, 0.23);
+    const boot = new THREE.CapsuleGeometry(0.074, 0.11, 8, 10);
+    boot.rotateX(Math.PI / 2);
+    boot.scale(1.06, 0.82, 1.08);
     boot.translate(lx, 0.048, 0.04);
     parts.push(tagPartGeometry(boot, obsidian, partId));
   }
 
-  const pelvis = new THREE.BoxGeometry(0.38, 0.13, 0.25);
+  const pelvis = new THREE.CylinderGeometry(0.20, 0.18, 0.13, 14);
+  pelvis.scale(1.16, 1, 0.88);
   pelvis.translate(0, 0.41, 0);
   parts.push(tagPartGeometry(pelvis, obsidian, 0));
 
-  // Broad Hulking Torso & Siege Plate
-  const torso = new THREE.CylinderGeometry(0.26, 0.19, 0.38, 12);
+  const torso = new THREE.CylinderGeometry(0.26, 0.19, 0.38, 16);
   torso.scale(1.25, 1, 0.92);
   torso.translate(0, 0.59, 0);
   parts.push(tagPartGeometry(torso, oliveArmor, 0));
 
-  const chestArmor = new THREE.BoxGeometry(0.42, 0.28, 0.24);
+  const chestArmor = new THREE.BoxGeometry(0.40, 0.26, 0.22);
   chestArmor.translate(0, 0.60, 0.045);
   parts.push(tagPartGeometry(chestArmor, oliveDark, 0));
 
-  const chestHazard = new THREE.BoxGeometry(0.24, 0.12, 0.04);
-  chestHazard.translate(0, 0.61, 0.17);
+  const chestHazard = new THREE.BoxGeometry(0.23, 0.11, 0.04);
+  chestHazard.translate(0, 0.61, 0.162);
   parts.push(tagPartGeometry(chestHazard, bronzeTrim, 0));
 
-  // Massive Crimson-Trimmed Juggernaut Shoulder Pauldrons
   for (const sideSign of [-1, 1]) {
-    const pauldron = new THREE.SphereGeometry(0.15, 10, 8);
+    const pauldron = new THREE.SphereGeometry(0.152, 16, 12);
     pauldron.scale(1.12, 0.92, 1.15);
     pauldron.translate(sideSign * 0.31, 0.70, 0.02);
     parts.push(tagPartGeometry(pauldron, oliveArmor, 0));
 
-    const rim = new THREE.BoxGeometry(0.17, 0.05, 0.22);
-    rim.rotateZ(-sideSign * 0.22);
-    rim.translate(sideSign * 0.32, 0.75, 0.02);
+    const rim = new THREE.TorusGeometry(0.13, 0.028, 8, 16, Math.PI);
+    rim.rotateZ(-sideSign * 0.25);
+    rim.translate(sideSign * 0.315, 0.73, 0.02);
     parts.push(tagPartGeometry(rim, bronzeTrim, 0));
   }
 
-  // Heavy Blast Collar & Crimson Dome Helmet
-  const collar = new THREE.CylinderGeometry(0.17, 0.20, 0.09, 10);
+  const collar = new THREE.CylinderGeometry(0.17, 0.20, 0.09, 14);
   collar.translate(0, 0.79, 0.02);
   parts.push(tagPartGeometry(collar, gunmetal, 0));
 
-  const head = new THREE.SphereGeometry(0.155, 12, 10);
+  const head = new THREE.SphereGeometry(0.155, 16, 12);
   head.translate(0, 0.89, 0.03);
   parts.push(tagPartGeometry(head, oliveArmor, 0));
 
-  const helmet = new THREE.SphereGeometry(0.195, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.62);
+  const helmet = new THREE.SphereGeometry(0.198, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.62);
   helmet.scale(1.08, 0.96, 1.12);
   helmet.translate(0, 0.915, 0.02);
   parts.push(tagPartGeometry(helmet, crimsonHelmet, 0));
 
-  const visor = new THREE.BoxGeometry(0.25, 0.068, 0.07);
-  visor.translate(0, 0.89, 0.18);
+  const visor = new THREE.CapsuleGeometry(0.032, 0.16, 6, 10);
+  visor.rotateZ(Math.PI / 2);
+  visor.translate(0, 0.89, 0.185);
   parts.push(tagPartGeometry(visor, visorGlow, 0));
 
-  // Muscular Arms & Heavy Twin Autocannon
   for (const sideSign of [-1, 1]) {
-    const arm = new THREE.CapsuleGeometry(0.072, 0.20, 5, 8);
+    const arm = new THREE.CapsuleGeometry(0.072, 0.20, 8, 12);
     arm.rotateX(-0.92);
     arm.rotateZ(-sideSign * 0.22);
     arm.translate(sideSign * 0.25, 0.56, 0.16);
     parts.push(tagPartGeometry(arm, oliveArmor, 4));
   }
 
-  const cannonBody = new THREE.BoxGeometry(0.16, 0.13, 0.52);
+  const cannonBody = new THREE.BoxGeometry(0.16, 0.13, 0.50);
   cannonBody.translate(0, 0.50, 0.34);
   parts.push(tagPartGeometry(cannonBody, gunmetal, 4));
 
   for (const bx of [-0.04, 0.04]) {
-    const barrel = new THREE.CylinderGeometry(0.024, 0.024, 0.26, 8);
+    const barrel = new THREE.CylinderGeometry(0.024, 0.024, 0.26, 10);
     barrel.rotateX(Math.PI / 2);
-    barrel.translate(bx, 0.51, 0.66);
+    barrel.translate(bx, 0.51, 0.65);
     parts.push(tagPartGeometry(barrel, bronzeTrim, 4));
   }
 
@@ -417,41 +469,35 @@ export function createHeavyEnemyGeometry(): THREE.BufferGeometry {
   for (const p of parts) {
     p.dispose();
   }
-  merged.computeVertexNormals();
+  attachWeldedOutlineNormals(merged, 'aPartId');
   return merged;
 }
 
-/**
- * Compatibility wrapper delegating to WeaponRigFactory's detailed multi-part showcase models.
- */
 export function createWeaponPickupGroup(tier: WeaponTierId): THREE.Group {
   return createShowcaseWeaponGroup(tier).root;
 }
 
 /**
  * Chunky High-Contrast Teardrop Plasma/Tracer Bolt:
- * Rounded bright white nose + tapered cyan/gold wake so every volley reads crisply from close camera!
+ * Smooth rounded bright white nose + tapered cyan/gold wake!
  */
 export function createTracerBoltGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
 
-  // Rounded bright white teardrop head (-Z forward)
-  const head = new THREE.SphereGeometry(0.095, 10, 8);
-  head.scale(0.92, 0.92, 1.35);
+  const head = new THREE.SphereGeometry(0.096, 12, 10);
+  head.scale(0.92, 0.92, 1.38);
   head.translate(0, 0, -0.24);
   parts.push(tagPartGeometry(head, 0xffffff, 0));
 
-  // Tapered bright core tail (+Z wake)
-  const tail = new THREE.ConeGeometry(0.088, 0.68, 8);
+  const tail = new THREE.ConeGeometry(0.088, 0.72, 10);
   tail.rotateX(Math.PI / 2);
-  tail.translate(0, 0, 0.14);
+  tail.translate(0, 0, 0.15);
   parts.push(tagPartGeometry(tail, 0xd8faff, 0));
 
-  // Outer soft halo sheath (single-pass forward glow without HalfFloat FBOs)
-  const halo = new THREE.ConeGeometry(0.145, 0.86, 8);
+  const halo = new THREE.ConeGeometry(0.148, 0.90, 10);
   halo.rotateX(Math.PI / 2);
-  halo.translate(0, 0, 0.10);
-  parts.push(tagPartGeometry(halo, 0x5cb8cc, 0));
+  halo.translate(0, 0, 0.11);
+  parts.push(tagPartGeometry(halo, 0x56c8e8, 0));
 
   const merged = mergeGeometries(parts, false);
   for (const p of parts) {
@@ -462,45 +508,50 @@ export function createTracerBoltGeometry(): THREE.BufferGeometry {
 }
 
 /**
- * Gleaming 3D Gold Coin Medallion with dark cartoon outline & sun-ray glow perched atop Supply Drums!
+ * Chunky Beveled 3D Gold Coin Medallion with dark cartoon ink outline & embossed star emblem!
  */
 export function createGoldCoinPickupGroup(): THREE.Group {
   const group = new THREE.Group();
 
   const goldFaceMat = new THREE.MeshStandardMaterial({
-    color: 0xffcf33,
-    emissive: 0x6e4700,
-    roughness: 0.28,
-    metalness: 0.42,
+    color: 0xffce2b,
+    emissive: 0x805400,
+    roughness: 0.24,
+    metalness: 0.36,
   });
   const goldRimMat = new THREE.MeshStandardMaterial({
-    color: 0xffdf6b,
-    emissive: 0x7a5200,
-    roughness: 0.24,
-    metalness: 0.46,
+    color: 0xffe47a,
+    emissive: 0x8f6000,
+    roughness: 0.20,
+    metalness: 0.40,
   });
   const outlineMat = new THREE.MeshBasicMaterial({
-    color: 0x16120a,
+    color: 0x161108,
     side: THREE.BackSide,
   });
 
-  const discGeo = new THREE.CylinderGeometry(0.56, 0.56, 0.16, 22);
+  const discGeo = new THREE.CylinderGeometry(0.60, 0.60, 0.22, 26);
   discGeo.rotateX(Math.PI / 2);
-  const disc = new THREE.Mesh(discGeo, goldFaceMat);
-  group.add(disc);
+  group.add(new THREE.Mesh(discGeo, goldFaceMat));
 
-  const outlineGeo = new THREE.CylinderGeometry(0.61, 0.61, 0.21, 22);
+  const outlineGeo = new THREE.CylinderGeometry(0.66, 0.66, 0.28, 26);
   outlineGeo.rotateX(Math.PI / 2);
-  const outline = new THREE.Mesh(outlineGeo, outlineMat);
-  group.add(outline);
+  group.add(new THREE.Mesh(outlineGeo, outlineMat));
 
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.065, 8, 22), goldRimMat);
-  group.add(rim);
+  const rimFront = new THREE.Mesh(new THREE.TorusGeometry(0.54, 0.075, 10, 26), goldRimMat);
+  rimFront.position.z = 0.065;
+  group.add(rimFront);
 
-  const starGeo = new THREE.OctahedronGeometry(0.22, 0);
-  starGeo.scale(1, 1, 0.65);
-  const star = new THREE.Mesh(starGeo, goldRimMat);
-  group.add(star);
+  const rimBack = new THREE.Mesh(new THREE.TorusGeometry(0.54, 0.075, 10, 26), goldRimMat);
+  rimBack.position.z = -0.065;
+  group.add(rimBack);
+
+  const emblemV = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.56, 0.28), goldRimMat);
+  const emblemTop = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.10, 0.27), goldRimMat);
+  emblemTop.position.y = 0.14;
+  const emblemBot = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.10, 0.27), goldRimMat);
+  emblemBot.position.y = -0.14;
+  group.add(emblemV, emblemTop, emblemBot);
 
   return group;
 }
@@ -512,41 +563,39 @@ export function createRecruitPickupGroup(): THREE.Group {
   const group = new THREE.Group();
 
   const helmetMat = new THREE.MeshStandardMaterial({
-    color: 0x1e8fff,
-    emissive: 0x09356e,
-    roughness: 0.32,
-    metalness: 0.28,
+    color: 0x1a96ff,
+    emissive: 0x0a3d7a,
+    roughness: 0.28,
+    metalness: 0.24,
   });
-  const visorMat = new THREE.MeshBasicMaterial({ color: 0x66faff });
+  const visorMat = new THREE.MeshBasicMaterial({ color: 0x70fbff });
   const outlineMat = new THREE.MeshBasicMaterial({
     color: 0x0d131c,
     side: THREE.BackSide,
   });
 
   const dome = new THREE.Mesh(
-    new THREE.SphereGeometry(0.42, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62),
+    new THREE.SphereGeometry(0.45, 22, 16, 0, Math.PI * 2, 0, Math.PI * 0.62),
     helmetMat
   );
   dome.position.y = 0.05;
   group.add(dome);
 
   const domeOutline = new THREE.Mesh(
-    new THREE.SphereGeometry(0.465, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.64),
+    new THREE.SphereGeometry(0.50, 22, 16, 0, Math.PI * 2, 0, Math.PI * 0.64),
     outlineMat
   );
   domeOutline.position.y = 0.05;
   group.add(domeOutline);
 
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.14, 0.18), visorMat);
-  visor.position.set(0, -0.02, 0.34);
+  const visor = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.34, 6, 10), visorMat);
+  visor.rotation.z = Math.PI / 2;
+  visor.position.set(0, -0.02, 0.37);
   group.add(visor);
 
   return group;
 }
 
-/**
- * Heavy Industrial Tactical Vault Lock mounted atop Locked Multiplier/Divider gates.
- */
 export function createPadlockMesh(): THREE.Group {
   const group = new THREE.Group();
 

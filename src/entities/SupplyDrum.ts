@@ -38,28 +38,23 @@ function createMilitaryDrumTexture(): THREE.CanvasTexture {
   canvas.height = 256;
   const ctx = canvas.getContext('2d')!;
 
-  // Warm military crate/drum olive-ochre ribbing with steel vertical seams & dark hoops
+  // Warm sunlit oak stave planks along Lathe V (0..256 spans left head -> belly -> right head)
   const grad = ctx.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, '#7c5d38');
-  grad.addColorStop(0.5, '#987346');
-  grad.addColorStop(1, '#6b4e2e');
+  grad.addColorStop(0, '#755330');
+  grad.addColorStop(0.22, '#9c7344');
+  grad.addColorStop(0.5, '#b08450');
+  grad.addColorStop(0.78, '#9c7344');
+  grad.addColorStop(1, '#755330');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 256, 256);
 
-  // Stave / vertical rib grooves
-  ctx.fillStyle = 'rgba(22, 14, 8, 0.28)';
-  for (let x = 0; x < 256; x += 24) {
-    ctx.fillRect(x, 0, 3, 256);
-  }
-
-  // Heavy brushed gunmetal steel bands
-  for (const bandY of [28, 194]) {
-    ctx.fillStyle = '#27303b';
-    ctx.fillRect(0, bandY - 3, 256, 38);
-    ctx.fillStyle = '#6c7a89';
-    ctx.fillRect(0, bandY, 256, 32);
-    ctx.fillStyle = '#95a5b5';
-    ctx.fillRect(0, bandY + 4, 256, 7);
+  // Subtle alternating stave plank warmth & dark plank seams around circumference (U)
+  for (let i = 0; i < 16; i++) {
+    const x = i * 16;
+    ctx.fillStyle = i % 2 === 0 ? 'rgba(255, 226, 178, 0.08)' : 'rgba(30, 16, 6, 0.08)';
+    ctx.fillRect(x, 0, 16, 256);
+    ctx.fillStyle = 'rgba(28, 16, 8, 0.42)';
+    ctx.fillRect(x, 0, 2.5, 256);
   }
 
   const tex = new THREE.CanvasTexture(canvas);
@@ -69,22 +64,83 @@ function createMilitaryDrumTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+function createBulgedBarrelGeometries(): {
+  bodyGeo: THREE.BufferGeometry;
+  outlineGeo: THREE.BufferGeometry;
+} {
+  const buildLathe = (inflate: number): THREE.BufferGeometry => {
+    const pts: THREE.Vector2[] = [
+      new THREE.Vector2(0.0, -1.12 - inflate),
+      new THREE.Vector2(0.76 + inflate, -1.12 - inflate),
+      new THREE.Vector2(0.83 + inflate, -1.04 - inflate * 0.4),
+    ];
+    const steps = 10;
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps; // 0..1 from left chime to right chime
+      const y = -1.02 + t * 2.04;
+      const arch = 1 - Math.pow(t * 2 - 1, 2); // parabolic stave bulge
+      const r = 0.84 + arch * 0.21 + inflate;
+      pts.push(new THREE.Vector2(r, y));
+    }
+    pts.push(
+      new THREE.Vector2(0.83 + inflate, 1.04 + inflate * 0.4),
+      new THREE.Vector2(0.76 + inflate, 1.12 + inflate),
+      new THREE.Vector2(0.0, 1.12 + inflate)
+    );
+    const geo = new THREE.LatheGeometry(pts, 22);
+    geo.rotateZ(Math.PI / 2);
+    geo.scale(1.0, 1.04, 1.02);
+    geo.computeVertexNormals();
+    return geo;
+  };
+
+  return {
+    bodyGeo: buildLathe(0),
+    outlineGeo: buildLathe(0.052),
+  };
+}
+
 function createSunburstGlowTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 128;
   canvas.height = 128;
   const ctx = canvas.getContext('2d')!;
-  const grad = ctx.createRadialGradient(64, 64, 6, 64, 64, 62);
-  grad.addColorStop(0, 'rgba(255, 244, 168, 0.92)');
-  grad.addColorStop(0.45, 'rgba(255, 204, 56, 0.45)');
+  ctx.clearRect(0, 0, 128, 128);
+
+  const grad = ctx.createRadialGradient(64, 64, 5, 64, 64, 62);
+  grad.addColorStop(0, 'rgba(255, 250, 196, 0.96)');
+  grad.addColorStop(0.42, 'rgba(255, 210, 64, 0.52)');
   grad.addColorStop(1, 'rgba(255, 180, 20, 0.0)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 128, 128);
+
+  // Subtle 8-ray starburst flare behind reward pickup
+  ctx.save();
+  ctx.translate(64, 64);
+  ctx.fillStyle = 'rgba(255, 248, 205, 0.36)';
+  for (let r = 0; r < 8; r++) {
+    ctx.rotate(Math.PI / 4);
+    ctx.beginPath();
+    ctx.moveTo(-4, 0);
+    ctx.lineTo(0, -58);
+    ctx.lineTo(4, 0);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
   return new THREE.CanvasTexture(canvas);
 }
 
 const _sharedDrumTex = createMilitaryDrumTexture();
+const _sharedBarrelGeos = createBulgedBarrelGeometries();
 const _sharedGlowTex = createSunburstGlowTexture();
+const _sharedHoopGeo = (() => {
+  const g = new THREE.CylinderGeometry(0.955, 0.955, 0.19, 22, 1, true);
+  g.rotateZ(Math.PI / 2);
+  g.scale(1.0, 1.045, 1.025);
+  return g;
+})();
 
 export class SupplyDrumSlot {
   public readonly entityId: number;
@@ -100,6 +156,7 @@ export class SupplyDrumSlot {
 
   private readonly drumBodyGroup = new THREE.Group();
   private readonly drumMat: THREE.MeshStandardMaterial;
+  private readonly hoopMat: THREE.MeshStandardMaterial;
   private readonly hpLabelMesh: THREE.Mesh;
   private readonly hpLabelTex: EditableArcadeHpTexture;
   private readonly pickupPivot = new THREE.Group();
@@ -117,11 +174,11 @@ export class SupplyDrumSlot {
 
     // Grounded contact shadow
     const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(1.32, 20),
+      new THREE.CircleGeometry(1.36, 20),
       new THREE.MeshBasicMaterial({
         color: 0x05080d,
         transparent: true,
-        opacity: 0.46,
+        opacity: 0.44,
         depthWrite: false,
       })
     );
@@ -132,50 +189,56 @@ export class SupplyDrumSlot {
     this.drumMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       map: _sharedDrumTex,
-      roughness: 0.62,
-      metalness: 0.18,
+      roughness: 0.56,
+      metalness: 0.14,
+      emissive: 0x000000,
+    });
+    this.hoopMat = new THREE.MeshStandardMaterial({
+      color: 0x7c8b9c,
+      roughness: 0.34,
+      metalness: 0.48,
       emissive: 0x000000,
     });
 
-    // Chunky sideways/upright tactical munitions barrel silhouette with dark BackSide cel-outline!
-    const barrelGeo = new THREE.CylinderGeometry(0.92, 0.92, 2.22, 18);
-    barrelGeo.rotateZ(Math.PI / 2);
-    barrelGeo.scale(1.0, 1.08, 1.05);
-    const barrelMesh = new THREE.Mesh(barrelGeo, this.drumMat);
-    barrelMesh.position.y = 0.98;
+    // Sculpted bulged stave barrel + raised 3D gunmetal steel hoops + watertight BackSide cel-outline!
+    const barrelMesh = new THREE.Mesh(_sharedBarrelGeos.bodyGeo, this.drumMat);
+    barrelMesh.position.y = 1.04;
     this.drumBodyGroup.add(barrelMesh);
 
-    const outlineGeo = new THREE.CylinderGeometry(0.97, 0.97, 2.31, 18);
-    outlineGeo.rotateZ(Math.PI / 2);
-    outlineGeo.scale(1.0, 1.08, 1.05);
+    for (const hoopX of [-0.66, 0.66]) {
+      const hoop = new THREE.Mesh(_sharedHoopGeo, this.hoopMat);
+      hoop.position.set(hoopX, 1.04, 0);
+      this.drumBodyGroup.add(hoop);
+    }
+
     const outlineMesh = new THREE.Mesh(
-      outlineGeo,
-      new THREE.MeshBasicMaterial({ color: 0x120d08, side: THREE.BackSide })
+      _sharedBarrelGeos.outlineGeo,
+      new THREE.MeshBasicMaterial({ color: 0x140d07, side: THREE.BackSide })
     );
-    outlineMesh.position.y = 0.98;
+    outlineMesh.position.y = 1.04;
     this.drumBodyGroup.add(outlineMesh);
 
     this.root.add(this.drumBodyGroup);
 
-    // Giant front-facing orange-outlined white HP digits right across the drum front
+    // Giant front-facing orange-outlined white HP digits right across the drum belly
     this.hpLabelTex = new EditableArcadeHpTexture();
     this.hpLabelMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.26, 1.32),
+      new THREE.PlaneGeometry(2.28, 1.34),
       new THREE.MeshBasicMaterial({
         map: this.hpLabelTex.texture,
         transparent: true,
         depthWrite: false,
       })
     );
-    this.hpLabelMesh.position.set(0, 0.90, 1.06);
+    this.hpLabelMesh.position.set(0, 0.98, 1.14);
     this.root.add(this.hpLabelMesh);
 
     // Perched Top Reward Pivot (Gold Coin, 3D Weapon, or +1 Recruit Helmet)
-    this.pickupPivot.position.set(0, 2.42, 0);
+    this.pickupPivot.position.set(0, 2.56, 0);
     this.root.add(this.pickupPivot);
 
     this.glowHaloMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.85, 1.85),
+      new THREE.PlaneGeometry(1.95, 1.95),
       new THREE.MeshBasicMaterial({
         map: _sharedGlowTex,
         transparent: true,
@@ -183,7 +246,7 @@ export class SupplyDrumSlot {
         depthWrite: false,
       })
     );
-    this.glowHaloMesh.position.set(0, 0.04, -0.12);
+    this.glowHaloMesh.position.set(0, 0.04, -0.14);
     this.pickupPivot.add(this.glowHaloMesh);
 
     this.coinGroup = createGoldCoinPickupGroup();
@@ -210,10 +273,10 @@ export class SupplyDrumSlot {
 
     for (const t of [1, 2, 3, 4, 5] as const) {
       const rig = this.weaponRigs[t];
-      rig.root.scale.setScalar(1.25);
+      rig.root.scale.setScalar(1.28);
       rig.root.rotation.z = 0.18;
       this.pickupPivot.add(rig.root);
-      this.weaponBadges[t].position.set(0, 0.88, 0);
+      this.weaponBadges[t].position.set(0, 0.90, 0);
       this.pickupPivot.add(this.weaponBadges[t]);
     }
 
@@ -230,15 +293,29 @@ export class SupplyDrumSlot {
     this.rewardType = def.rewardType;
     this.rewardValue = def.rewardValue;
     this.flashTimer = 0;
+    this.spinAngle = Math.abs(this.x * 0.45 + this.z * 0.08);
 
     this.root.position.set(this.x, 0, this.z);
     this.root.visible = true;
     this.drumBodyGroup.scale.set(1, 1, 1);
     this.drumMat.emissive.setRGB(0, 0, 0);
+    this.hoopMat.emissive.setRGB(0, 0, 0);
 
     const isCoins = def.rewardType === 'COINS';
     const isRecruit = def.rewardType === 'RECRUIT';
     const isWeapon = def.rewardType === 'WEAPON';
+
+    // Distinct barrel wood/hoop color-coding so reward value reads at a glance
+    if (isWeapon) {
+      this.drumMat.color.setHex(0xe87b6e); // Rich crimson-mahogany ordnance barrel
+      this.hoopMat.color.setHex(0xd4a24c); // Brass ordnance hoops
+    } else if (isRecruit) {
+      this.drumMat.color.setHex(0xcbe2f8); // Cool tactical slate-oak barrel
+      this.hoopMat.color.setHex(0x4ea4ff); // Cobalt squad-reinforcement hoops
+    } else {
+      this.drumMat.color.setHex(0xffebd2); // Warm golden-oak War Chest barrel
+      this.hoopMat.color.setHex(0x7c8b9c); // Brushed gunmetal hoops
+    }
 
     this.coinGroup.visible = isCoins;
     this.recruitGroup.visible = isRecruit;
@@ -258,7 +335,7 @@ export class SupplyDrumSlot {
     } else if (isRecruit) {
       (this.glowHaloMesh.material as THREE.MeshBasicMaterial).color.setHex(0x45d9ff);
     } else {
-      (this.glowHaloMesh.material as THREE.MeshBasicMaterial).color.setHex(0xffdf66);
+      (this.glowHaloMesh.material as THREE.MeshBasicMaterial).color.setHex(0xffe066);
     }
 
     this.hpLabelTex.redrawIfDirty(this.remainingHp, 0);
@@ -282,18 +359,20 @@ export class SupplyDrumSlot {
       return;
     }
 
-    this.spinAngle += dt * 2.5;
+    this.spinAngle += dt * 2.4;
     const bobY = Math.sin(this.spinAngle * 1.5) * 0.08;
-    this.pickupPivot.position.y = 2.42 + bobY;
+    this.pickupPivot.position.y = 2.56 + bobY;
+    this.glowHaloMesh.rotation.z = this.spinAngle * 0.45;
 
     if (this.coinGroup.visible) {
-      this.coinGroup.rotation.y = this.spinAngle;
+      // Oscillate +/- 33 deg toward camera so coin face always gleams and never goes edge-on!
+      this.coinGroup.rotation.y = Math.sin(this.spinAngle * 1.15) * 0.58;
     } else if (this.recruitGroup.visible) {
-      this.recruitGroup.rotation.y = Math.sin(this.spinAngle * 0.9) * 0.45;
+      this.recruitGroup.rotation.y = Math.sin(this.spinAngle * 0.95) * 0.48;
     } else {
       const wTier = Math.max(1, Math.min(5, Math.round(this.rewardValue))) as WeaponTierId;
       const rig = this.weaponRigs[wTier];
-      rig.root.rotation.y = this.spinAngle * 0.85;
+      rig.root.rotation.y = Math.sin(this.spinAngle * 0.9) * 0.72;
       if (rig.spinCluster) {
         rig.spinCluster.rotation.x += dt * 12;
       }
@@ -301,12 +380,14 @@ export class SupplyDrumSlot {
 
     if (this.flashTimer > 0) {
       this.flashTimer = Math.max(0, this.flashTimer - dt * 7.5);
-      // Fiery red-orange barrel impact flash + punchy squash pop (matches 084617.png!)
-      this.drumMat.emissive.setRGB(this.flashTimer * 0.82, this.flashTimer * 0.16, 0.02);
-      const pop = 1 + this.flashTimer * 0.055;
-      this.drumBodyGroup.scale.set(pop, 1 - this.flashTimer * 0.03, pop);
+      // Fiery red-orange barrel impact flash + punchy squash pop
+      this.drumMat.emissive.setRGB(this.flashTimer * 0.85, this.flashTimer * 0.18, 0.02);
+      this.hoopMat.emissive.setRGB(this.flashTimer * 0.45, this.flashTimer * 0.12, 0.01);
+      const pop = 1 + this.flashTimer * 0.06;
+      this.drumBodyGroup.scale.set(pop, 1 - this.flashTimer * 0.035, pop);
     } else {
       this.drumMat.emissive.setRGB(0, 0, 0);
+      this.hoopMat.emissive.setRGB(0, 0, 0);
       this.drumBodyGroup.scale.set(1, 1, 1);
     }
 

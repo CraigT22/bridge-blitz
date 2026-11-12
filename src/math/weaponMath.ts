@@ -1,11 +1,11 @@
 import type { WeaponSpec, WeaponTierId } from '../core/types';
 
-export const WEAPON_LOCK_BONUS_COINS = 50;
+export const WEAPON_LOCK_BONUS_COINS = 25;
 export const WEAPON_LOCK_BONUS_SQUAD = 1;
 export const MAX_SQUAD_COUNT = 10;
 export const MAX_VISUAL_SOLDIERS = 10;
 export const MAX_ACTIVE_VOLLEY_EMITTERS = 10;
-export const OVERFLOW_SQUAD_COIN_BONUS = 25;
+export const OVERFLOW_SQUAD_COIN_BONUS = 10;
 export const COMMANDO_MODEL_SCALE = 1.42;
 export const BASE_SOLDIER_BULLET_DAMAGE = 5.0;
 

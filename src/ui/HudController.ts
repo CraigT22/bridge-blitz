@@ -85,6 +85,7 @@ export class HudController {
   private readonly hubBossPreviewEl = mustEl<HTMLElement>('hub-boss-preview');
 
   private readonly runProgressCard = mustEl<HTMLElement>('run-progress-card');
+  private readonly topWeaponPill = mustEl<HTMLElement>('top-weapon-pill');
   private readonly progressFillEl = mustEl<HTMLElement>('track-progress-fill');
   private readonly progressPctEl = mustEl<HTMLElement>('progress-pct-text');
 
@@ -345,6 +346,7 @@ export class HudController {
     this.hubLeftToolsEl.classList.toggle('is-hidden', !inHub);
     this.hubStageBannerEl.classList.toggle('is-hidden', !inHub || this.activeTab !== 'BATTLE');
     this.runProgressCard.classList.toggle('is-hidden', inHub);
+    this.topWeaponPill.classList.toggle('is-hidden', inHub);
     this.btnPause.classList.toggle('is-hidden', !inMission);
 
     if (!inHub) {
@@ -690,8 +692,15 @@ export class HudController {
     const inCombat = state === 'RUNNING' || state === 'BOSS_FIGHT';
     const showSquadPill = logicalSquad > 0 && inCombat;
 
+    if (weaponTier !== this.lastWeaponTier) {
+      this.lastWeaponTier = weaponTier;
+      this.squadWeaponEl.textContent = WEAPON_SPECS[weaponTier].shortBadge;
+    }
+
     if (showSquadPill) {
-      sceneManager.projectToScreen(squadX, 1.88, squadZ, _projScratch);
+      // Offset badge slightly right of the squad so the center tracer lane stays 100% unobstructed!
+      const badgeWorldX = Math.min(4.2, squadX + 0.74);
+      sceneManager.projectToScreen(badgeWorldX, 1.56, squadZ, _projScratch);
       if (_projScratch.visible) {
         this.squadPillEl.classList.remove('is-hidden');
         this.squadPillEl.style.transform = `translate3d(${_projScratch.x.toFixed(1)}px, ${_projScratch.y.toFixed(1)}px, 0) translate(-50%, -100%)`;
@@ -699,10 +708,6 @@ export class HudController {
         if (logicalSquad !== this.lastSquadCount) {
           this.lastSquadCount = logicalSquad;
           this.squadCountEl.textContent = `${logicalSquad}`;
-        }
-        if (weaponTier !== this.lastWeaponTier) {
-          this.lastWeaponTier = weaponTier;
-          this.squadWeaponEl.textContent = WEAPON_SPECS[weaponTier].shortBadge;
         }
       } else {
         this.squadPillEl.classList.add('is-hidden');

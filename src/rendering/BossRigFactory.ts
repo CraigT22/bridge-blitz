@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { BossChassisId } from '../core/types';
+import { attachWeldedOutlineNormals } from './ProceduralGeometries';
 
 export interface BossChassisRig {
   readonly chassis: BossChassisId;
@@ -22,6 +23,57 @@ export interface BossChassisRig {
   readonly flashMaterials: THREE.MeshStandardMaterial[];
 }
 
+function createBossOutlineMaterial(): THREE.MeshBasicMaterial {
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x080c12,
+    side: THREE.BackSide,
+  });
+  mat.customProgramCacheKey = () => 'boss-cel-outline-v41';
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        attribute vec3 aOutlineNormal;`
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        transformed += aOutlineNormal * 0.032;`
+      );
+  };
+  return mat;
+}
+
+const _sharedBossOutlineMat = createBossOutlineMaterial();
+
+function attachBossRigCelOutlines(root: THREE.Group): void {
+  const targetMeshes: THREE.Mesh[] = [];
+  root.traverse((obj) => {
+    if (
+      obj instanceof THREE.Mesh &&
+      obj.material instanceof THREE.MeshStandardMaterial &&
+      !obj.userData.isBossOutline
+    ) {
+      targetMeshes.push(obj);
+    }
+  });
+
+  for (let i = 0; i < targetMeshes.length; i++) {
+    const mesh = targetMeshes[i];
+    const geo = mesh.geometry as THREE.BufferGeometry;
+    if (!geo.attributes.aOutlineNormal) {
+      if (!geo.attributes.normal) {
+        geo.computeVertexNormals();
+      }
+      attachWeldedOutlineNormals(geo);
+    }
+    const outline = new THREE.Mesh(geo, _sharedBossOutlineMat);
+    outline.userData.isBossOutline = true;
+    mesh.add(outline);
+  }
+}
+
 function createChassisMaterials(
   primaryHex: number,
   accentHex: number,
@@ -37,25 +89,25 @@ function createChassisMaterials(
   const primaryMat = new THREE.MeshStandardMaterial({
     color: primaryHex,
     roughness: 0.34,
-    metalness: 0.44,
+    metalness: 0.36,
     emissive: 0x000000,
   });
   const accentMat = new THREE.MeshStandardMaterial({
     color: accentHex,
-    roughness: 0.32,
-    metalness: 0.38,
+    roughness: 0.30,
+    metalness: 0.32,
     emissive: 0x000000,
   });
   const trimMat = new THREE.MeshStandardMaterial({
     color: trimHex,
-    roughness: 0.28,
-    metalness: 0.48,
+    roughness: 0.26,
+    metalness: 0.42,
     emissive: 0x000000,
   });
   const darkSteelMat = new THREE.MeshStandardMaterial({
-    color: 0x1c232d,
-    roughness: 0.46,
-    metalness: 0.45,
+    color: 0x26303d,
+    roughness: 0.42,
+    metalness: 0.38,
     emissive: 0x000000,
   });
   const glowMat = new THREE.MeshBasicMaterial({
@@ -230,6 +282,7 @@ export function createWardenMechRig(): BossChassisRig {
   }
 
   root.add(bodyGroup);
+  attachBossRigCelOutlines(root);
 
   return {
     chassis: 'WARDEN_MECH',
@@ -355,6 +408,7 @@ export function createSiegeTankRig(): BossChassisRig {
 
   bodyGroup.add(turretGroup);
   root.add(bodyGroup);
+  attachBossRigCelOutlines(root);
 
   return {
     chassis: 'SIEGE_TANK',
@@ -471,6 +525,7 @@ export function createKrakenWalkerRig(): BossChassisRig {
   bodyGroup.add(coreSpin);
 
   root.add(bodyGroup);
+  attachBossRigCelOutlines(root);
 
   return {
     chassis: 'KRAKEN_WALKER',
@@ -669,6 +724,7 @@ export function createSovereignTitanRig(): BossChassisRig {
   bodyGroup.add(meleeArm);
 
   root.add(bodyGroup);
+  attachBossRigCelOutlines(root);
 
   return {
     chassis: 'SOVEREIGN_TITAN',

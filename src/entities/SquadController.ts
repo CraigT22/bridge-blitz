@@ -223,9 +223,9 @@ export class SquadController {
     const speed = spec.projectileSpeed;
     const bulletScale = 1.24;
     const maxAge = 1.32;
-    const muzzleOffsetX = 0.178 * COMMANDO_MODEL_SCALE;
-    const muzzleY = 0.555 * COMMANDO_MODEL_SCALE;
-    const muzzleOffsetZ = -0.64 * COMMANDO_MODEL_SCALE;
+    const muzzleOffsetX = 0.255 * COMMANDO_MODEL_SCALE;
+    const muzzleY = 0.548 * COMMANDO_MODEL_SCALE;
+    const muzzleOffsetZ = -0.68 * COMMANDO_MODEL_SCALE;
 
     for (let e = 0; e < emitterCount; e++) {
       const soldierIdx = (this.emitterCursor + e) % vis;

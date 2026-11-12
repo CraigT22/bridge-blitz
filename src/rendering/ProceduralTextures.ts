@@ -44,15 +44,15 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
   roughCanvas.height = h;
   const rCtx = roughCanvas.getContext('2d')!;
 
-  // Base weathered charcoal asphalt
-  aCtx.fillStyle = '#252930';
+  // Base warm sunlit weathered concrete-asphalt bridge deck (high contrast for cel-outlines & black tires!)
+  aCtx.fillStyle = '#9a9186';
   aCtx.fillRect(0, 0, w, h);
   bCtx.fillStyle = '#808080';
   bCtx.fillRect(0, 0, w, h);
-  rCtx.fillStyle = '#d8d8d8';
+  rCtx.fillStyle = '#d4d4d4';
   rCtx.fillRect(0, 0, w, h);
 
-  // Fine stone aggregate & battle wear speckles
+  // Fine stone aggregate & subtle vehicle wear ruts
   const aImg = aCtx.getImageData(0, 0, w, h);
   const bImg = bCtx.getImageData(0, 0, w, h);
   const rImg = rCtx.getImageData(0, 0, w, h);
@@ -62,29 +62,34 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
       const idx = (y * w + x) * 4;
       const u = x / w;
 
-      // Subtle darkened vehicle tire ruts in left (~0.28) and right (~0.72) lanes
+      // Subtle tire-wear tracks in left (~0.28) and right (~0.72) lanes
       const leftLaneDist = Math.abs(u - 0.285);
       const rightLaneDist = Math.abs(u - 0.715);
       const rut =
         Math.exp(-leftLaneDist * leftLaneDist * 190) +
         Math.exp(-rightLaneDist * rightLaneDist * 190);
 
-      const grain = (rand() - 0.5) * 24 + (rand() - 0.5) * 14;
-      const coarse = Math.sin(x * 0.09) * Math.cos(y * 0.07) * 5;
-      const baseVal = 38 - rut * 7 + grain * 0.65 + coarse;
+      // Subtle per-slab tonal variation across a 4x4 concrete deck grid
+      const slabCol = Math.floor(x / 128);
+      const slabRow = Math.floor(y / 128);
+      const slabTone = ((slabCol * 7 + slabRow * 13) % 5 - 2) * 3.2;
 
-      aImg.data[idx] = Math.max(14, Math.min(86, baseVal + 1));
-      aImg.data[idx + 1] = Math.max(16, Math.min(89, baseVal + 3));
-      aImg.data[idx + 2] = Math.max(20, Math.min(96, baseVal + 8));
+      const grain = (rand() - 0.5) * 18 + (rand() - 0.5) * 10;
+      const coarse = Math.sin(x * 0.08) * Math.cos(y * 0.07) * 4;
+      const baseVal = 152 + slabTone - rut * 9 + grain * 0.55 + coarse;
+
+      aImg.data[idx] = Math.max(92, Math.min(208, baseVal + 8));
+      aImg.data[idx + 1] = Math.max(88, Math.min(198, baseVal + 1));
+      aImg.data[idx + 2] = Math.max(80, Math.min(186, baseVal - 9));
       aImg.data[idx + 3] = 255;
 
-      const bumpVal = Math.max(0, Math.min(255, 128 + grain * 2.4));
+      const bumpVal = Math.max(0, Math.min(255, 128 + grain * 2.1));
       bImg.data[idx] = bumpVal;
       bImg.data[idx + 1] = bumpVal;
       bImg.data[idx + 2] = bumpVal;
       bImg.data[idx + 3] = 255;
 
-      const roughVal = Math.max(85, Math.min(245, 212 - rut * 58 + grain * 0.9));
+      const roughVal = Math.max(95, Math.min(242, 206 - rut * 42 + grain * 0.8));
       rImg.data[idx] = roughVal;
       rImg.data[idx + 1] = roughVal;
       rImg.data[idx + 2] = roughVal;
@@ -96,31 +101,40 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
   bCtx.putImageData(bImg, 0, 0);
   rCtx.putImageData(rImg, 0, 0);
 
-  // Steel expansion joint strip across top of tile + weathered cracks
-  aCtx.fillStyle = '#171a1f';
-  aCtx.fillRect(0, 0, w, 8);
-  aCtx.fillStyle = '#505b69';
-  aCtx.fillRect(0, 2, w, 3);
-  bCtx.fillStyle = '#282828';
-  bCtx.fillRect(0, 0, w, 8);
-  rCtx.fillStyle = '#686868';
-  rCtx.fillRect(0, 2, w, 4);
+  // Recessed concrete slab expansion grid joints (4 columns x 4 rows per 10m tile)
+  for (let gx = 128; gx < w; gx += 128) {
+    aCtx.fillStyle = 'rgba(66, 60, 54, 0.58)';
+    aCtx.fillRect(gx - 2, 0, 4, h);
+    aCtx.fillStyle = 'rgba(218, 208, 194, 0.34)';
+    aCtx.fillRect(gx + 2, 0, 2, h);
+    bCtx.fillStyle = '#383838';
+    bCtx.fillRect(gx - 2, 0, 4, h);
+  }
+  for (let gy = 0; gy < h; gy += 128) {
+    const isMainJoint = gy === 0;
+    aCtx.fillStyle = isMainJoint ? '#423d37' : 'rgba(66, 60, 54, 0.62)';
+    aCtx.fillRect(0, gy, w, isMainJoint ? 7 : 4);
+    aCtx.fillStyle = 'rgba(222, 212, 198, 0.38)';
+    aCtx.fillRect(0, gy + (isMainJoint ? 7 : 4), w, 2);
+    bCtx.fillStyle = '#303030';
+    bCtx.fillRect(0, gy, w, isMainJoint ? 7 : 4);
+  }
 
-  // Weathered asphalt cracks
-  aCtx.strokeStyle = 'rgba(12, 14, 18, 0.65)';
-  bCtx.strokeStyle = 'rgba(30, 30, 30, 0.8)';
-  for (let c = 0; c < 9; c++) {
+  // Weathered concrete hairline cracks + bevel highlights
+  for (let c = 0; c < 11; c++) {
     let cx = rand() * w;
     let cy = rand() * h;
-    aCtx.lineWidth = 1.4;
+    aCtx.strokeStyle = 'rgba(64, 58, 52, 0.52)';
+    bCtx.strokeStyle = 'rgba(42, 42, 42, 0.72)';
+    aCtx.lineWidth = 1.5;
     bCtx.lineWidth = 2.0;
     aCtx.beginPath();
     bCtx.beginPath();
     aCtx.moveTo(cx, cy);
     bCtx.moveTo(cx, cy);
-    for (let s = 0; s < 6; s++) {
-      cx += (rand() - 0.5) * 34;
-      cy += rand() * 28;
+    for (let s = 0; s < 5; s++) {
+      cx += (rand() - 0.5) * 32;
+      cy += rand() * 24;
       aCtx.lineTo(cx, cy);
       bCtx.lineTo(cx, cy);
     }
@@ -128,14 +142,14 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
     bCtx.stroke();
   }
 
-  // Painted worn shoulder lines & center tactical dashed markings
-  aCtx.fillStyle = 'rgba(218, 165, 58, 0.8)';
-  aCtx.fillRect(22, 0, 7, h);
-  aCtx.fillRect(w - 29, 0, 7, h);
+  // Painted worn amber shoulder lines & crisp ivory center tactical dashes
+  aCtx.fillStyle = 'rgba(214, 152, 36, 0.78)';
+  aCtx.fillRect(20, 0, 7, h);
+  aCtx.fillRect(w - 27, 0, 7, h);
 
-  aCtx.fillStyle = 'rgba(226, 232, 240, 0.86)';
-  for (let dy = 24; dy < h; dy += 128) {
-    aCtx.fillRect(w / 2 - 5, dy, 10, 74);
+  aCtx.fillStyle = 'rgba(248, 245, 236, 0.72)';
+  for (let dy = 26; dy < h; dy += 128) {
+    aCtx.fillRect(w / 2 - 4, dy, 8, 72);
   }
 
   const configureRepeat = (tex: THREE.CanvasTexture, rx: number, ry: number, srgb: boolean) => {

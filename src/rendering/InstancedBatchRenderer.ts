@@ -106,6 +106,7 @@ function applyCommandoShader(
         #include <common>
         attribute float aPartId;
         ${enableHitFlash ? 'attribute float aHitFlash;\nvarying float vHitFlash;' : ''}
+        varying vec3 vToonWorldNormal;
         uniform float uStrideTime;
         uniform float uStrideAmp;
         uniform float uRecoilKick;
@@ -145,33 +146,54 @@ function applyCommandoShader(
         #include <begin_vertex>
         ${enableHitFlash ? 'vHitFlash = aHitFlash;' : ''}
         ${COMMANDO_STRIDE_SNIPPET}
+        {
+          vec3 wn = mat3(modelMatrix) * objectNormal;
+          #ifdef USE_INSTANCING
+            wn = mat3(instanceMatrix) * objectNormal;
+          #endif
+          vToonWorldNormal = wn / max(0.0001, length(wn));
+        }
         `
       );
 
-    if (enableHitFlash) {
-      shader.fragmentShader = shader.fragmentShader
-        .replace(
-          '#include <common>',
-          /* glsl */ `
-          #include <common>
-          varying float vHitFlash;
-          `
-        )
-        .replace(
-          '#include <dithering_fragment>',
-          /* glsl */ `
-          #include <dithering_fragment>
-          if (vHitFlash > 0.01) {
-            gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(1.18, 1.22, 1.28), clamp(vHitFlash * 1.15, 0.0, 0.96));
-          }
-          `
-        );
-    }
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `
+        #include <common>
+        ${enableHitFlash ? 'varying float vHitFlash;' : ''}
+        varying vec3 vToonWorldNormal;
+        `
+      )
+      .replace(
+        '#include <dithering_fragment>',
+        /* glsl */ `
+        #include <dithering_fragment>
+        {
+          // Crisp stylized 2-band cel-saturation lift + sky rim so characters stay vivid in shadow!
+          vec3 wn = vToonWorldNormal / max(0.0001, length(vToonWorldNormal));
+          float topBand = smoothstep(-0.22, 0.35, wn.y * 0.72 - wn.z * 0.38 - wn.x * 0.25);
+          gl_FragColor.rgb *= mix(0.92, 1.18, topBand);
+          float skyRim = smoothstep(0.55, 0.92, wn.y);
+          gl_FragColor.rgb += vec3(0.05, 0.07, 0.10) * skyRim;
+        }
+        ${
+          enableHitFlash
+            ? `
+        if (vHitFlash > 0.01) {
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(1.22, 1.25, 1.32), clamp(vHitFlash * 1.18, 0.0, 0.96));
+        }
+        `
+            : ''
+        }
+        `
+      );
   };
 }
 
 /**
- * Single-pass BackSide inverted-hull cel-outline shader sharing the exact limb animation & instanceMatrix!
+ * Single-pass BackSide inverted-hull cel-outline shader extruding along position-welded
+ * `aOutlineNormal` so every sharp corner & smooth dome has a 100% watertight cartoon ink outline!
  */
 function createCommandoCelOutlineMaterial(
   uniforms: CommandoUniforms,
@@ -179,7 +201,7 @@ function createCommandoCelOutlineMaterial(
   cacheKey: string
 ): THREE.MeshBasicMaterial {
   const mat = new THREE.MeshBasicMaterial({
-    color: 0x0c1119,
+    color: 0x0b1018,
     side: THREE.BackSide,
   });
   const thickStr = outlineThickness.toFixed(4);
@@ -194,6 +216,7 @@ function createCommandoCelOutlineMaterial(
         /* glsl */ `
         #include <common>
         attribute float aPartId;
+        attribute vec3 aOutlineNormal;
         uniform float uStrideTime;
         uniform float uStrideAmp;
         uniform float uRecoilKick;
@@ -204,7 +227,7 @@ function createCommandoCelOutlineMaterial(
         /* glsl */ `
         #include <begin_vertex>
         {
-          vec3 safeNorm = normal / max(0.0001, length(normal));
+          vec3 safeNorm = aOutlineNormal / max(0.0001, length(aOutlineNormal));
           transformed += safeNorm * ${thickStr};
         }
         ${COMMANDO_STRIDE_SNIPPET}
@@ -262,6 +285,58 @@ function applyEquippedWeaponShader(
   };
 }
 
+function createEquippedWeaponOutlineMaterial(
+  uniforms: WeaponBarrelSpinUniforms,
+  outlineThickness: number,
+  cacheKey: string
+): THREE.MeshBasicMaterial {
+  const cx = EQUIPPED_GUN_PIVOT_X.toFixed(4);
+  const cy = (EQUIPPED_GUN_PIVOT_Y - 0.02).toFixed(4);
+  const thickStr = outlineThickness.toFixed(4);
+
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x0b1018,
+    side: THREE.BackSide,
+  });
+  mat.customProgramCacheKey = () => cacheKey;
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uBarrelSpin = uniforms.uBarrelSpin;
+    shader.uniforms.uRecoilKick = uniforms.uRecoilKick;
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `
+        #include <common>
+        attribute float aSpinPart;
+        attribute vec3 aOutlineNormal;
+        uniform float uBarrelSpin;
+        uniform float uRecoilKick;
+        `
+      )
+      .replace(
+        '#include <begin_vertex>',
+        /* glsl */ `
+        #include <begin_vertex>
+        {
+          vec3 safeNorm = aOutlineNormal / max(0.0001, length(aOutlineNormal));
+          transformed += safeNorm * ${thickStr};
+          if (aSpinPart > 0.5) {
+            float ang = uBarrelSpin + float(gl_InstanceID) * 0.55;
+            float cs = cos(ang);
+            float sn = sin(ang);
+            vec2 relXY = transformed.xy - vec2(${cx}, ${cy});
+            transformed.x = ${cx} + relXY.x * cs - relXY.y * sn;
+            transformed.y = ${cy} + relXY.x * sn + relXY.y * cs;
+          }
+          transformed.z += uRecoilKick * 0.062;
+          transformed.y += uRecoilKick * 0.018;
+        }
+        `
+      );
+  };
+  return mat;
+}
+
 export class InstancedBatchRenderer {
   public readonly playerMesh: THREE.InstancedMesh;
   public readonly playerOutlineMesh: THREE.InstancedMesh;
@@ -270,6 +345,7 @@ export class InstancedBatchRenderer {
   public readonly heavyEnemyMesh: THREE.InstancedMesh;
   public readonly heavyEnemyOutlineMesh: THREE.InstancedMesh;
   public readonly squadWeaponMeshes: Readonly<Record<WeaponTierId, THREE.InstancedMesh>>;
+  public readonly squadWeaponOutlineMeshes: Readonly<Record<WeaponTierId, THREE.InstancedMesh>>;
   public readonly playerRagdollMesh: THREE.InstancedMesh;
   public readonly enemyRagdollMesh: THREE.InstancedMesh;
   public readonly bulletMesh: THREE.InstancedMesh;
@@ -301,14 +377,14 @@ export class InstancedBatchRenderer {
     bulletCapacity: number,
     particleCapacity: number
   ) {
-    // 1. Player Elite Commando InstancedMesh + Shared-Matrix Cel-Outline Pass
+    // 1. Player Elite Commando InstancedMesh + Shared-Matrix Welded Cel-Outline Pass
     const playerGeo = createPlayerSoldierGeometry();
     const playerMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.44,
-      metalness: 0.18,
+      roughness: 0.40,
+      metalness: 0.14,
     });
-    applyCommandoShader(playerMat, this.playerUniforms, 'commando-player-v40', false);
+    applyCommandoShader(playerMat, this.playerUniforms, 'commando-player-v41', false);
 
     this.playerMesh = new THREE.InstancedMesh(playerGeo, playerMat, MAX_VISUAL_SOLDIERS);
     this.playerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -318,8 +394,8 @@ export class InstancedBatchRenderer {
 
     const playerOutlineMat = createCommandoCelOutlineMaterial(
       this.playerUniforms,
-      0.025,
-      'commando-player-outline-v40'
+      0.023,
+      'commando-player-outline-v41'
     );
     this.playerOutlineMesh = new THREE.InstancedMesh(
       playerGeo,
@@ -331,15 +407,21 @@ export class InstancedBatchRenderer {
     this.playerOutlineMesh.count = 0;
     scene.add(this.playerOutlineMesh);
 
-    // 2. Live Swappable 3D Squad Weapon Batches (Tiers 1..5)
+    // 2. Live Swappable 3D Squad Weapon Batches + Cel-Outline Pass (Tiers 1..5)
     const weaponMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.30,
-      metalness: 0.46,
+      roughness: 0.28,
+      metalness: 0.42,
     });
-    applyEquippedWeaponShader(weaponMat, this.weaponUniforms, 'commando-weapon-v40');
+    applyEquippedWeaponShader(weaponMat, this.weaponUniforms, 'commando-weapon-v41');
+    const weaponOutlineMat = createEquippedWeaponOutlineMaterial(
+      this.weaponUniforms,
+      0.017,
+      'commando-weapon-outline-v41'
+    );
 
     const wMeshes = {} as Record<WeaponTierId, THREE.InstancedMesh>;
+    const wOutlines = {} as Record<WeaponTierId, THREE.InstancedMesh>;
     for (const tier of [1, 2, 3, 4, 5] as const) {
       const wGeo = createEquippedWeaponGeometry(tier);
       const wMesh = new THREE.InstancedMesh(wGeo, weaponMat, MAX_VISUAL_SOLDIERS);
@@ -349,10 +431,19 @@ export class InstancedBatchRenderer {
       wMesh.visible = tier === 1;
       scene.add(wMesh);
       wMeshes[tier] = wMesh;
+
+      const wOut = new THREE.InstancedMesh(wGeo, weaponOutlineMat, MAX_VISUAL_SOLDIERS);
+      wOut.instanceMatrix = wMesh.instanceMatrix;
+      wOut.frustumCulled = false;
+      wOut.count = 0;
+      wOut.visible = tier === 1;
+      scene.add(wOut);
+      wOutlines[tier] = wOut;
     }
     this.squadWeaponMeshes = wMeshes;
+    this.squadWeaponOutlineMeshes = wOutlines;
 
-    // 3. Standard Enemy Shock Troopers + Per-Instance White Hit-Flash + Cel-Outline
+    // 3. Standard Enemy Shock Troopers + Per-Instance White Hit-Flash + Welded Cel-Outline
     const enemyGeo = createEnemySoldierGeometry();
     this.enemyHitFlashAttr = new THREE.InstancedBufferAttribute(
       new Float32Array(MAX_ENEMY_INSTANCES),
@@ -363,10 +454,10 @@ export class InstancedBatchRenderer {
 
     const enemyMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.44,
-      metalness: 0.18,
+      roughness: 0.40,
+      metalness: 0.14,
     });
-    applyCommandoShader(enemyMat, this.enemyUniforms, 'commando-enemy-v40', true);
+    applyCommandoShader(enemyMat, this.enemyUniforms, 'commando-enemy-v41', true);
 
     this.enemyMesh = new THREE.InstancedMesh(enemyGeo, enemyMat, MAX_ENEMY_INSTANCES);
     this.enemyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -376,8 +467,8 @@ export class InstancedBatchRenderer {
 
     const enemyOutlineMat = createCommandoCelOutlineMaterial(
       this.enemyUniforms,
-      0.025,
-      'commando-enemy-outline-v40'
+      0.023,
+      'commando-enemy-outline-v41'
     );
     this.enemyOutlineMesh = new THREE.InstancedMesh(
       enemyGeo,
@@ -389,7 +480,7 @@ export class InstancedBatchRenderer {
     this.enemyOutlineMesh.count = 0;
     scene.add(this.enemyOutlineMesh);
 
-    // 4. Heavy Armored Juggernaut Elites + Per-Instance White Hit-Flash + Cel-Outline
+    // 4. Heavy Armored Juggernaut Elites + Per-Instance White Hit-Flash + Welded Cel-Outline
     const heavyGeo = createHeavyEnemyGeometry();
     this.heavyHitFlashAttr = new THREE.InstancedBufferAttribute(
       new Float32Array(MAX_HEAVY_ENEMY_INSTANCES),
@@ -400,10 +491,10 @@ export class InstancedBatchRenderer {
 
     const heavyMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.42,
-      metalness: 0.24,
+      roughness: 0.38,
+      metalness: 0.20,
     });
-    applyCommandoShader(heavyMat, this.enemyUniforms, 'commando-heavy-v40', true);
+    applyCommandoShader(heavyMat, this.enemyUniforms, 'commando-heavy-v41', true);
 
     this.heavyEnemyMesh = new THREE.InstancedMesh(
       heavyGeo,
@@ -417,8 +508,8 @@ export class InstancedBatchRenderer {
 
     const heavyOutlineMat = createCommandoCelOutlineMaterial(
       this.enemyUniforms,
-      0.028,
-      'commando-heavy-outline-v40'
+      0.026,
+      'commando-heavy-outline-v41'
     );
     this.heavyEnemyOutlineMesh = new THREE.InstancedMesh(
       heavyGeo,
@@ -434,8 +525,8 @@ export class InstancedBatchRenderer {
     const ragdollPlayerGeo = createPlayerSoldierGeometry();
     const ragdollPlayerMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.46,
-      metalness: 0.20,
+      roughness: 0.44,
+      metalness: 0.16,
     });
     this.playerRagdollMesh = new THREE.InstancedMesh(
       ragdollPlayerGeo,
@@ -450,8 +541,8 @@ export class InstancedBatchRenderer {
     const ragdollEnemyGeo = createEnemySoldierGeometry();
     const ragdollEnemyMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.44,
-      metalness: 0.22,
+      roughness: 0.42,
+      metalness: 0.18,
     });
     this.enemyRagdollMesh = new THREE.InstancedMesh(
       ragdollEnemyGeo,
@@ -496,12 +587,12 @@ export class InstancedBatchRenderer {
     }
     scene.add(this.bulletMesh);
 
-    // 8. Shrapnel, Brass Casings & Smoke Particle InstancedMesh
+    // 8. Shrapnel, Brass Casings & Gold Confetti Particle InstancedMesh
     const particleGeo = new THREE.DodecahedronGeometry(0.58, 0);
     const particleMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      roughness: 0.45,
-      metalness: 0.35,
+      roughness: 0.36,
+      metalness: 0.32,
     });
     this.particleMesh = new THREE.InstancedMesh(particleGeo, particleMat, particleCapacity);
     this.particleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -523,7 +614,8 @@ export class InstancedBatchRenderer {
     steerBankAngle = 0,
     recoilKick = 0,
     barrelSpinAngle = 0,
-    facingYaw = 0
+    facingYaw = 0,
+    celebrateHop = 0
   ): void {
     const safeCount = Math.min(count, MAX_VISUAL_SOLDIERS);
     this.playerMesh.count = safeCount;
@@ -531,7 +623,7 @@ export class InstancedBatchRenderer {
     this.shadowDiscCursor = 0;
 
     this.playerUniforms.uStrideTime.value = marchPhase * 11.8;
-    this.playerUniforms.uStrideAmp.value = isMoving ? 0.66 : 0.0;
+    this.playerUniforms.uStrideAmp.value = isMoving ? 0.66 : 0.28;
     this.playerUniforms.uRecoilKick.value = recoilKick;
 
     this.weaponUniforms.uBarrelSpin.value = barrelSpinAngle;
@@ -542,40 +634,57 @@ export class InstancedBatchRenderer {
     const activeWeaponMesh = this.squadWeaponMeshes[equippedTier];
     for (const tier of [1, 2, 3, 4, 5] as const) {
       const m = this.squadWeaponMeshes[tier];
+      const mOut = this.squadWeaponOutlineMeshes[tier];
       if (tier === equippedTier) {
         m.visible = safeCount > 0;
         m.count = safeCount;
+        mOut.visible = safeCount > 0;
+        mOut.count = safeCount;
       } else {
         m.visible = false;
         m.count = 0;
+        mOut.visible = false;
+        mOut.count = 0;
       }
     }
 
-    const s = COMMANDO_MODEL_SCALE;
+    // Angled ~17° (-0.30 rad) bladed tactical firing stance exposes the right-side 3D gun cleanly!
+    const bladedStanceYaw = -0.30;
+    const hopY = Math.sin(celebrateHop * Math.PI) * 0.34;
+    const s = COMMANDO_MODEL_SCALE * (1 + Math.sin(celebrateHop * Math.PI) * 0.08);
 
     for (let i = 0; i < safeCount; i++) {
       const bobPhase = marchPhase * 11.8 + i * 0.92;
-      const bobY = isMoving
-        ? Math.abs(Math.sin(bobPhase)) * 0.072
-        : Math.sin(marchPhase * 2.4 + i * 0.7) * 0.016;
-      const swayZ = isMoving ? Math.sin(bobPhase) * 0.038 : 0;
+      const bobY =
+        (isMoving
+          ? Math.abs(Math.sin(bobPhase)) * 0.072
+          : Math.sin(marchPhase * 2.4 + i * 0.7) * 0.016) + hopY;
+      const swayZ = isMoving ? Math.sin(bobPhase) * 0.036 : 0;
 
+      // Commando body takes the bladed tactical stance while the gun stays pointed toward target yaw!
       _pos.set(worldX[i], bobY, worldZ[i]);
       _euler.set(
-        isMoving ? -0.07 : 0,
-        facingYaw - steerBankAngle * 0.35,
+        isMoving ? -0.06 : -0.03,
+        facingYaw + bladedStanceYaw - steerBankAngle * 0.35,
         swayZ - steerBankAngle
       );
       _quat.setFromEuler(_euler);
       _scale.set(s, s, s);
       _mat4.compose(_pos, _quat, _scale);
-
       this.playerMesh.setMatrixAt(i, _mat4);
+
+      _euler.set(
+        isMoving ? -0.04 : -0.02,
+        facingYaw - steerBankAngle * 0.35,
+        swayZ * 0.5 - steerBankAngle * 0.7
+      );
+      _quat.setFromEuler(_euler);
+      _mat4.compose(_pos, _quat, _scale);
       activeWeaponMesh.setMatrixAt(i, _mat4);
 
       _pos.set(worldX[i], 0.022, worldZ[i]);
       _quat.identity();
-      const shadowScale = 1.18 - bobY * 1.1;
+      const shadowScale = Math.max(0.7, 1.18 - bobY * 0.95);
       _scale.set(shadowScale, 1, shadowScale);
       _mat4.compose(_pos, _quat, _scale);
       this.shadowDiscMesh.setMatrixAt(this.shadowDiscCursor++, _mat4);

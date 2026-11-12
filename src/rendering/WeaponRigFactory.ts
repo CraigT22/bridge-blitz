@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { WeaponTierId } from '../core/types';
 import { WEAPON_SPECS } from '../math/weaponMath';
+import { attachWeldedOutlineNormals } from './ProceduralGeometries';
 
 export interface ShowcaseWeaponRig {
   readonly tier: WeaponTierId;
@@ -14,7 +15,18 @@ function tagEquippedPart(
   hexColor: number,
   spinBarrelFlag = 0
 ): THREE.BufferGeometry {
+  if (!geo.attributes.normal) {
+    geo.computeVertexNormals();
+  }
   const nonIndexed = geo.index ? geo.toNonIndexed() : geo.clone();
+  const nAttr = nonIndexed.attributes.normal as THREE.BufferAttribute;
+  for (let i = 0; i < nAttr.count; i++) {
+    const nx = nAttr.getX(i);
+    const ny = nAttr.getY(i);
+    const nz = nAttr.getZ(i);
+    const len = Math.max(0.0001, Math.hypot(nx, ny, nz));
+    nAttr.setXYZ(i, nx / len, ny / len, nz / len);
+  }
   const count = nonIndexed.attributes.position.count;
   const colors = new Float32Array(count * 3);
   const spinFlags = new Float32Array(count);
@@ -34,9 +46,10 @@ function tagEquippedPart(
 }
 
 /**
- * Center axis of equipped weapon held in commando's right-forward hands (pointing toward -Z).
+ * Center axis of equipped weapon held in commando's right-forward hands (+0.255 X, pointing -Z)
+ * so the 3D barrel, receiver & muzzle flash read unmistakably from the close over-the-shoulder camera!
  */
-export const EQUIPPED_GUN_PIVOT_X = 0.178;
+export const EQUIPPED_GUN_PIVOT_X = 0.255;
 export const EQUIPPED_GUN_PIVOT_Y = 0.575;
 
 /**
@@ -218,12 +231,12 @@ export function createEquippedWeaponGeometry(tier: WeaponTierId): THREE.BufferGe
   for (const p of parts) {
     p.dispose();
   }
-  // Scale heroic arcade gun proportions (1.28x) around the barrel spin axis (px, py - 0.02, -0.28)
+  // Scale heroic arcade gun proportions (1.34x) around the barrel spin axis (px, py - 0.02, -0.28)
   const spinAxisY = py - 0.02;
   merged.translate(-px, -spinAxisY, 0.28);
-  merged.scale(1.28, 1.28, 1.28);
+  merged.scale(1.34, 1.34, 1.34);
   merged.translate(px, spinAxisY, -0.28);
-  merged.computeVertexNormals();
+  attachWeldedOutlineNormals(merged, 'aSpinPart');
   return merged;
 }
 

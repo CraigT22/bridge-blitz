@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 
-const MAX_SHOCKWAVES = 24;
+const MAX_SHOCKWAVES = 28;
 const MAX_MUZZLE_FLASHES = 36;
+const MAX_IMPACT_SPLASHES = 56;
 
 const _pos = new THREE.Vector3();
 const _quat = new THREE.Quaternion();
@@ -12,8 +13,9 @@ const _color = new THREE.Color();
 
 /**
  * Zero-GC pooled tactical VFX system:
- * 1. Expanding HDR ground shockwave rings (gate flips, squad passes, tire shatters, boss stomps)
+ * 1. Expanding HDR ground shockwave rings (gate flips, squad passes, tire shatters, boss stomps, upgrades)
  * 2. Crisp 3-fin additive muzzle flash bursts at the front rank of the squad
+ * 3. Punchy camera-facing starburst splash bursts at bullet impact points
  */
 export class CombatVfxRenderer {
   private readonly ringMesh: THREE.InstancedMesh;
@@ -38,6 +40,18 @@ export class CombatVfxRenderer {
   private readonly flashG = new Float32Array(MAX_MUZZLE_FLASHES);
   private readonly flashB = new Float32Array(MAX_MUZZLE_FLASHES);
   private activeFlashes = 0;
+
+  private readonly splashMesh: THREE.InstancedMesh;
+  private readonly splashX = new Float32Array(MAX_IMPACT_SPLASHES);
+  private readonly splashY = new Float32Array(MAX_IMPACT_SPLASHES);
+  private readonly splashZ = new Float32Array(MAX_IMPACT_SPLASHES);
+  private readonly splashAge = new Float32Array(MAX_IMPACT_SPLASHES);
+  private readonly splashMaxAge = new Float32Array(MAX_IMPACT_SPLASHES);
+  private readonly splashScale = new Float32Array(MAX_IMPACT_SPLASHES);
+  private readonly splashR = new Float32Array(MAX_IMPACT_SPLASHES);
+  private readonly splashG = new Float32Array(MAX_IMPACT_SPLASHES);
+  private readonly splashB = new Float32Array(MAX_IMPACT_SPLASHES);
+  private activeSplashes = 0;
 
   constructor(scene: THREE.Scene) {
     // 1. Shockwave Ring InstancedMesh (Additive HDR glow)
@@ -64,12 +78,6 @@ export class CombatVfxRenderer {
     const p1 = new THREE.BoxGeometry(0.28, 0.045, 0.42);
     const p2 = new THREE.BoxGeometry(0.045, 0.28, 0.42);
     const core = new THREE.BoxGeometry(0.12, 0.12, 0.24);
-    const mergedPos = new Float32Array(
-      (p1.attributes.position.count +
-        p2.attributes.position.count +
-        core.attributes.position.count) *
-        3
-    );
     const g1 = p1.toNonIndexed();
     const g2 = p2.toNonIndexed();
     const g3 = core.toNonIndexed();
@@ -88,7 +96,6 @@ export class CombatVfxRenderer {
       g3.attributes.position.array as Float32Array,
       g1.attributes.position.array.length + g2.attributes.position.array.length
     );
-    void mergedPos;
     p1.dispose();
     p2.dispose();
     core.dispose();
@@ -115,13 +122,61 @@ export class CombatVfxRenderer {
       this.flashMesh.setColorAt(i, _color.setRGB(1, 1, 1));
     }
     scene.add(this.flashMesh);
+
+    // 3. Camera-facing Bullet Impact Splash Ring/Starburst InstancedMesh
+    const splashCanvas = document.createElement('canvas');
+    splashCanvas.width = 128;
+    splashCanvas.height = 128;
+    const sCtx = splashCanvas.getContext('2d')!;
+    const sGrad = sCtx.createRadialGradient(64, 64, 4, 64, 64, 58);
+    sGrad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    sGrad.addColorStop(0.45, 'rgba(255, 245, 210, 0.72)');
+    sGrad.addColorStop(0.72, 'rgba(255, 220, 140, 0.28)');
+    sGrad.addColorStop(1, 'rgba(255, 200, 90, 0.0)');
+    sCtx.fillStyle = sGrad;
+    sCtx.fillRect(0, 0, 128, 128);
+    sCtx.save();
+    sCtx.translate(64, 64);
+    sCtx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+    for (let k = 0; k < 6; k++) {
+      sCtx.rotate(Math.PI / 3);
+      sCtx.beginPath();
+      sCtx.moveTo(-5, 0);
+      sCtx.lineTo(0, -60);
+      sCtx.lineTo(5, 0);
+      sCtx.closePath();
+      sCtx.fill();
+    }
+    sCtx.restore();
+
+    const splashGeo = new THREE.PlaneGeometry(0.95, 0.95);
+    splashGeo.rotateX(-0.42);
+    const splashMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      map: new THREE.CanvasTexture(splashCanvas),
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    this.splashMesh = new THREE.InstancedMesh(splashGeo, splashMat, MAX_IMPACT_SPLASHES);
+    this.splashMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.splashMesh.frustumCulled = false;
+    this.splashMesh.count = 0;
+    for (let i = 0; i < MAX_IMPACT_SPLASHES; i++) {
+      this.splashMesh.setColorAt(i, _color.setRGB(1, 1, 1));
+    }
+    scene.add(this.splashMesh);
   }
 
   public clear(): void {
     this.activeRings = 0;
     this.activeFlashes = 0;
+    this.activeSplashes = 0;
     this.ringMesh.count = 0;
     this.flashMesh.count = 0;
+    this.splashMesh.count = 0;
   }
 
   public spawnShockwave(
@@ -142,7 +197,6 @@ export class CombatVfxRenderer {
     this.ringMaxRadius[idx] = maxRadius;
 
     _color.setHex(colorHex);
-    // Boost above 1.0 slightly so UnrealBloomPass picks up shockwaves cleanly
     this.ringR[idx] = _color.r * 1.45;
     this.ringG[idx] = _color.g * 1.45;
     this.ringB[idx] = _color.b * 1.45;
@@ -170,6 +224,30 @@ export class CombatVfxRenderer {
     this.flashR[idx] = _color.r * 1.9;
     this.flashG[idx] = _color.g * 1.7;
     this.flashB[idx] = _color.b * 1.4;
+  }
+
+  public spawnImpactSplash(
+    x: number,
+    y: number,
+    z: number,
+    scale: number,
+    colorHex: number
+  ): void {
+    if (this.activeSplashes >= MAX_IMPACT_SPLASHES) {
+      return;
+    }
+    const idx = this.activeSplashes++;
+    this.splashX[idx] = x;
+    this.splashY[idx] = y;
+    this.splashZ[idx] = z;
+    this.splashAge[idx] = 0;
+    this.splashMaxAge[idx] = 0.11;
+    this.splashScale[idx] = scale;
+
+    _color.setHex(colorHex);
+    this.splashR[idx] = _color.r * 1.65;
+    this.splashG[idx] = _color.g * 1.55;
+    this.splashB[idx] = _color.b * 1.35;
   }
 
   public updateAndSync(dt: number): void {
@@ -261,6 +339,52 @@ export class CombatVfxRenderer {
     this.flashMesh.instanceMatrix.needsUpdate = true;
     if (this.flashMesh.instanceColor) {
       this.flashMesh.instanceColor.needsUpdate = true;
+    }
+
+    // 3. Update Bullet Impact Splashes (O(1) swap-remove)
+    let p = 0;
+    while (p < this.activeSplashes) {
+      const nextAge = this.splashAge[p] + dt;
+      if (nextAge >= this.splashMaxAge[p]) {
+        const last = this.activeSplashes - 1;
+        if (p !== last) {
+          this.splashX[p] = this.splashX[last];
+          this.splashY[p] = this.splashY[last];
+          this.splashZ[p] = this.splashZ[last];
+          this.splashAge[p] = this.splashAge[last];
+          this.splashMaxAge[p] = this.splashMaxAge[last];
+          this.splashScale[p] = this.splashScale[last];
+          this.splashR[p] = this.splashR[last];
+          this.splashG[p] = this.splashG[last];
+          this.splashB[p] = this.splashB[last];
+        }
+        this.activeSplashes = last;
+        continue;
+      }
+      this.splashAge[p] = nextAge;
+      const t = nextAge / this.splashMaxAge[p];
+      const fade = 1 - t;
+      const s = this.splashScale[p] * (0.45 + (1 - fade * fade) * 0.85);
+
+      _pos.set(this.splashX[p], this.splashY[p], this.splashZ[p]);
+      _euler.set(0, 0, p * 0.85 + nextAge * 14);
+      _quat.setFromEuler(_euler);
+      _scale.set(s, s, s);
+      _mat4.compose(_pos, _quat, _scale);
+      this.splashMesh.setMatrixAt(p, _mat4);
+
+      _color.setRGB(
+        this.splashR[p] * fade,
+        this.splashG[p] * fade,
+        this.splashB[p] * fade
+      );
+      this.splashMesh.setColorAt(p, _color);
+      p++;
+    }
+    this.splashMesh.count = this.activeSplashes;
+    this.splashMesh.instanceMatrix.needsUpdate = true;
+    if (this.splashMesh.instanceColor) {
+      this.splashMesh.instanceColor.needsUpdate = true;
     }
   }
 }

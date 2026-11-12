@@ -21,7 +21,6 @@
       <div id="world-overlay-layer" class="world-overlay-layer" aria-hidden="true">
         <div id="squad-pill" class="squad-pill is-hidden">
           <span id="squad-count-text" class="squad-pill__count">1</span>
-          <span id="squad-weapon-badge" class="squad-pill__weapon">Lv1 PISTOL</span>
         </div>
 
         <!-- Boss Segmented Health Bar -->
@@ -72,7 +71,7 @@
           </button>
         </div>
 
-        <!-- Top-Center: Open-Sky Sector Title in PRE_RUN, Compact % Progress Pill in Combat -->
+        <!-- Top-Center: Open-Sky Sector Title in PRE_RUN, Compact % Progress + Weapon Pill in Combat -->
         <div class="top-hud__center">
           <div id="hub-stage-banner" class="sky-stage-banner">
             <span id="hub-sector-kicker" class="sky-stage-banner__kicker">SECTOR 1</span>
@@ -90,6 +89,10 @@
                 <path d="M5 3v18h2v-7h12l-2.5-3.5L19 7H7V3H5z" />
               </svg>
             </div>
+          </div>
+
+          <div id="top-weapon-pill" class="top-weapon-pill is-hidden">
+            <span id="squad-weapon-badge" class="top-weapon-pill__label">Lv1 PISTOL</span>
           </div>
         </div>
 
