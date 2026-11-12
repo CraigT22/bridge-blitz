@@ -9,11 +9,16 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   deploy-pwa:
     name: Build & Deploy GitHub Pages PWA
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -42,6 +47,25 @@ jobs:
           publish_dir: ./dist
           publish_branch: gh-pages
 
+      - name: Auto-enable GitHub Pages (Actions source)
+        id: pages_cfg
+        continue-on-error: true
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        if: steps.pages_cfg.outcome == 'success'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        if: steps.pages_cfg.outcome == 'success'
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
   build-pixel-apk:
     name: Compile Android APK (Pixel 10 XL)
     runs-on: ubuntu-latest
@@ -62,13 +86,11 @@ jobs:
           java-version: '21'
           cache: 'gradle'
 
-      - name: Setup Android SDK & accept API 36 licenses
-        uses: android-actions/setup-android@v3
-
-      - name: Accept Android SDK licenses
+      - name: Configure Android SDK & accept API 36 licenses
         run: |
-          if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
-            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          if [ -x "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           fi
 
       - name: Install web dependencies & sync Capacitor Android
