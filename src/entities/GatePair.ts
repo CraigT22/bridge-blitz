@@ -8,10 +8,13 @@ import {
 import { EditableGateTexture } from '../rendering/CanvasLabelCache';
 import { createPadlockMesh } from '../rendering/ProceduralGeometries';
 
-interface SingleLaneGateSlot {
+interface SingleGateSlot {
   readonly entityId: number;
+  readonly laneTag: LaneSide;
+  readonly minX: number;
+  readonly maxX: number;
+  readonly centerX: number;
   readonly group: THREE.Group;
-  readonly panelMesh: THREE.Mesh;
   readonly ledMat: THREE.MeshBasicMaterial;
   readonly padlockGroup: THREE.Group;
   readonly labelTex: EditableGateTexture;
@@ -35,6 +38,7 @@ export interface GateBulletImpactEvent {
   readonly crossedZeroOrPositive: boolean;
   readonly flippedToPositive: boolean;
   readonly ricochet: boolean;
+  readonly formattedLabel: string;
 }
 
 export interface GateSquadCollectEvent {
@@ -42,126 +46,95 @@ export interface GateSquadCollectEvent {
   readonly worldX: number;
   readonly worldZ: number;
   readonly nextSquadCount: number;
+  readonly rawUnclampedCount: number;
   readonly deltaSquad: number;
   readonly label: string;
   readonly positive: boolean;
 }
 
-const LANE_WIDTH = 4.72;
-const PANEL_HEIGHT = 2.86;
+const SPLIT_WIDTH = 4.72;
+const FULL_WIDTH = 9.64;
+const PANEL_HEIGHT = 2.48;
 
 export class GatePairSlot {
   public readonly root = new THREE.Group();
   public z = 0;
   public active = false;
   public triggered = false;
+  public isFullSpan = false;
 
-  private readonly leftSlot: SingleLaneGateSlot;
-  private readonly rightSlot: SingleLaneGateSlot;
+  private readonly centerPostGroup = new THREE.Group();
+  private readonly leftSlot: SingleGateSlot;
+  private readonly rightSlot: SingleGateSlot;
+  private readonly fullSlot: SingleGateSlot;
 
   constructor(pairIndex: number) {
-    const gunmetalMat = new THREE.MeshStandardMaterial({
-      color: 0x3b4754,
-      metalness: 0.44,
+    const pylonMat = new THREE.MeshStandardMaterial({
+      color: 0x263445,
+      metalness: 0.42,
       roughness: 0.34,
     });
-    const steelTrimMat = new THREE.MeshStandardMaterial({
-      color: 0x8595a8,
-      metalness: 0.48,
-      roughness: 0.26,
-    });
-    const hazardFootMat = new THREE.MeshStandardMaterial({
-      color: 0xd49424,
-      metalness: 0.32,
-      roughness: 0.48,
+    const outlineMat = new THREE.MeshBasicMaterial({
+      color: 0x0b0f16,
+      side: THREE.BackSide,
     });
 
-    // Grounded gantry contact shadow strip across roadway
+    // Grounded contact shadow strip
     const gantryShadow = new THREE.Mesh(
-      new THREE.PlaneGeometry(10.6, 0.9),
+      new THREE.PlaneGeometry(10.2, 0.55),
       new THREE.MeshBasicMaterial({
         color: 0x05080d,
         transparent: true,
-        opacity: 0.38,
+        opacity: 0.32,
         depthWrite: false,
       })
     );
     gantryShadow.rotation.x = -Math.PI / 2;
-    gantryShadow.position.set(0, 0.018, 0.12);
+    gantryShadow.position.set(0, 0.018, 0.06);
     this.root.add(gantryShadow);
 
-    // Heavy Industrial Tactical Gantry Stanchions (Left, Center, Right)
-    for (const px of [-4.96, 0, 4.96]) {
-      const footing = new THREE.Mesh(
-        new THREE.BoxGeometry(0.56, 0.24, 0.66),
-        gunmetalMat
-      );
-      footing.position.set(px, 0.12, 0);
-      footing.castShadow = true;
-      footing.receiveShadow = true;
-
-      const hazardCollar = new THREE.Mesh(
-        new THREE.BoxGeometry(0.46, 0.14, 0.54),
-        hazardFootMat
-      );
-      hazardCollar.position.set(px, 0.3, 0);
-      hazardCollar.castShadow = true;
-
+    // Sleek Vertical Energy Pylons (No bulky top crossbar so low close camera sees down-bridge obstacles cleanly!)
+    for (const px of [-4.92, 0, 4.92]) {
+      const holder = px === 0 ? this.centerPostGroup : this.root;
       const post = new THREE.Mesh(
-        new THREE.BoxGeometry(0.28, 3.16, 0.34),
-        gunmetalMat
+        new THREE.CylinderGeometry(0.14, 0.17, 2.75, 12),
+        pylonMat
       );
-      post.position.set(px, 1.72, 0);
-      post.castShadow = true;
-      post.receiveShadow = true;
-
-      const flange = new THREE.Mesh(
-        new THREE.BoxGeometry(0.34, 2.85, 0.12),
-        steelTrimMat
+      post.position.set(px, 1.38, 0);
+      const postOutline = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.21, 2.81, 12),
+        outlineMat
       );
-      flange.position.set(px, 1.72, 0);
-
-      this.root.add(footing, hazardCollar, post, flange);
+      postOutline.position.set(px, 1.38, 0);
+      const cap = new THREE.Mesh(
+        new THREE.SphereGeometry(0.20, 10, 8),
+        pylonMat
+      );
+      cap.position.set(px, 2.78, 0);
+      holder.add(post, postOutline, cap);
     }
+    this.root.add(this.centerPostGroup);
 
-    // Overhead Armored Holo-Projector Gantry Beam
-    const topBeam = new THREE.Mesh(
-      new THREE.BoxGeometry(10.35, 0.28, 0.42),
-      gunmetalMat
-    );
-    topBeam.position.set(0, 3.26, 0);
-    topBeam.castShadow = true;
-    topBeam.receiveShadow = true;
-    this.root.add(topBeam);
+    this.leftSlot = this.createGateSlot(pairIndex * 3 + 100, 'LEFT', -2.46, SPLIT_WIDTH, -4.88, -0.06, false);
+    this.rightSlot = this.createGateSlot(pairIndex * 3 + 101, 'RIGHT', 2.46, SPLIT_WIDTH, 0.06, 4.88, false);
+    this.fullSlot = this.createGateSlot(pairIndex * 3 + 102, 'LEFT', 0, FULL_WIDTH, -4.88, 4.88, true);
 
-    const topRail = new THREE.Mesh(
-      new THREE.BoxGeometry(10.42, 0.08, 0.48),
-      steelTrimMat
-    );
-    topRail.position.set(0, 3.43, 0);
-    this.root.add(topRail);
-
-    // Downward Holo-Projector Hoods centered above each lane
-    for (const lx of [-2.48, 2.48]) {
-      const emitterHood = new THREE.Mesh(
-        new THREE.BoxGeometry(1.55, 0.18, 0.52),
-        steelTrimMat
-      );
-      emitterHood.position.set(lx, 3.14, 0);
-      emitterHood.castShadow = true;
-      this.root.add(emitterHood);
-    }
-
-    this.leftSlot = this.createLaneSlot(pairIndex * 2 + 100, -2.48);
-    this.rightSlot = this.createLaneSlot(pairIndex * 2 + 101, 2.48);
     this.root.visible = false;
   }
 
-  private createLaneSlot(entityId: number, centerX: number): SingleLaneGateSlot {
+  private createGateSlot(
+    entityId: number,
+    laneTag: LaneSide,
+    centerX: number,
+    width: number,
+    minX: number,
+    maxX: number,
+    wideTex: boolean
+  ): SingleGateSlot {
     const group = new THREE.Group();
     group.position.set(centerX, 0, 0);
 
-    const labelTex = new EditableGateTexture();
+    const labelTex = new EditableGateTexture(wideTex);
     const panelMat = new THREE.MeshBasicMaterial({
       map: labelTex.texture,
       transparent: true,
@@ -169,38 +142,34 @@ export class GatePairSlot {
       depthWrite: false,
     });
     const panelMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(LANE_WIDTH, PANEL_HEIGHT),
+      new THREE.PlaneGeometry(width, PANEL_HEIGHT),
       panelMat
     );
-    panelMesh.position.set(0, 1.56, 0);
+    panelMesh.position.set(0, 1.34, 0);
     group.add(panelMesh);
 
-    // Glowing HDR Side Emitter Bars flanking the holographic energy field
-    const ledMat = new THREE.MeshBasicMaterial({
-      color: 0x48ffa7,
-    });
-    const barGeo = new THREE.BoxGeometry(0.065, 2.68, 0.09);
+    const ledMat = new THREE.MeshBasicMaterial({ color: 0x38f6ff });
+    const barGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.52, 8);
+    const halfSpan = width * 0.5 - 0.04;
     const barL = new THREE.Mesh(barGeo, ledMat);
-    barL.position.set(-2.32, 1.56, 0);
+    barL.position.set(-halfSpan, 1.34, 0);
     const barR = new THREE.Mesh(barGeo, ledMat);
-    barR.position.set(2.32, 1.56, 0);
-    const emitterLens = new THREE.Mesh(
-      new THREE.BoxGeometry(1.32, 0.06, 0.24),
-      ledMat
-    );
-    emitterLens.position.set(0, 3.04, 0);
-    group.add(barL, barR, emitterLens);
+    barR.position.set(halfSpan, 1.34, 0);
+    group.add(barL, barR);
 
     const padlockGroup = createPadlockMesh();
-    padlockGroup.position.set(0, 3.55, 0.12);
+    padlockGroup.position.set(0, 2.75, 0.10);
     group.add(padlockGroup);
 
     this.root.add(group);
 
     return {
       entityId,
+      laneTag,
+      minX,
+      maxX,
+      centerX,
       group,
-      panelMesh,
       ledMat,
       padlockGroup,
       labelTex,
@@ -215,15 +184,15 @@ export class GatePairSlot {
     };
   }
 
-  private syncLedColor(slot: SingleLaneGateSlot): void {
+  private syncLedColor(slot: SingleGateSlot): void {
     if (slot.isLocked && slot.operator === 'MUL') {
-      slot.ledMat.color.setRGB(1.4, 1.02, 0.28);
+      slot.ledMat.color.setRGB(1.35, 1.0, 0.25);
     } else if (slot.isLocked && slot.operator === 'DIV') {
-      slot.ledMat.color.setRGB(1.45, 0.28, 0.24);
-    } else if (slot.value < 0) {
-      slot.ledMat.color.setRGB(1.4, 0.26, 0.38);
+      slot.ledMat.color.setRGB(1.42, 0.25, 0.24);
+    } else if (slot.operator === 'ADD' && slot.value < 0) {
+      slot.ledMat.color.setRGB(1.4, 0.24, 0.34);
     } else {
-      slot.ledMat.color.setRGB(0.28, 1.38, 0.82);
+      slot.ledMat.color.setRGB(0.24, 1.25, 1.48);
     }
   }
 
@@ -234,11 +203,22 @@ export class GatePairSlot {
     this.root.position.set(0, 0, def.z);
     this.root.visible = true;
 
-    this.configureSide(this.leftSlot, def.left);
-    this.configureSide(this.rightSlot, def.right);
+    if (def.full) {
+      this.isFullSpan = true;
+      this.centerPostGroup.visible = false;
+      this.configureSlot(this.leftSlot, null);
+      this.configureSlot(this.rightSlot, null);
+      this.configureSlot(this.fullSlot, def.full);
+    } else {
+      this.isFullSpan = false;
+      this.centerPostGroup.visible = true;
+      this.configureSlot(this.fullSlot, null);
+      this.configureSlot(this.leftSlot, def.left);
+      this.configureSlot(this.rightSlot, def.right);
+    }
   }
 
-  private configureSide(slot: SingleLaneGateSlot, def: GateDefinition | null): void {
+  private configureSlot(slot: SingleGateSlot, def: GateDefinition | null): void {
     if (!def) {
       slot.active = false;
       slot.group.visible = false;
@@ -268,25 +248,25 @@ export class GatePairSlot {
     if (!this.active) {
       return;
     }
-    // Retract passed gate gantries cleanly beneath the deck so they never block trailing 20:9 portrait cameras
-    if (this.triggered || squadZ < this.z - 2.3) {
+    if (this.triggered || squadZ < this.z - 2.0) {
       this.triggered = true;
       this.root.position.y -= dt * 18.0;
-      if (this.root.position.y <= -3.9 || squadZ < this.z - 5.2) {
+      if (this.root.position.y <= -3.4 || squadZ < this.z - 4.8) {
         this.hide();
         return;
       }
     }
     this.tickSide(this.leftSlot, dt);
     this.tickSide(this.rightSlot, dt);
+    this.tickSide(this.fullSlot, dt);
   }
 
-  private tickSide(slot: SingleLaneGateSlot, dt: number): void {
+  private tickSide(slot: SingleGateSlot, dt: number): void {
     if (!slot.active) {
       return;
     }
     if (slot.flashTimer > 0) {
-      slot.flashTimer = Math.max(0, slot.flashTimer - dt * 6);
+      slot.flashTimer = Math.max(0, slot.flashTimer - dt * 6.5);
     }
     slot.labelTex.redrawIfDirty(
       slot.operator,
@@ -313,14 +293,15 @@ export class GatePairSlot {
       return null;
     }
 
-    let targetSlot: SingleLaneGateSlot | null = null;
-    let lane: LaneSide = 'LEFT';
-    if (bx >= -4.85 && bx <= -0.12 && this.leftSlot.active) {
+    let targetSlot: SingleGateSlot | null = null;
+    if (this.isFullSpan && this.fullSlot.active) {
+      if (bx >= this.fullSlot.minX && bx <= this.fullSlot.maxX) {
+        targetSlot = this.fullSlot;
+      }
+    } else if (bx >= this.leftSlot.minX && bx <= this.leftSlot.maxX && this.leftSlot.active) {
       targetSlot = this.leftSlot;
-      lane = 'LEFT';
-    } else if (bx >= 0.12 && bx <= 4.85 && this.rightSlot.active) {
+    } else if (bx >= this.rightSlot.minX && bx <= this.rightSlot.maxX && this.rightSlot.active) {
       targetSlot = this.rightSlot;
-      lane = 'RIGHT';
     }
 
     if (!targetSlot || targetSlot.entityId === lastHitId) {
@@ -352,7 +333,7 @@ export class GatePairSlot {
     );
 
     return {
-      lane,
+      lane: targetSlot.laneTag,
       entityId: targetSlot.entityId,
       hitX: bx,
       hitZ: this.z,
@@ -361,6 +342,7 @@ export class GatePairSlot {
       crossedZeroOrPositive: res.crossedZeroOrPositive,
       flippedToPositive: res.flippedToPositive,
       ricochet: res.ricochet,
+      formattedLabel: formatGateLabel(targetSlot.operator, res.value, targetSlot.isLocked),
     };
   }
 
@@ -372,16 +354,20 @@ export class GatePairSlot {
     if (!this.active || this.triggered) {
       return null;
     }
-    if (squadZ > this.z + 0.45 || squadZ < this.z - 2.2) {
+    if (squadZ > this.z + 0.48 || squadZ < this.z - 2.2) {
       return null;
     }
 
-    const chooseLeft =
-      (squadX < 0 && this.leftSlot.active) || !this.rightSlot.active;
-    const chosen = chooseLeft ? this.leftSlot : this.rightSlot;
-    const lane: LaneSide = chooseLeft ? 'LEFT' : 'RIGHT';
+    let chosen: SingleGateSlot | null = null;
+    if (this.isFullSpan && this.fullSlot.active) {
+      chosen = this.fullSlot;
+    } else {
+      const chooseLeft =
+        (squadX < 0 && this.leftSlot.active) || !this.rightSlot.active;
+      chosen = chooseLeft ? this.leftSlot : this.rightSlot;
+    }
 
-    if (!chosen.active) {
+    if (!chosen || !chosen.active) {
       return null;
     }
 
@@ -389,22 +375,29 @@ export class GatePairSlot {
     chosen.active = false;
     chosen.group.visible = false;
 
+    const rawUnclampedCount = resolveGateSquadCount(
+      currentSquad,
+      chosen.operator,
+      chosen.value,
+      999
+    );
     const nextSquadCount = resolveGateSquadCount(
       currentSquad,
       chosen.operator,
       chosen.value
     );
     const deltaSquad = nextSquadCount - currentSquad;
-    const label = formatGateLabel(chosen.operator, chosen.value);
+    const label = formatGateLabel(chosen.operator, chosen.value, chosen.isLocked);
 
     return {
-      lane,
-      worldX: chooseLeft ? -2.45 : 2.45,
+      lane: chosen.laneTag,
+      worldX: this.isFullSpan ? squadX : chosen.centerX,
       worldZ: this.z,
       nextSquadCount,
+      rawUnclampedCount,
       deltaSquad,
       label,
-      positive: deltaSquad >= 0,
+      positive: rawUnclampedCount >= currentSquad,
     };
   }
 }

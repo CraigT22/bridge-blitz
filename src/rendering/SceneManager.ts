@@ -12,7 +12,7 @@ import {
 } from './WeaponRigFactory';
 
 export type CameraFramingMode =
-  | 'HERO_DIORAMA'
+  | 'LIVE_BRIDGE'
   | 'ARMORY_INSPECT'
   | 'RUN_TACTICAL'
   | 'BOSS_TACTICAL';
@@ -58,14 +58,14 @@ export class SceneManager {
   private elapsedSkyTime = 0;
   private portraitFactor = 0;
 
-  private readonly currentCamPos = new THREE.Vector3(2.1, 2.05, 4.4);
-  private readonly currentLookAt = new THREE.Vector3(-0.35, 0.85, -14.0);
-  private lastFramingMode: CameraFramingMode = 'HERO_DIORAMA';
+  private readonly currentCamPos = new THREE.Vector3(0, 4.9, 6.9);
+  private readonly currentLookAt = new THREE.Vector3(0, 0.25, -11.5);
+  private lastFramingMode: CameraFramingMode = 'LIVE_BRIDGE';
 
   constructor(canvasContainer: HTMLElement) {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x181924);
-    this.scene.fog = new THREE.FogExp2(0x6d4236, 0.0056);
+    this.scene.fog = new THREE.FogExp2(0x6d4236, 0.0052);
 
     const initW = Math.max(1, window.innerWidth);
     const initH = Math.max(1, window.innerHeight);
@@ -86,7 +86,7 @@ export class SceneManager {
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(initW, initH);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
+    this.renderer.toneMappingExposure = 1.15;
     this.renderer.domElement.addEventListener('webglcontextlost', (e) => {
       e.preventDefault();
     });
@@ -99,20 +99,20 @@ export class SceneManager {
     this.scene.add(this.skyDome);
 
     // 4-Light Golden-Hour Tactical Rig
-    const hemi = new THREE.HemisphereLight(0xffcb96, 0x2c384a, 1.38);
+    const hemi = new THREE.HemisphereLight(0xffd4a6, 0x2e3c50, 1.48);
     this.scene.add(hemi);
 
-    this.sunLight = new THREE.DirectionalLight(0xffad5e, 2.75);
+    this.sunLight = new THREE.DirectionalLight(0xffb469, 2.8);
     this.sunLight.position.set(-19, 17, -24);
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
-    this.rimLight = new THREE.DirectionalLight(0x74b0ea, 1.45);
+    this.rimLight = new THREE.DirectionalLight(0x7cb8f2, 1.55);
     this.rimLight.position.set(18, 13, 18);
     this.scene.add(this.rimLight);
     this.scene.add(this.rimLight.target);
 
-    const frontalFill = new THREE.DirectionalLight(0xffdfb8, 0.62);
+    const frontalFill = new THREE.DirectionalLight(0xffe4c4, 0.72);
     frontalFill.position.set(0, 10, 22);
     this.scene.add(frontalFill);
 
@@ -244,9 +244,9 @@ export class SceneManager {
 
     this.camera.aspect = aspect;
 
-    // Preserve horizontal bridge visibility & thumb clearance on tall ~20:9 phones (Pixel 10 XL 412x915)
+    // Tuned close over-the-shoulder vertical FOV for tall ~20:9 Pixel 10 XL portrait (412x915)
     this.portraitFactor = Math.max(0, Math.min(1, (0.95 - aspect) / 0.5));
-    this.camera.fov = 47 + this.portraitFactor * 23;
+    this.camera.fov = 46 + this.portraitFactor * 21;
     this.camera.updateProjectionMatrix();
 
     this.renderer.setPixelRatio(dpr);
@@ -309,7 +309,7 @@ export class SceneManager {
 
     this.shakeTime += dt * 38;
     this.shakeTrauma = Math.max(0, this.shakeTrauma - dt * 2.6);
-    const shakeMag = this.shakeTrauma * this.shakeTrauma * 0.52;
+    const shakeMag = this.shakeTrauma * this.shakeTrauma * 0.45;
 
     const shakeX = Math.sin(this.shakeTime * 1.13) * shakeMag;
     const shakeY = Math.cos(this.shakeTime * 1.71) * shakeMag * 0.75;
@@ -327,7 +327,6 @@ export class SceneManager {
       this.armoryTurntable.rotation.y = this.armoryYaw;
       this.armoryOuterRing.rotation.z = -this.elapsedSkyTime * 0.5;
 
-      // Animate active weapon or boss rig on the turntable!
       if (this.armoryMode === 'WEAPONS') {
         const wRig = this.armoryWeapons[this.armoryWeaponTier];
         wRig.root.position.y = 0.18 + Math.sin(this.elapsedSkyTime * 2.2) * 0.05;
@@ -345,39 +344,41 @@ export class SceneManager {
         }
       }
 
-      // Heroic eye-level showcase angle framed cleanly in the Armory viewport window
       _desiredPos.set(0, ARMORY_STAGE_Y + 0.52, ARMORY_STAGE_Z + 4.05 + p * 0.90);
       _desiredLook.set(0, ARMORY_STAGE_Y - 0.16 - p * 0.38, ARMORY_STAGE_Z);
-    } else if (framingMode === 'HERO_DIORAMA') {
-      // Centered low-angle 3/4 hero orbit framing commandos dead-center above the deploy deck with Golden Gate towers behind!
-      const orbitSway = Math.sin(this.elapsedSkyTime * 0.55) * 0.22;
+    } else if (framingMode === 'LIVE_BRIDGE') {
+      // Seamless Live-Bridge Start Screen Camera:
+      // Close over-the-shoulder angle framing your chunky elite commando above the 3 bottom Upgrade cards
+      // while looking straight down the Golden Gate roadway at upcoming Supply Drums, Coins, Enemies & Gates!
+      const targetCamX = squadX * 0.38;
+      this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 9.0);
+
       _desiredPos.set(
-        squadX + 1.05 + orbitSway,
-        1.48 + p * 0.14,
-        squadZ + 2.85 + p * 0.55
+        this.smoothCamX,
+        4.65 + p * 0.55,
+        squadZ + 5.75 + p * 1.35
       );
       _desiredLook.set(
-        squadX - 0.02,
-        0.40 - p * 0.06,
-        squadZ - 0.25
+        this.smoothCamX * 0.55,
+        0.18 - p * 0.62,
+        squadZ - 11.4
       );
     } else {
       const inBossFight = framingMode === 'BOSS_TACTICAL';
-      const targetCamX = squadX * (0.36 - p * 0.14);
-      this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 8.5);
+      const targetCamX = squadX * (inBossFight ? 0.30 : 0.44 - p * 0.10);
+      this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 9.5);
 
-      const camHeight = (inBossFight ? 9.8 : 8.5) - p * 1.0;
-      const camBack = (inBossFight ? 13.2 : 10.6) + p * 4.0;
+      const camHeight = inBossFight ? 6.45 + p * 0.45 : 4.55 + p * 0.50;
+      const camBack = inBossFight ? 8.6 + p * 2.1 : 5.85 + p * 1.45;
 
       _desiredPos.set(this.smoothCamX, camHeight, squadZ + camBack);
       _desiredLook.set(
-        this.smoothCamX * 0.55,
-        (inBossFight ? 1.35 : 0.95) - p * 1.15,
-        squadZ - ((inBossFight ? 13.0 : 9.5) - p * 2.2)
+        this.smoothCamX * 0.58,
+        (inBossFight ? 1.15 : 0.72) - p * 0.25,
+        squadZ - (inBossFight ? 12.2 : 11.6)
       );
     }
 
-    // Snap immediately when entering/leaving high-altitude Armory stage; smooth spring swoop between Hero Diorama & Run!
     const snapInstant =
       isArmory !== (this.lastFramingMode === 'ARMORY_INSPECT');
     this.lastFramingMode = framingMode;
@@ -386,7 +387,7 @@ export class SceneManager {
       this.currentCamPos.copy(_desiredPos);
       this.currentLookAt.copy(_desiredLook);
     } else {
-      const blend = Math.min(1, dt * (framingMode === 'HERO_DIORAMA' ? 5.5 : 7.5));
+      const blend = Math.min(1, dt * 8.5);
       this.currentCamPos.lerp(_desiredPos, blend);
       this.currentLookAt.lerp(_desiredLook, blend);
     }
@@ -402,7 +403,6 @@ export class SceneManager {
       this.currentLookAt.z
     );
 
-    // Keep Sky Dome centered on camera
     this.skyDome.position.copy(this.camera.position);
 
     const anchorZ = isArmory ? ARMORY_STAGE_Z : squadZ;
@@ -415,9 +415,6 @@ export class SceneManager {
     this.rimLight.target.position.set(0, anchorY, anchorZ - 10);
   }
 
-  /**
-   * Projects a 3D world point into viewport CSS pixels without allocating any objects.
-   */
   public projectToScreen(
     worldX: number,
     worldY: number,

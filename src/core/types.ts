@@ -34,6 +34,10 @@ export type GateOperator = 'ADD' | 'MUL' | 'DIV';
 
 export type LaneSide = 'LEFT' | 'RIGHT';
 
+export type ObstacleLane = 'LEFT' | 'CENTER' | 'RIGHT' | 'LEFT_MID' | 'RIGHT_MID';
+
+export type DrumRewardType = 'COINS' | 'WEAPON' | 'RECRUIT';
+
 export interface GateDefinition {
   readonly operator: GateOperator;
   readonly initialValue: number;
@@ -45,13 +49,25 @@ export interface GatePairDefinition {
   readonly z: number;
   readonly left: GateDefinition | null;
   readonly right: GateDefinition | null;
+  /** Optional full-bridge shootable gate (e.g. X1.0 -> X1.7 fractional multiplier across roadway) */
+  readonly full?: GateDefinition | null;
+}
+
+export interface SupplyDrumDefinition {
+  readonly z: number;
+  readonly lane: ObstacleLane;
+  readonly hp: number;
+  readonly rewardType: DrumRewardType;
+  /** Coin payout, WeaponTierId (2..5), or recruit soldier count */
+  readonly rewardValue: number;
 }
 
 export interface TireStackDefinition {
   readonly z: number;
-  readonly lane: LaneSide | 'CENTER';
+  readonly lane: 'LEFT' | 'CENTER' | 'RIGHT';
   readonly breakCount: number;
-  readonly weaponTier: WeaponTierId;
+  readonly weaponTier?: WeaponTierId;
+  readonly coinReward?: number;
 }
 
 export interface EnemyWaveDefinition {
@@ -60,6 +76,8 @@ export interface EnemyWaveDefinition {
   readonly count: number;
   readonly hpPerEnemy: number;
   readonly speed: number;
+  readonly heavyCount?: number;
+  readonly coinPerKill?: number;
 }
 
 export interface BossDefinition {
@@ -81,6 +99,7 @@ export interface StageDefinition {
   readonly stageNumber: number;
   readonly title: string;
   readonly trackLength: number;
+  readonly supplyDrums: SupplyDrumDefinition[];
   readonly gatePairs: GatePairDefinition[];
   readonly tireStacks: TireStackDefinition[];
   readonly enemyWaves: EnemyWaveDefinition[];
@@ -120,8 +139,10 @@ export interface RunSummary {
   distanceMeters: number;
   progressRatio: number;
   enemiesDefeated: number;
+  drumsBroken: number;
   gatesFlipped: number;
   peakSquad: number;
+  liveCoinsEarned: number;
   distanceCoins: number;
   killCoins: number;
   bonusCoins: number;
@@ -134,6 +155,7 @@ export interface TelemetrySnapshot {
   mode: GameMode;
   stage: number;
   coins: number;
+  liveCoinsThisRun: number;
   logicalSquad: number;
   visualSquad: number;
   squadX: number;
@@ -143,6 +165,7 @@ export interface TelemetrySnapshot {
   weaponBadge: string;
   bossHp: number;
   bossMaxHp: number;
+  drumsBrokenThisRun: number;
   gatesFlippedThisRun: number;
   tiresBrokenThisRun: number;
   weaponLocksTriggeredThisRun: number;

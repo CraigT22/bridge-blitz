@@ -17,7 +17,6 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(i2).toBe(2);
     expect(pool.activeCount).toBe(3);
 
-    // Deactivating index 0 swaps index 2 into slot 0
     pool.deactivate(0);
     expect(pool.activeCount).toBe(2);
     expect(pool.x[0]).toBe(3);
@@ -42,16 +41,14 @@ describe('ObjectPool & Core State Integrity', () => {
     ragdolls.spawnKnockback(0, -25, true, 1.0);
     ragdolls.spawnKnockback(1.2, -10, false, 1.15);
     expect(ragdolls.activeCount).toBe(2);
-    expect(ragdolls.vz[0]).toBeLessThan(0); // Enemy flies backward (-Z)
-    expect(ragdolls.vz[1]).toBeGreaterThan(0); // Player flies backward (+Z)
+    expect(ragdolls.vz[0]).toBeLessThan(0);
+    expect(ragdolls.vz[1]).toBeGreaterThan(0);
 
-    // Saturate capacity (4) and verify oldest slot recycles safely without overflow
     ragdolls.spawnKnockback(-1, -20, true, 1.0);
     ragdolls.spawnKnockback(2, -22, true, 1.0);
     ragdolls.spawnKnockback(0.5, -24, true, 1.0);
     expect(ragdolls.activeCount).toBe(4);
 
-    // Advance physics and verify expiration
     ragdolls.update(0.35);
     expect(ragdolls.activeCount).toBe(4);
     expect(ragdolls.y[0]).toBeGreaterThanOrEqual(Math.fround(0.16));
@@ -62,7 +59,7 @@ describe('ObjectPool & Core State Integrity', () => {
 
   it('pauses and resumes both RUNNING and BOSS_FIGHT states with zeroed timeScale', () => {
     const fsm = new GameStateMachine();
-    expect(fsm.pause()).toBe(false); // Cannot pause in PRE_RUN
+    expect(fsm.pause()).toBe(false);
 
     fsm.transitionTo('RUNNING');
     expect(fsm.pause()).toBe(true);
@@ -110,26 +107,28 @@ describe('ObjectPool & Core State Integrity', () => {
         const mask2 = selectBossSalvoLaneMask(x, 2, cycle);
         expect(mask2[expectedPlayerLane]).toBe(true);
         expect(mask2.filter(Boolean)).toHaveLength(2);
-        // Strictly at least 1 safe lane (false)
         expect(mask2.some((locked) => !locked)).toBe(true);
       }
     }
   });
 
-  it('defines 10 valid handcrafted campaign stages with spaced obstacles and active Boss salvos', () => {
+  it('defines 10 valid handcrafted v4.0 campaign stages with opening supply drums, 3-lane tire walls, and Boss salvos', () => {
     expect(CAMPAIGN_STAGES).toHaveLength(10);
     const seenChassis = new Set<string>();
     for (let i = 0; i < CAMPAIGN_STAGES.length; i++) {
       const stage = CAMPAIGN_STAGES[i];
       expect(stage.stageNumber).toBe(i + 1);
-      expect(stage.trackLength).toBeGreaterThanOrEqual(265);
+      expect(stage.trackLength).toBeGreaterThanOrEqual(260);
+      expect(stage.supplyDrums.length).toBeGreaterThanOrEqual(6);
+      // Opening drum row visible immediately from the Live-Bridge Start Screen (z >= -20)
+      expect(stage.supplyDrums[0].z).toBeGreaterThanOrEqual(-20);
       expect(stage.gatePairs.length).toBeGreaterThanOrEqual(3);
-      expect(stage.boss.maxHp).toBeGreaterThanOrEqual(1100);
+      expect(stage.tireStacks.length).toBe(6); // Two 3-lane Tire Wall checkpoints per sector
+      expect(stage.enemyWaves.length).toBeGreaterThanOrEqual(4);
+      expect(stage.boss.maxHp).toBeGreaterThanOrEqual(2000);
       expect(stage.boss.salvoLanes === 1 || stage.boss.salvoLanes === 2).toBe(true);
-      expect(stage.boss.salvoInterval).toBeGreaterThan(1.5);
-      expect(stage.boss.salvoDamage).toBeGreaterThanOrEqual(5);
-      expect(stage.boss.chassis).toBeTruthy();
-      expect(stage.boss.primaryHex).toBeGreaterThan(0);
+      expect(stage.boss.salvoDamage).toBeGreaterThanOrEqual(2);
+      expect(stage.boss.salvoDamage).toBeLessThanOrEqual(5);
       seenChassis.add(stage.boss.chassis);
     }
     expect(seenChassis).toEqual(
@@ -139,9 +138,11 @@ describe('ObjectPool & Core State Integrity', () => {
     const wave1 = generateEndlessWaveStage(1);
     const wave4 = generateEndlessWaveStage(4);
     const wave5 = generateEndlessWaveStage(5);
+    expect(wave1.supplyDrums.length).toBeGreaterThanOrEqual(6);
+    expect(wave1.tireStacks.length).toBe(6);
     expect(wave5.boss.maxHp).toBeGreaterThan(wave1.boss.maxHp);
     expect(wave1.boss.salvoLanes).toBe(1);
-    expect(wave4.boss.salvoLanes).toBe(2);
+    expect(wave5.boss.salvoLanes).toBe(2);
     expect(wave4.boss.chassis).toBe('SOVEREIGN_TITAN');
   });
 

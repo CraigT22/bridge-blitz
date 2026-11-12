@@ -1,49 +1,113 @@
 import type { EnemyWaveDefinition } from '../core/types';
-import {
-  computeSquadOuterRadius,
-  PRECOMPUTED_HONEYCOMB_SLOTS,
-} from '../math/formationMath';
+import { computeSquadOuterRadius } from '../math/formationMath';
 import type { InstancedBatchRenderer } from '../rendering/InstancedBatchRenderer';
+
+const MAX_UNITS_PER_WAVE = 24;
+
+export interface EliminatedEnemyEvent {
+  x: number;
+  z: number;
+  isHeavy: boolean;
+  coinReward: number;
+}
 
 export class EnemyWaveSlot {
   public readonly entityId: number;
   public active = false;
   public aliveCount = 0;
   public initialCount = 0;
-  public hpPerEnemy = 3;
-  public frontEnemyHp = 3;
-  public speed = 2.4;
+  public hpPerEnemy = 15;
+  public speed = 2.1;
   public x = 0;
   public z = 0;
   public marchPhase = 0;
-  public hitFlash = 0;
-  private contactCooldown = 0;
+
+  // Per-unit Struct-of-Arrays for loose bridge-wide formations, individual white hit-flashes & lane carving!
+  public readonly unitCountCap = MAX_UNITS_PER_WAVE;
+  public readonly unitAlive = new Uint8Array(MAX_UNITS_PER_WAVE);
+  public readonly unitIsHeavy = new Uint8Array(MAX_UNITS_PER_WAVE);
+  public readonly unitX = new Float32Array(MAX_UNITS_PER_WAVE);
+  public readonly unitZ = new Float32Array(MAX_UNITS_PER_WAVE);
+  public readonly unitHp = new Float32Array(MAX_UNITS_PER_WAVE);
+  public readonly unitMaxHp = new Float32Array(MAX_UNITS_PER_WAVE);
+  public readonly unitHitFlash = new Float32Array(MAX_UNITS_PER_WAVE);
+  public readonly unitCoins = new Float32Array(MAX_UNITS_PER_WAVE);
+
+  // Reusable scratch buffer for kills resolved during a bullet step (zero allocations)
+  public lastKillCount = 0;
+  public readonly lastKills: EliminatedEnemyEvent[] = [];
+
+  private totalConfigured = 0;
 
   constructor(waveIndex: number) {
     this.entityId = 800 + waveIndex;
+    for (let i = 0; i < 6; i++) {
+      this.lastKills.push({ x: 0, z: 0, isHeavy: false, coinReward: 0 });
+    }
   }
 
   public configure(def: EnemyWaveDefinition): void {
     this.active = true;
-    this.initialCount = Math.max(1, def.count);
-    this.aliveCount = this.initialCount;
-    this.hpPerEnemy = Math.max(0.5, def.hpPerEnemy);
-    this.frontEnemyHp = this.hpPerEnemy;
+    this.totalConfigured = Math.max(1, Math.min(MAX_UNITS_PER_WAVE, def.count));
+    this.initialCount = this.totalConfigured;
+    this.aliveCount = this.totalConfigured;
+    this.hpPerEnemy = Math.max(2, def.hpPerEnemy);
     this.speed = def.speed;
-    this.x = def.lane === 'LEFT' ? -2.2 : def.lane === 'RIGHT' ? 2.2 : 0;
+    this.x = def.lane === 'LEFT' ? -2.0 : def.lane === 'RIGHT' ? 2.0 : 0;
     this.z = def.z;
     this.marchPhase = 0;
-    this.hitFlash = 0;
-    this.contactCooldown = 0;
+    this.lastKillCount = 0;
+
+    const heavyTarget =
+      def.heavyCount ?? Math.max(1, Math.floor(this.totalConfigured * 0.26));
+    const baseCoin = def.coinPerKill ?? 5;
+    const spanHalfX = def.lane === 'CENTER' ? 3.55 : 2.15;
+
+    const cols = def.lane === 'CENTER' ? 5 : 3;
+    const centerCol = Math.floor(cols / 2);
+    const heavyOrder: number[] = [];
+    for (let i = 0; i < this.totalConfigured; i++) {
+      heavyOrder.push(i);
+    }
+    heavyOrder.sort((a, b) => {
+      const rowA = Math.floor(a / cols);
+      const rowB = Math.floor(b / cols);
+      if (rowA !== rowB) return rowA - rowB;
+      return Math.abs((a % cols) - centerCol) - Math.abs((b % cols) - centerCol);
+    });
+    const heavySet = new Set(heavyOrder.slice(0, Math.max(0, heavyTarget)));
+
+    for (let i = 0; i < this.totalConfigured; i++) {
+      this.unitAlive[i] = 1;
+      const isHeavy = heavySet.has(i) ? 1 : 0;
+      this.unitIsHeavy[i] = isHeavy;
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      const uNorm = cols > 1 ? col / (cols - 1) - 0.5 : 0;
+      const staggerX = (((i * 17 + 5) % 11) - 5) * 0.085;
+      const staggerZ = (((i * 13 + 3) % 9) - 4) * 0.14;
+
+      const wx = Math.max(
+        -4.15,
+        Math.min(4.15, this.x + uNorm * spanHalfX * 2 + staggerX)
+      );
+      const wz = def.z - row * 1.18 + staggerZ;
+
+      this.unitX[i] = wx;
+      this.unitZ[i] = wz;
+
+      const maxHp = isHeavy ? this.hpPerEnemy * 3.8 : this.hpPerEnemy;
+      this.unitMaxHp[i] = maxHp;
+      this.unitHp[i] = maxHp;
+      this.unitHitFlash[i] = 0;
+      this.unitCoins[i] = isHeavy ? Math.round(baseCoin * 3.4) : baseCoin;
+    }
   }
 
   public hide(): void {
     this.active = false;
     this.aliveCount = 0;
-  }
-
-  public get outerRadius(): number {
-    return computeSquadOuterRadius(this.aliveCount);
+    this.totalConfigured = 0;
   }
 
   public update(dt: number, squadX: number, squadZ: number): void {
@@ -51,27 +115,54 @@ export class EnemyWaveSlot {
       return;
     }
 
-    if (this.hitFlash > 0) {
-      this.hitFlash = Math.max(0, this.hitFlash - dt * 7);
-    }
-    if (this.contactCooldown > 0) {
-      this.contactCooldown = Math.max(0, this.contactCooldown - dt);
-    }
-
-    // Begin marching down the bridge once within 52m of the squad (stays inside its own obstacle zone)
-    if (squadZ - this.z < 52) {
+    const withinEngage = squadZ - this.z < 33;
+    if (withinEngage) {
       this.z += this.speed * dt;
-      // Active tactical homing toward the player's squad when within 30m
-      if (squadZ - this.z < 30 && squadZ - this.z > -3) {
-        const dx = squadX - this.x;
-        this.x += Math.sign(dx) * Math.min(Math.abs(dx), 2.05 * dt);
-      }
-      this.marchPhase += dt * 9.5;
+      this.marchPhase += dt * 8.8;
     }
 
-    // Despawn cleanly if somehow passed far behind camera
-    if (this.z > squadZ + 18) {
-      this.hide();
+    let alive = 0;
+    let sumX = 0;
+    let maxZ = -999999;
+
+    for (let i = 0; i < this.totalConfigured; i++) {
+      if (this.unitAlive[i] === 0) {
+        continue;
+      }
+      if (this.unitHitFlash[i] > 0) {
+        this.unitHitFlash[i] = Math.max(0, this.unitHitFlash[i] - dt * 6.5);
+      }
+
+      if (withinEngage) {
+        const speedMul = this.unitIsHeavy[i] === 1 ? 0.86 : 1.0;
+        this.unitZ[i] += this.speed * speedMul * dt;
+
+        // Subtle close-range tracking (< 8.5m) preserves carved open lanes when front troopers are eliminated!
+        const distZ = squadZ - this.unitZ[i];
+        if (distZ < 8.5 && distZ > -1.0) {
+          const dx = squadX - this.unitX[i];
+          this.unitX[i] += Math.sign(dx) * Math.min(Math.abs(dx), 0.25 * dt);
+        }
+      }
+
+      if (this.unitZ[i] > squadZ + 14) {
+        this.unitAlive[i] = 0;
+        continue;
+      }
+
+      alive++;
+      sumX += this.unitX[i];
+      if (this.unitZ[i] > maxZ) {
+        maxZ = this.unitZ[i];
+      }
+    }
+
+    this.aliveCount = alive;
+    if (alive <= 0) {
+      this.active = false;
+    } else {
+      this.x = sumX / alive;
+      this.z = maxZ;
     }
   }
 
@@ -79,21 +170,31 @@ export class EnemyWaveSlot {
     if (!this.active || this.aliveCount <= 0) {
       return;
     }
-    const vis = Math.min(this.aliveCount, PRECOMPUTED_HONEYCOMB_SLOTS.length);
-    for (let i = 0; i < vis; i++) {
-      const slot = PRECOMPUTED_HONEYCOMB_SLOTS[i];
-      renderer.pushEnemySoldier(
-        this.x + slot.x,
-        this.z + slot.z,
-        this.marchPhase + i * 0.7,
-        this.hitFlash
-      );
+    for (let i = 0; i < this.totalConfigured; i++) {
+      if (this.unitAlive[i] === 0) {
+        continue;
+      }
+      if (this.unitIsHeavy[i] === 1) {
+        renderer.pushHeavyEnemySoldier(
+          this.unitX[i],
+          this.unitZ[i],
+          this.marchPhase + i * 0.65,
+          this.unitHitFlash[i]
+        );
+      } else {
+        renderer.pushEnemySoldier(
+          this.unitX[i],
+          this.unitZ[i],
+          this.marchPhase + i * 0.85,
+          this.unitHitFlash[i]
+        );
+      }
     }
   }
 
   /**
-   * Applies bullet damage to front troopers; returns number of enemy troopers eliminated by this hit,
-   * or -1 if bullet missed this wave.
+   * Checks per-trooper bullet hit (picking front-most hit trooper along bullet ray).
+   * Returns >= 0 kill count on hit, or -1 if bullet missed all troopers in this wave.
    */
   public tryBulletHit(
     bx: number,
@@ -102,33 +203,101 @@ export class EnemyWaveSlot {
     damage: number,
     lastHitId: number
   ): number {
-    if (!this.active || this.aliveCount <= 0 || lastHitId === this.entityId) {
+    if (!this.active || this.aliveCount <= 0) {
       return -1;
     }
 
-    const rad = this.outerRadius + 0.42;
-    const minZ = Math.min(bz, prevBz) - rad;
-    const maxZ = Math.max(bz, prevBz) + rad;
-    if (this.z < minZ || this.z > maxZ) {
-      return -1;
+    let bestIdx = -1;
+    let bestZ = -999999;
+    const segMinZ = Math.min(bz, prevBz);
+    const segMaxZ = Math.max(bz, prevBz);
+
+    for (let i = 0; i < this.totalConfigured; i++) {
+      if (this.unitAlive[i] === 0) {
+        continue;
+      }
+      const uEntityId = this.entityId * 32 + i;
+      if (uEntityId === lastHitId) {
+        continue;
+      }
+      const hitRad = this.unitIsHeavy[i] === 1 ? 0.66 : 0.48;
+      const uz = this.unitZ[i];
+      if (uz < segMinZ - hitRad || uz > segMaxZ + hitRad) {
+        continue;
+      }
+      if (Math.abs(bx - this.unitX[i]) > hitRad) {
+        continue;
+      }
+      if (uz > bestZ) {
+        bestZ = uz;
+        bestIdx = i;
+      }
     }
-    if (Math.abs(bx - this.x) > rad) {
+
+    if (bestIdx < 0) {
       return -1;
     }
 
-    this.hitFlash = 1.0;
-    let remainingDamage = damage;
-    let kills = 0;
+    this.lastKillCount = 0;
+    this.unitHitFlash[bestIdx] = 1.0;
+    this.unitHp[bestIdx] -= damage;
 
-    while (remainingDamage > 0 && this.aliveCount > 0) {
-      if (remainingDamage >= this.frontEnemyHp) {
-        remainingDamage -= this.frontEnemyHp;
-        this.aliveCount--;
-        kills++;
-        this.frontEnemyHp = this.hpPerEnemy;
-      } else {
-        this.frontEnemyHp -= remainingDamage;
-        remainingDamage = 0;
+    if (this.unitHp[bestIdx] <= 0) {
+      this.unitAlive[bestIdx] = 0;
+      this.aliveCount = Math.max(0, this.aliveCount - 1);
+      const slot = this.lastKills[0];
+      slot.x = this.unitX[bestIdx];
+      slot.z = this.unitZ[bestIdx];
+      slot.isHeavy = this.unitIsHeavy[bestIdx] === 1;
+      slot.coinReward = this.unitCoins[bestIdx];
+      this.lastKillCount = 1;
+
+      if (this.aliveCount <= 0) {
+        this.active = false;
+      }
+      return 1;
+    }
+
+    return 0;
+  }
+
+  /**
+   * Resolves physical collisions between surviving enemy troopers and the player's squad rank.
+   * Regular troopers trade 1 commando; Heavy Juggernauts deal 2 commando casualties!
+   */
+  public resolveSquadCollision(
+    squadX: number,
+    squadZ: number,
+    playerLogicalSquad: number
+  ): { playerLosses: number; hitX: number; hitZ: number } | null {
+    if (!this.active || this.aliveCount <= 0 || playerLogicalSquad <= 0) {
+      return null;
+    }
+
+    const squadHalfW = computeSquadOuterRadius(playerLogicalSquad);
+    let totalLosses = 0;
+    let impactX = squadX;
+    let impactZ = squadZ;
+
+    for (let i = 0; i < this.totalConfigured; i++) {
+      if (this.unitAlive[i] === 0) {
+        continue;
+      }
+      const unitRad = this.unitIsHeavy[i] === 1 ? 0.56 : 0.40;
+      if (
+        Math.abs(this.unitZ[i] - squadZ) <= 0.72 + unitRad * 0.4 &&
+        Math.abs(this.unitX[i] - squadX) <= squadHalfW + unitRad
+      ) {
+        const dmg = this.unitIsHeavy[i] === 1 ? 2 : 1;
+        totalLosses += dmg;
+        impactX = this.unitX[i];
+        impactZ = this.unitZ[i];
+        this.unitAlive[i] = 0;
+        this.aliveCount = Math.max(0, this.aliveCount - 1);
+
+        if (totalLosses >= playerLogicalSquad) {
+          break;
+        }
       }
     }
 
@@ -136,41 +305,17 @@ export class EnemyWaveSlot {
       this.active = false;
     }
 
-    return kills;
+    if (totalLosses <= 0) {
+      return null;
+    }
+    return {
+      playerLosses: Math.min(playerLogicalSquad, totalLosses),
+      hitX: impactX,
+      hitZ: impactZ,
+    };
   }
 
-  /**
-   * 1-for-1 soldier cancellation when surviving enemies physically collide with player soldiers.
-   * Returns the number of mutually cancelled soldiers this tick.
-   */
-  public resolveSquadCollision(
-    squadX: number,
-    squadZ: number,
-    playerLogicalSquad: number
-  ): number {
-    if (!this.active || this.aliveCount <= 0 || playerLogicalSquad <= 0) {
-      return 0;
-    }
-    if (this.contactCooldown > 0) {
-      return 0;
-    }
-
-    const combinedR = this.outerRadius + computeSquadOuterRadius(playerLogicalSquad) + 0.15;
-    const dz = Math.abs(this.z - squadZ);
-    const dx = Math.abs(this.x - squadX);
-    if (dz > combinedR * 0.85 || dx > combinedR) {
-      return 0;
-    }
-
-    // Cancel 1-for-1 rapidly on contact (up to 4 per tick for large armies so collisions feel crisp)
-    const maxStepCancel = Math.max(1, Math.min(4, Math.ceil(this.aliveCount * 0.25)));
-    const cancelled = Math.min(playerLogicalSquad, this.aliveCount, maxStepCancel);
-    this.aliveCount -= cancelled;
-    this.contactCooldown = 0.065;
-
-    if (this.aliveCount <= 0) {
-      this.active = false;
-    }
-    return cancelled;
+  public getConfiguredCount(): number {
+    return this.totalConfigured;
   }
 }

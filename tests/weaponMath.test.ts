@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   computeEffectiveFiringSquad,
   computeSquadVolleyPlan,
-  MAX_VISUAL_SOLDIERS,
+  MAX_SQUAD_COUNT,
   resolveWeaponPickup,
   WEAPON_LOCK_BONUS_COINS,
   WEAPON_LOCK_BONUS_SQUAD,
 } from '../src/math/weaponMath';
 
 describe('weaponMath', () => {
-  it('upgrades weapon tier when breaking a strictly higher-tier tire stack', () => {
+  it('upgrades weapon tier when shattering a higher-tier weapon drum or tire stack', () => {
     const res = resolveWeaponPickup(1, 3);
     expect(res.equippedTier).toBe(3);
     expect(res.upgraded).toBe(true);
@@ -18,7 +18,7 @@ describe('weaponMath', () => {
     expect(res.bonusSquad).toBe(0);
   });
 
-  it('enforces Mandatory Weapon Lock Rule: never downgrades on lower or equal tier and awards +50 coins + 3 squad', () => {
+  it('enforces Mandatory Weapon Lock Rule: never downgrades on lower or equal tier and awards +50 coins + 1 commando', () => {
     const lowerPickup = resolveWeaponPickup(4, 2);
     expect(lowerPickup.equippedTier).toBe(4);
     expect(lowerPickup.upgraded).toBe(false);
@@ -32,37 +32,33 @@ describe('weaponMath', () => {
     expect(equalPickup.upgraded).toBe(false);
     expect(equalPickup.lockedBonusTriggered).toBe(true);
     expect(equalPickup.bonusCoins).toBe(50);
-    expect(equalPickup.bonusSquad).toBe(3);
+    expect(equalPickup.bonusSquad).toBe(1);
   });
 
-  it('scales front-rank DPS linearly up to 6 commandos and smoothly sublinearly for large platoons', () => {
+  it('scales front-rank DPS 1:1 for 1..5 commandos and 0.82x per rear-rank commando up to MAX_SQUAD_COUNT (10)', () => {
     expect(computeEffectiveFiringSquad(1)).toBe(1);
-    expect(computeEffectiveFiringSquad(6)).toBe(6);
-    // Smooth C1 transition above 6
-    expect(computeEffectiveFiringSquad(7)).toBeGreaterThan(6);
-    expect(computeEffectiveFiringSquad(7)).toBeLessThan(7);
+    expect(computeEffectiveFiringSquad(5)).toBe(5);
+    expect(computeEffectiveFiringSquad(6)).toBeCloseTo(5.82, 4);
+    expect(computeEffectiveFiringSquad(10)).toBeCloseTo(9.1, 4);
 
-    const plan6 = computeSquadVolleyPlan(6, 2, 1.0, 1.0);
-    const plan38 = computeSquadVolleyPlan(38, 2, 1.0, 1.0);
-    const plan1000 = computeSquadVolleyPlan(1000, 2, 1.0, 1.0);
+    const plan1 = computeSquadVolleyPlan(1, 2, 1.0, 1.0);
+    const plan5 = computeSquadVolleyPlan(5, 2, 1.0, 1.0);
+    const plan10 = computeSquadVolleyPlan(10, 2, 1.0, 1.0);
 
-    expect(plan6.visualSoldiers).toBe(6);
-    expect(plan1000.visualSoldiers).toBe(MAX_VISUAL_SOLDIERS);
+    expect(plan5.visualSoldiers).toBe(5);
+    expect(plan10.visualSoldiers).toBe(MAX_SQUAD_COUNT);
 
-    const dps6 =
-      (plan6.activeEmitters * plan6.projectilesPerEmitter * plan6.damagePerProjectile) /
-      plan6.intervalSeconds;
-    const dps38 =
-      (plan38.activeEmitters * plan38.projectilesPerEmitter * plan38.damagePerProjectile) /
-      plan38.intervalSeconds;
-    const dps1000 =
-      (plan1000.activeEmitters * plan1000.projectilesPerEmitter * plan1000.damagePerProjectile) /
-      plan1000.intervalSeconds;
+    const dps1 =
+      (plan1.activeEmitters * plan1.projectilesPerEmitter * plan1.damagePerProjectile) /
+      plan1.intervalSeconds;
+    const dps5 =
+      (plan5.activeEmitters * plan5.projectilesPerEmitter * plan5.damagePerProjectile) /
+      plan5.intervalSeconds;
+    const dps10 =
+      (plan10.activeEmitters * plan10.projectilesPerEmitter * plan10.damagePerProjectile) /
+      plan10.intervalSeconds;
 
-    // 38 troops => 4*sqrt(36)-2 = 22 effective firing soldiers (22/6 = 3.666x)
-    expect(dps38 / dps6).toBeCloseTo(22 / 6, 4);
-    expect(dps1000).toBeGreaterThan(dps38);
-    // Prevents 1,000-troop snowball from dealing 166x front-rank DPS
-    expect(dps1000 / dps6).toBeLessThan(25);
+    expect(dps5 / dps1).toBeCloseTo(5.0, 4);
+    expect(dps10 / dps1).toBeCloseTo(9.1, 4);
   });
 });

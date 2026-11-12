@@ -2,15 +2,19 @@ import type { BulletPool } from '../core/ObjectPool';
 import type { WeaponTierId } from '../core/types';
 import {
   clampSquadCenterX,
-  PRECOMPUTED_HONEYCOMB_SLOTS,
+  getEliteFormationOffset,
 } from '../math/formationMath';
 import {
+  COMMANDO_MODEL_SCALE,
   computeSquadVolleyPlan,
+  MAX_SQUAD_COUNT,
   MAX_VISUAL_SOLDIERS,
   WEAPON_SPECS,
 } from '../math/weaponMath';
 
-export const SQUAD_MARCH_SPEED = 7.8;
+export const SQUAD_MARCH_SPEED = 6.5;
+
+const _slotOffset = { x: 0, z: 0 };
 
 export class SquadController {
   public logicalCount = 1;
@@ -33,7 +37,7 @@ export class SquadController {
   private pendingBurstEmitters = 0;
 
   public resetForRun(startingSquad: number): void {
-    this.logicalCount = Math.max(1, Math.floor(startingSquad));
+    this.logicalCount = Math.max(1, Math.min(MAX_SQUAD_COUNT, Math.floor(startingSquad)));
     this.peakCount = this.logicalCount;
     this.weaponTier = 1;
     this.x = 0;
@@ -42,21 +46,28 @@ export class SquadController {
     this.steerBankAngle = 0;
     this.recoilImpulse = 0;
     this.barrelSpinAngle = 0;
-    this.fireCooldown = 0.08;
+    this.fireCooldown = 0.06;
     this.emitterCursor = 0;
     this.pendingBurstTimer = -1;
 
     const vis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
     for (let i = 0; i < vis; i++) {
-      const slot = PRECOMPUTED_HONEYCOMB_SLOTS[i];
-      this.soldierWorldX[i] = this.x + slot.x;
-      this.soldierWorldZ[i] = this.z + slot.z;
+      getEliteFormationOffset(i, vis, _slotOffset);
+      this.soldierWorldX[i] = this.x + _slotOffset.x;
+      this.soldierWorldZ[i] = this.z + _slotOffset.z;
     }
   }
 
-  public setLogicalCount(nextCount: number): void {
+  /**
+   * Updates elite squad count (clamped to MAX_SQUAD_COUNT = 10) and returns any overflow commandos
+   * above the cap so the caller can convert excess reinforcements into bonus War Chest coins!
+   */
+  public setLogicalCount(nextCount: number): number {
     const prevVis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
-    this.logicalCount = Math.max(0, Math.floor(nextCount));
+    const floored = Math.max(0, Math.floor(nextCount));
+    const overflow = Math.max(0, floored - MAX_SQUAD_COUNT);
+    this.logicalCount = Math.min(MAX_SQUAD_COUNT, floored);
+
     if (this.logicalCount > this.peakCount) {
       this.peakCount = this.logicalCount;
     }
@@ -64,11 +75,12 @@ export class SquadController {
 
     const nextVis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
     for (let i = prevVis; i < nextVis; i++) {
-      const slot = PRECOMPUTED_HONEYCOMB_SLOTS[i];
-      // Spawn newly added soldiers near squad center so they fan outward smoothly
-      this.soldierWorldX[i] = this.x + slot.x * 0.25;
-      this.soldierWorldZ[i] = this.z + slot.z * 0.25;
+      getEliteFormationOffset(i, nextVis, _slotOffset);
+      this.soldierWorldX[i] = this.x + _slotOffset.x * 0.25;
+      this.soldierWorldZ[i] = this.z + _slotOffset.z * 0.25;
     }
+
+    return overflow;
   }
 
   public updateMovement(
@@ -84,7 +96,7 @@ export class SquadController {
     const prevX = this.x;
     this.x = clampSquadCenterX(this.x + horizontalDelta, this.logicalCount);
     const actualVelX = dt > 0 ? (this.x - prevX) / dt : 0;
-    const targetBank = Math.max(-0.24, Math.min(0.24, actualVelX * 0.022));
+    const targetBank = Math.max(-0.22, Math.min(0.22, actualVelX * 0.02));
     this.steerBankAngle += (targetBank - this.steerBankAngle) * Math.min(1, dt * 14);
 
     if (this.recoilImpulse > 0) {
@@ -105,18 +117,14 @@ export class SquadController {
     const vis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
     const followFactor = Math.min(1, dt * 15);
     for (let i = 0; i < vis; i++) {
-      const slot = PRECOMPUTED_HONEYCOMB_SLOTS[i];
-      const targetX = this.x + slot.x;
-      const targetZ = this.z + slot.z;
+      getEliteFormationOffset(i, vis, _slotOffset);
+      const targetX = this.x + _slotOffset.x;
+      const targetZ = this.z + _slotOffset.z;
       this.soldierWorldX[i] += (targetX - this.soldierWorldX[i]) * followFactor;
       this.soldierWorldZ[i] += (targetZ - this.soldierWorldZ[i]) * followFactor;
     }
   }
 
-  /**
-   * Fires continuous forward volleys according to equipped weapon pattern & upgrades.
-   * Returns true whenever a volley is emitted so audio can trigger gunfire cleanly.
-   */
   public updateAutoFire(
     dt: number,
     fireRateMultiplier: number,
@@ -131,7 +139,6 @@ export class SquadController {
     let firedAny = false;
     const spec = WEAPON_SPECS[this.weaponTier];
 
-    // Second round of Lv3 Assault Rifle 2-round burst
     if (this.pendingBurstTimer >= 0) {
       this.pendingBurstTimer -= dt;
       if (this.pendingBurstTimer <= 0) {
@@ -214,25 +221,25 @@ export class SquadController {
 
     const spec = WEAPON_SPECS[this.weaponTier];
     const speed = spec.projectileSpeed;
-    // Uniform crisp tracer bullet scale across all tiers
-    const bulletScale = 1.05;
-    const maxAge = 1.30;
+    const bulletScale = 1.24;
+    const maxAge = 1.32;
+    const muzzleOffsetX = 0.178 * COMMANDO_MODEL_SCALE;
+    const muzzleY = 0.555 * COMMANDO_MODEL_SCALE;
+    const muzzleOffsetZ = -0.64 * COMMANDO_MODEL_SCALE;
 
     for (let e = 0; e < emitterCount; e++) {
       const soldierIdx = (this.emitterCursor + e) % vis;
-      const sx = this.soldierWorldX[soldierIdx] + 0.178;
-      const sz = this.soldierWorldZ[soldierIdx] - 0.62;
+      const sx = this.soldierWorldX[soldierIdx] + muzzleOffsetX;
+      const sz = this.soldierWorldZ[soldierIdx] + muzzleOffsetZ;
 
       if (twinStream) {
         const angLeft = aimYawRadians - spreadRad;
-        const vxLeft = Math.sin(angLeft) * speed;
-        const vzLeft = -Math.cos(angLeft) * speed;
         bulletPool.spawn(
-          sx - 0.07,
-          0.56,
+          sx - 0.08,
+          muzzleY,
           sz,
-          vxLeft,
-          vzLeft,
+          Math.sin(angLeft) * speed,
+          -Math.cos(angLeft) * speed,
           damagePerProjectile,
           spec.pierceCount,
           maxAge,
@@ -242,14 +249,12 @@ export class SquadController {
         );
 
         const angRight = aimYawRadians + spreadRad;
-        const vxRight = Math.sin(angRight) * speed;
-        const vzRight = -Math.cos(angRight) * speed;
         bulletPool.spawn(
-          sx + 0.07,
-          0.56,
+          sx + 0.08,
+          muzzleY,
           sz,
-          vxRight,
-          vzRight,
+          Math.sin(angRight) * speed,
+          -Math.cos(angRight) * speed,
           damagePerProjectile,
           spec.pierceCount,
           maxAge,
@@ -261,14 +266,12 @@ export class SquadController {
         const jitterAngle =
           spreadRad > 0 ? (((soldierIdx * 7 + e * 3) % 9) - 4) * 0.25 * spreadRad : 0;
         const totalAngle = aimYawRadians + jitterAngle;
-        const vx = Math.sin(totalAngle) * speed;
-        const vz = -Math.cos(totalAngle) * speed;
         bulletPool.spawn(
           sx,
-          0.56,
+          muzzleY,
           sz,
-          vx,
-          vz,
+          Math.sin(totalAngle) * speed,
+          -Math.cos(totalAngle) * speed,
           damagePerProjectile,
           spec.pierceCount,
           maxAge,

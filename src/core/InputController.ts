@@ -2,6 +2,7 @@ import { BRIDGE_PLAYABLE_HALF_WIDTH } from '../math/formationMath';
 
 export interface InputCallbacks {
   onStartRequest: () => void;
+  onBridgePointerLaunch: () => void;
   onMenuCanvasDrag: (dxPixels: number) => void;
   onTogglePause: () => void;
   onUpgradeShortcut: (index: 0 | 1 | 2 | 3) => void;
@@ -11,9 +12,9 @@ export interface InputCallbacks {
 
 /**
  * Unified One-Axis Input Controller:
- * - Touch drag (1:1 horizontal finger tracking across screen width during runs, 360° turntable spin in Armory)
- * - Mouse hold-and-drag across viewport
- * - Keyboard A/D or ArrowLeft/ArrowRight + Escape/P pause
+ * - Touch/Mouse on open bridge in Live-Bridge Start Screen launches march immediately & tracks 1:1
+ * - 360° turntable spin when inspecting Weapons / Bosses in Armory overlay
+ * - Keyboard A/D or ArrowLeft/ArrowRight (also launches from Live-Bridge Start Screen) + Escape/P pause
  * - Standard Web Gamepad horizontal left stick / D-pad
  */
 export class InputController {
@@ -41,10 +42,12 @@ export class InputController {
         case 'ArrowLeft':
         case 'KeyA':
           this.leftPressed = true;
+          this.callbacks.onBridgePointerLaunch();
           break;
         case 'ArrowRight':
         case 'KeyD':
           this.rightPressed = true;
+          this.callbacks.onBridgePointerLaunch();
           break;
         case 'Space':
           e.preventDefault();
@@ -100,6 +103,7 @@ export class InputController {
       } catch {
         // Synthetic test events may omit active pointer registration
       }
+      this.callbacks.onBridgePointerLaunch();
     });
 
     window.addEventListener('pointermove', (e) => {
@@ -113,11 +117,13 @@ export class InputController {
       this.lastPointerClientX = e.clientX;
 
       this.callbacks.onMenuCanvasDrag(dxPixels);
+      if (Math.abs(dxPixels) >= 2) {
+        this.callbacks.onBridgePointerLaunch();
+      }
 
       const viewportW = Math.max(320, window.innerWidth);
-      // Ergonomic 1-thumb sweep across playable bridge span on 6.8" Pixel 10 XL & desktop
       const playableSpan = BRIDGE_PLAYABLE_HALF_WIDTH * 2;
-      const gain = viewportW > 768 ? 1.55 : 1.32;
+      const gain = viewportW > 768 ? 1.55 : 1.34;
       this.accumulatedDragDeltaWorldX += (dxPixels / viewportW) * playableSpan * gain;
     });
 
@@ -153,7 +159,6 @@ export class InputController {
       axis += 1;
     }
 
-    // Poll standard Web Gamepad horizontal stick & D-pad
     if (typeof navigator.getGamepads === 'function') {
       const pads = navigator.getGamepads();
       for (let i = 0; i < pads.length; i++) {
@@ -164,22 +169,22 @@ export class InputController {
         const stickX = pad.axes[0] ?? 0;
         if (Math.abs(stickX) > 0.14) {
           axis += stickX;
-          this.callbacks.onStartRequest();
+          this.callbacks.onBridgePointerLaunch();
         }
         if (pad.buttons[14]?.pressed) {
           axis -= 1;
-          this.callbacks.onStartRequest();
+          this.callbacks.onBridgePointerLaunch();
         }
         if (pad.buttons[15]?.pressed) {
           axis += 1;
-          this.callbacks.onStartRequest();
+          this.callbacks.onBridgePointerLaunch();
         }
         break;
       }
     }
 
     const clampedAxis = Math.max(-1, Math.min(1, axis));
-    const keyboardSpeed = 11.5;
+    const keyboardSpeed = 11.2;
     deltaX += clampedAxis * keyboardSpeed * dt;
     return deltaX;
   }

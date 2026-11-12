@@ -5,72 +5,83 @@ export interface UpgradeSpec {
   readonly title: string;
   readonly shortcutKey: '1' | '2' | '3' | '4';
   readonly baseCost: number;
+  readonly costGrowth: number;
+  readonly maxLevel: number;
   readonly description: string;
 }
 
 export const UPGRADE_COST_GROWTH = 1.28;
+export const MAX_STARTING_SQUAD_LEVEL = 5;
 
 export const UPGRADE_SPECS: Readonly<Record<UpgradeKey, UpgradeSpec>> = {
   fireRate: {
     key: 'fireRate',
     title: 'Fire Rate',
     shortcutKey: '1',
-    baseCost: 25,
-    description: '+8% volley speed',
+    baseCost: 22,
+    costGrowth: 1.28,
+    maxLevel: 999,
+    description: '+10% volley speed',
   },
   bulletPower: {
     key: 'bulletPower',
-    title: 'Bullet Power',
+    title: 'Damage',
     shortcutKey: '2',
-    baseCost: 30,
-    description: '+15% bullet damage',
-  },
-  startingSquad: {
-    key: 'startingSquad',
-    title: 'Starting Squad',
-    shortcutKey: '3',
-    baseCost: 35,
-    description: '+1 starting soldier',
+    baseCost: 25,
+    costGrowth: 1.28,
+    maxLevel: 999,
+    description: '+18% bullet damage',
   },
   warChest: {
     key: 'warChest',
-    title: 'War Chest',
-    shortcutKey: '4',
+    title: 'Revenue',
+    shortcutKey: '3',
     baseCost: 25,
-    description: '+12% coin payout',
+    costGrowth: 1.28,
+    maxLevel: 999,
+    description: '+15% coin bounty',
+  },
+  startingSquad: {
+    key: 'startingSquad',
+    title: 'Add Soldier',
+    shortcutKey: '4',
+    baseCost: 65,
+    costGrowth: 1.55,
+    maxLevel: MAX_STARTING_SQUAD_LEVEL,
+    description: '+1 starting commando',
   },
 };
 
 export const UPGRADE_ORDER: ReadonlyArray<UpgradeKey> = [
   'fireRate',
   'bulletPower',
-  'startingSquad',
   'warChest',
+  'startingSquad',
 ];
 
 /**
- * Exact cost curve: cost = round(baseCost * 1.28^level)
+ * Exact exponential upgrade cost curve per stat.
  */
 export function computeUpgradeCost(key: UpgradeKey, currentLevel: number): number {
-  const baseCost = UPGRADE_SPECS[key].baseCost;
+  const spec = UPGRADE_SPECS[key];
   const safeLevel = Math.max(0, Math.floor(currentLevel));
-  return Math.round(baseCost * Math.pow(UPGRADE_COST_GROWTH, safeLevel));
+  return Math.round(spec.baseCost * Math.pow(spec.costGrowth, safeLevel));
 }
 
 export function getFireRateMultiplier(level: number): number {
-  return 1 + 0.08 * Math.max(0, level);
+  return 1 + 0.10 * Math.max(0, level);
 }
 
 export function getBulletPowerMultiplier(level: number): number {
-  return 1 + 0.15 * Math.max(0, level);
+  return 1 + 0.18 * Math.max(0, level);
 }
 
 export function getStartingSquadCount(level: number): number {
-  return 1 + Math.max(0, Math.floor(level));
+  return 1 + Math.min(MAX_STARTING_SQUAD_LEVEL, Math.max(0, Math.floor(level)));
 }
 
 export function getWarChestMultiplier(level: number): number {
-  return 1 + 0.12 * Math.max(0, level);
+  return 1 + 0.15 * Math.max(0, level);
 }
 
 export function formatUpgradeStatPreview(key: UpgradeKey, level: number): {
@@ -80,23 +91,26 @@ export function formatUpgradeStatPreview(key: UpgradeKey, level: number): {
   switch (key) {
     case 'fireRate':
       return {
-        currentLabel: `+${Math.round(level * 8)}%`,
-        nextLabel: `+${Math.round((level + 1) * 8)}%`,
+        currentLabel: `+${Math.round(level * 10)}%`,
+        nextLabel: `+${Math.round((level + 1) * 10)}%`,
       };
     case 'bulletPower':
       return {
-        currentLabel: `+${Math.round(level * 15)}%`,
-        nextLabel: `+${Math.round((level + 1) * 15)}%`,
+        currentLabel: `+${Math.round(level * 18)}%`,
+        nextLabel: `+${Math.round((level + 1) * 18)}%`,
       };
-    case 'startingSquad':
+    case 'startingSquad': {
+      const cur = getStartingSquadCount(level);
+      const nxt = getStartingSquadCount(level + 1);
       return {
-        currentLabel: `${getStartingSquadCount(level)}`,
-        nextLabel: `${getStartingSquadCount(level + 1)}`,
+        currentLabel: `${cur}`,
+        nextLabel: level >= MAX_STARTING_SQUAD_LEVEL ? 'MAX' : `${nxt}`,
       };
+    }
     case 'warChest':
       return {
-        currentLabel: `+${Math.round(level * 12)}%`,
-        nextLabel: `+${Math.round((level + 1) * 12)}%`,
+        currentLabel: `x${getWarChestMultiplier(level).toFixed(2)}`,
+        nextLabel: `x${getWarChestMultiplier(level + 1).toFixed(2)}`,
       };
   }
 }
@@ -120,13 +134,13 @@ export interface RunPayoutBreakdown {
 }
 
 /**
- * Computes fair skill-first coin rewards for both victories and partial wipeout runs (zero wasted runs).
+ * Computes end-of-run completion & distance bonus coins on top of live coins earned mid-bridge.
  */
 export function computeRunCoinPayout(input: RunPayoutInput): RunPayoutBreakdown {
   const clampedProgress = Math.max(0, input.progressRatio);
-  const baseDistanceRate = 24 + input.stageNumber * 6;
-  const distanceCoins = Math.max(4, Math.round(clampedProgress * baseDistanceRate));
-  const killCoins = Math.round(input.enemiesDefeated * (1.5 + input.stageNumber * 0.25));
+  const baseDistanceRate = 18 + input.stageNumber * 8;
+  const distanceCoins = Math.max(5, Math.round(clampedProgress * baseDistanceRate));
+  const killCoins = Math.round(input.enemiesDefeated * (1.2 + input.stageNumber * 0.35));
   const stageClearPart = input.clearedStage ? input.bossRewardCoins : 0;
   const bonusCoins = Math.round(input.bonusCoinsCollected + stageClearPart);
   const warChestMultiplier = getWarChestMultiplier(input.warChestLevel);
@@ -148,9 +162,10 @@ export function attemptPurchaseUpgrade(
   upgrades: UpgradeLevels,
   key: UpgradeKey
 ): { purchased: boolean; remainingCoins: number; nextUpgrades: UpgradeLevels; cost: number } {
+  const spec = UPGRADE_SPECS[key];
   const currentLevel = upgrades[key];
   const cost = computeUpgradeCost(key, currentLevel);
-  if (coins < cost) {
+  if (currentLevel >= spec.maxLevel || coins < cost) {
     return {
       purchased: false,
       remainingCoins: coins,

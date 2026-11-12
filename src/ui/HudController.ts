@@ -14,19 +14,22 @@ import type { EnemyWaveSlot } from '../entities/EnemyWave';
 import {
   computeUpgradeCost,
   formatUpgradeStatPreview,
-  getBulletPowerMultiplier,
-  getFireRateMultiplier,
   getStartingSquadCount,
+  MAX_STARTING_SQUAD_LEVEL,
   UPGRADE_ORDER,
 } from '../math/progressionMath';
-import { WEAPON_SPECS } from '../math/weaponMath';
+import {
+  OVERFLOW_SQUAD_COIN_BONUS,
+  WEAPON_LOCK_BONUS_COINS,
+  WEAPON_LOCK_BONUS_SQUAD,
+  WEAPON_SPECS,
+} from '../math/weaponMath';
 import type { SceneManager, ScreenProjection } from '../rendering/SceneManager';
 
 export interface HudCallbacks {
   onStartMarch: () => void;
   onBuyUpgrade: (key: UpgradeKey) => void;
   onSelectMode: (mode: GameMode) => void;
-  onStepStage: (delta: -1 | 1) => void;
   onSelectStageDirect: (stageNumber: number) => void;
   onHubStateChange: (info: {
     tab: MenuTabId;
@@ -46,7 +49,7 @@ export interface HudCallbacks {
   onSummaryContinue: () => void;
 }
 
-const MAX_ENEMY_PILLS = 5;
+const MAX_HEAVY_HP_BARS = 10;
 
 const CHASSIS_LABELS: Readonly<Record<BossChassisId, string>> = {
   WARDEN_MECH: 'BIPEDAL VULCAN MECH',
@@ -59,7 +62,7 @@ const PATTERN_LABELS: Readonly<Record<string, string>> = {
   SINGLE: 'PRECISION AUTOMATIC',
   BURST_2: '2-ROUND TACTICAL BURST',
   TWIN_SPREAD: '6-BARREL TWIN STREAM',
-  PIERCING: 'MAGNETIC RAIL PIERCE (×2)',
+  PIERCING: 'PLASMA PIERCE (×2)',
 };
 
 const _projScratch: ScreenProjection = { x: 0, y: 0, visible: false };
@@ -75,20 +78,26 @@ function mustEl<T extends HTMLElement>(id: string): T {
 export class HudController {
   private readonly callbacks: HudCallbacks;
 
-  private readonly hubBrandPill = mustEl<HTMLElement>('hub-brand-pill');
-  private readonly hubPowerRating = mustEl<HTMLElement>('hub-power-rating');
+  private readonly hubLeftToolsEl = mustEl<HTMLElement>('hub-left-tools');
+  private readonly hubStageBannerEl = mustEl<HTMLElement>('hub-stage-banner');
+  private readonly hubSectorKickerEl = mustEl<HTMLElement>('hub-sector-kicker');
+  private readonly hubSectorTitleEl = mustEl<HTMLElement>('hub-sector-title');
+  private readonly hubBossPreviewEl = mustEl<HTMLElement>('hub-boss-preview');
+
   private readonly runProgressCard = mustEl<HTMLElement>('run-progress-card');
-  private readonly stageLabelEl = mustEl<HTMLElement>('stage-label-text');
-  private readonly distanceEl = mustEl<HTMLElement>('distance-text');
   private readonly progressFillEl = mustEl<HTMLElement>('track-progress-fill');
+  private readonly progressPctEl = mustEl<HTMLElement>('progress-pct-text');
+
   private readonly coinCountEl = mustEl<HTMLElement>('coin-count');
+  private readonly liveCoinTickerEl = mustEl<HTMLElement>('live-coin-ticker');
   private readonly btnSettings = mustEl<HTMLButtonElement>('btn-settings');
   private readonly btnPause = mustEl<HTMLButtonElement>('btn-pause');
 
   private readonly squadPillEl = mustEl<HTMLElement>('squad-pill');
   private readonly squadCountEl = mustEl<HTMLElement>('squad-count-text');
   private readonly squadWeaponEl = mustEl<HTMLElement>('squad-weapon-badge');
-  private readonly enemyPills: HTMLDivElement[] = [];
+  private readonly heavyHpBars: HTMLDivElement[] = [];
+  private readonly heavyHpFills: HTMLDivElement[] = [];
 
   private readonly bossHudEl = mustEl<HTMLElement>('boss-hud');
   private readonly bossNameEl = mustEl<HTMLElement>('boss-name-text');
@@ -97,25 +106,11 @@ export class HudController {
   private readonly bossSegmentsEl = mustEl<HTMLElement>('boss-hp-segments');
 
   private readonly stagingOverlayEl = mustEl<HTMLElement>('pre-run-overlay');
-  private readonly tabPanels: Record<MenuTabId, HTMLElement>;
-  private readonly navButtons: Record<MenuTabId, HTMLButtonElement>;
-  private readonly navUpgDot = mustEl<HTMLElement>('nav-upg-dot');
-
-  private readonly btnCampaign = mustEl<HTMLButtonElement>('btn-mode-campaign');
-  private readonly btnEndless = mustEl<HTMLButtonElement>('btn-mode-endless');
-  private readonly stageStepperEl = mustEl<HTMLElement>('stage-stepper');
-  private readonly btnStagePrev = mustEl<HTMLButtonElement>('btn-stage-prev');
-  private readonly btnStageNext = mustEl<HTMLButtonElement>('btn-stage-next');
-  private readonly stepperLabelEl = mustEl<HTMLElement>('stepper-stage-label');
-  private readonly hubSectorTitleEl = mustEl<HTMLElement>('hub-sector-title');
-  private readonly hubBossPreviewEl = mustEl<HTMLElement>('hub-boss-preview');
-  private readonly dioramaSquadBadgeEl = mustEl<HTMLElement>('diorama-squad-badge');
-  private readonly dioramaGunBadgeEl = mustEl<HTMLElement>('diorama-gun-badge');
+  private readonly tabPanels: Record<'BATTLE' | 'ARMORY' | 'MAP', HTMLElement>;
   private readonly btnStartMarch = mustEl<HTMLButtonElement>('start-march-btn');
+  private readonly btnAddSoldier = mustEl<HTMLButtonElement>('btn-add-soldier');
 
-  private readonly upgradesPowerPill = mustEl<HTMLElement>('upgrades-power-pill');
-
-  // Armory Tab Elements
+  // Armory Overlay Elements
   private readonly btnArmoryWeapons = mustEl<HTMLButtonElement>('btn-armory-weapons');
   private readonly btnArmoryBosses = mustEl<HTMLButtonElement>('btn-armory-bosses');
   private readonly armorySelectorStrip = mustEl<HTMLElement>('armory-selector-strip');
@@ -125,7 +120,7 @@ export class HudController {
   private readonly armoryStatBars = mustEl<HTMLElement>('armory-stat-bars');
   private readonly armoryItemNote = mustEl<HTMLElement>('armory-item-note');
 
-  // Map Tab Elements
+  // Sector Map Elements
   private readonly mapProgressBadge = mustEl<HTMLElement>('map-progress-badge');
   private readonly sectorMapList = mustEl<HTMLElement>('sector-map-list');
 
@@ -144,17 +139,14 @@ export class HudController {
   private readonly badgePauseMuteEl = mustEl<HTMLElement>('badge-pause-mute');
   private readonly badgePauseHapticsEl = mustEl<HTMLElement>('badge-pause-haptics');
 
-  // Summary Modal
+  // Summary Payout Modal
   private readonly summaryModalEl = mustEl<HTMLElement>('run-summary-modal');
   private readonly summaryKickerEl = mustEl<HTMLElement>('summary-kicker');
   private readonly summaryTitleEl = mustEl<HTMLElement>('summary-title');
-  private readonly summaryStarsEl = mustEl<HTMLElement>('summary-stars');
   private readonly sumDistanceEl = mustEl<HTMLElement>('sum-distance');
+  private readonly sumDrumsEl = mustEl<HTMLElement>('sum-drums');
   private readonly sumEnemiesEl = mustEl<HTMLElement>('sum-enemies');
-  private readonly sumGatesEl = mustEl<HTMLElement>('sum-gates');
-  private readonly sumPeakSquadEl = mustEl<HTMLElement>('sum-peak-squad');
-  private readonly sumDistCoinsEl = mustEl<HTMLElement>('sum-dist-coins');
-  private readonly sumKillCoinsEl = mustEl<HTMLElement>('sum-kill-coins');
+  private readonly sumLiveCoinsEl = mustEl<HTMLElement>('sum-live-coins');
   private readonly sumBonusCoinsEl = mustEl<HTMLElement>('sum-bonus-coins');
   private readonly sumMultEl = mustEl<HTMLElement>('sum-mult');
   private readonly sumTotalCoinsEl = mustEl<HTMLElement>('sum-total-coins');
@@ -172,46 +164,42 @@ export class HudController {
   private lastBossSegments = -1;
   private coinRollupRaf = 0;
 
+  private liveTickerAccum = 0;
+  private liveTickerHideTimer = 0;
+
   constructor(callbacks: HudCallbacks) {
     this.callbacks = callbacks;
 
     this.tabPanels = {
       BATTLE: mustEl<HTMLElement>('tab-panel-battle'),
-      UPGRADES: mustEl<HTMLElement>('tab-panel-upgrades'),
       ARMORY: mustEl<HTMLElement>('tab-panel-armory'),
       MAP: mustEl<HTMLElement>('tab-panel-map'),
     };
 
-    const navBtns = {} as Record<MenuTabId, HTMLButtonElement>;
-    for (const tab of ['BATTLE', 'UPGRADES', 'ARMORY', 'MAP'] as const) {
-      const btn = document.querySelector<HTMLButtonElement>(`[data-hub-tab="${tab}"]`);
-      if (!btn) {
-        throw new Error(`Missing nav button for ${tab}`);
-      }
-      navBtns[tab] = btn;
-    }
-    this.navButtons = navBtns;
-
-    // Pre-build 10-pip segments inside each War Room card
-    for (const key of UPGRADE_ORDER) {
+    // Pre-build 5-pip milestone bars inside the 3 bottom tactical upgrade cards
+    for (const key of ['fireRate', 'bulletPower', 'warChest'] as const) {
       const pipContainer = document.querySelector<HTMLElement>(`[data-pips="${key}"]`);
       if (pipContainer) {
         pipContainer.innerHTML = '';
-        for (let p = 0; p < 10; p++) {
+        for (let p = 0; p < 5; p++) {
           const seg = document.createElement('span');
-          seg.className = 'pip-bar__seg';
+          seg.className = 'mini-pips__seg';
           pipContainer.appendChild(seg);
         }
       }
     }
 
+    // Pre-allocate pooled floating Heavy Juggernaut HP bars
     const overlayLayer = mustEl<HTMLElement>('world-overlay-layer');
-    for (let i = 0; i < MAX_ENEMY_PILLS; i++) {
-      const pill = document.createElement('div');
-      pill.className = 'enemy-wave-pill is-hidden';
-      pill.textContent = '10';
-      overlayLayer.appendChild(pill);
-      this.enemyPills.push(pill);
+    for (let i = 0; i < MAX_HEAVY_HP_BARS; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'heavy-hp-bar is-hidden';
+      const fill = document.createElement('div');
+      fill.className = 'heavy-hp-bar__fill';
+      bar.appendChild(fill);
+      overlayLayer.appendChild(bar);
+      this.heavyHpBars.push(bar);
+      this.heavyHpFills.push(fill);
     }
 
     this.bindEvents();
@@ -222,14 +210,17 @@ export class HudController {
     return this.activeTab;
   }
 
-  public get previewWeaponTier(): WeaponTierId {
-    return this.hubPreviewWeaponTier;
+  public get isSettingsOpen(): boolean {
+    return !this.settingsDrawerEl.classList.contains('is-hidden');
+  }
+
+  public closeSettingsDrawer(): void {
+    this.settingsDrawerEl.classList.add('is-hidden');
   }
 
   private bindEvents(): void {
     this.btnStartMarch.addEventListener('click', () => this.callbacks.onStartMarch());
 
-    // Both quick-upgrade cards (Battle tab) and full War Room buy buttons (Upgrades tab)
     const upgradeButtons = document.querySelectorAll<HTMLButtonElement>('[data-upgrade]');
     upgradeButtons.forEach((btn) => {
       const key = btn.dataset.upgrade as UpgradeKey;
@@ -239,17 +230,16 @@ export class HudController {
       });
     });
 
-    // Bottom Navigation Tabs
-    for (const tab of ['BATTLE', 'UPGRADES', 'ARMORY', 'MAP'] as const) {
-      this.navButtons[tab].addEventListener('click', () => {
-        this.switchHubTab(tab);
+    const tabTriggers = document.querySelectorAll<HTMLButtonElement>('[data-hub-tab]');
+    tabTriggers.forEach((btn) => {
+      const targetTab = btn.dataset.hubTab as MenuTabId;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const nextTab =
+          targetTab !== 'BATTLE' && this.activeTab === targetTab ? 'BATTLE' : targetTab;
+        this.switchHubTab(nextTab);
       });
-    }
-
-    this.btnCampaign.addEventListener('click', () => this.callbacks.onSelectMode('CAMPAIGN'));
-    this.btnEndless.addEventListener('click', () => this.callbacks.onSelectMode('ENDLESS'));
-    this.btnStagePrev.addEventListener('click', () => this.callbacks.onStepStage(-1));
-    this.btnStageNext.addEventListener('click', () => this.callbacks.onStepStage(1));
+    });
 
     // Armory Sub-Tabs & Preview Button
     this.btnArmoryWeapons.addEventListener('click', () => {
@@ -268,14 +258,12 @@ export class HudController {
       }
       this.hubPreviewWeaponTier = this.selectedArmoryWeapon;
       this.renderArmoryPanel();
-      if (this.latestSaveSnapshot) {
-        this.syncDioramaBadges(this.latestSaveSnapshot);
-      }
       this.emitHubState();
     });
 
     // Settings & Pause Controls
-    this.btnSettings.addEventListener('click', () => {
+    this.btnSettings.addEventListener('click', (e) => {
+      e.stopPropagation();
       this.settingsDrawerEl.classList.toggle('is-hidden');
     });
     mustEl<HTMLButtonElement>('btn-close-settings').addEventListener('click', () => {
@@ -322,17 +310,18 @@ export class HudController {
   }
 
   public switchHubTab(tab: MenuTabId): void {
-    this.activeTab = tab;
+    const normalized = tab === 'UPGRADES' ? 'BATTLE' : tab;
+    this.activeTab = normalized;
     this.settingsDrawerEl.classList.add('is-hidden');
 
-    for (const key of ['BATTLE', 'UPGRADES', 'ARMORY', 'MAP'] as const) {
-      this.tabPanels[key].classList.toggle('is-hidden', key !== tab);
-      this.navButtons[key].classList.toggle('is-active', key === tab);
-    }
+    this.tabPanels.BATTLE.classList.toggle('is-hidden', normalized !== 'BATTLE');
+    this.tabPanels.ARMORY.classList.toggle('is-hidden', normalized !== 'ARMORY');
+    this.tabPanels.MAP.classList.toggle('is-hidden', normalized !== 'MAP');
+    this.hubStageBannerEl.classList.toggle('is-hidden', normalized !== 'BATTLE');
 
-    if (tab === 'ARMORY') {
+    if (normalized === 'ARMORY') {
       this.renderArmoryPanel();
-    } else if (tab === 'MAP' && this.latestSaveSnapshot) {
+    } else if (normalized === 'MAP' && this.latestSaveSnapshot) {
       this.renderSectorMap(this.latestSaveSnapshot);
     }
 
@@ -353,13 +342,15 @@ export class HudController {
     const inHub = state === 'PRE_RUN';
     const inMission = state === 'RUNNING' || state === 'BOSS_FIGHT' || state === 'PAUSED';
 
-    this.hubBrandPill.classList.toggle('is-hidden', !inHub);
+    this.hubLeftToolsEl.classList.toggle('is-hidden', !inHub);
+    this.hubStageBannerEl.classList.toggle('is-hidden', !inHub || this.activeTab !== 'BATTLE');
     this.runProgressCard.classList.toggle('is-hidden', inHub);
-    this.btnSettings.classList.toggle('is-hidden', !inHub);
     this.btnPause.classList.toggle('is-hidden', !inMission);
 
     if (!inHub) {
       this.settingsDrawerEl.classList.add('is-hidden');
+    } else {
+      this.resetLiveCoinTicker();
     }
   }
 
@@ -389,6 +380,32 @@ export class HudController {
     this.pauseModalEl.classList.add('is-hidden');
   }
 
+  public flashLiveCoinGain(addedAmount: number, totalWalletCoins: number): void {
+    this.coinCountEl.textContent = `${totalWalletCoins}`;
+    if (addedAmount <= 0) {
+      return;
+    }
+    this.liveTickerAccum += addedAmount;
+    this.liveCoinTickerEl.textContent = `+${this.liveTickerAccum}`;
+    this.liveCoinTickerEl.classList.remove('is-hidden');
+
+    if (this.liveTickerHideTimer) {
+      window.clearTimeout(this.liveTickerHideTimer);
+    }
+    this.liveTickerHideTimer = window.setTimeout(() => {
+      this.resetLiveCoinTicker();
+    }, 1500);
+  }
+
+  private resetLiveCoinTicker(): void {
+    if (this.liveTickerHideTimer) {
+      window.clearTimeout(this.liveTickerHideTimer);
+      this.liveTickerHideTimer = 0;
+    }
+    this.liveTickerAccum = 0;
+    this.liveCoinTickerEl.classList.add('is-hidden');
+  }
+
   public syncSaveState(
     save: SaveDataV1,
     stageTitle: string,
@@ -399,33 +416,11 @@ export class HudController {
     this.coinCountEl.textContent = `${save.coins}`;
 
     const isCampaign = save.selectedMode === 'CAMPAIGN';
-    this.btnCampaign.classList.toggle('is-active', isCampaign);
-    this.btnEndless.classList.toggle('is-active', !isCampaign);
-    this.stageStepperEl.classList.toggle('is-hidden', !isCampaign);
-
-    this.stepperLabelEl.textContent = `SECTOR ${String(save.selectedStage).padStart(2, '0')}/10`;
-    this.btnStagePrev.disabled = save.selectedStage <= 1;
-    this.btnStageNext.disabled = save.selectedStage >= save.unlockedStage;
-
+    this.hubSectorKickerEl.textContent = isCampaign
+      ? `SECTOR ${save.selectedStage}`
+      : `ENDLESS WAVE ${endlessWave}`;
     this.hubSectorTitleEl.textContent = stageTitle.toUpperCase();
-    this.hubBossPreviewEl.textContent = bossName.toUpperCase();
-
-    if (isCampaign) {
-      this.stageLabelEl.textContent = `SECTOR ${save.selectedStage} — ${stageTitle.toUpperCase()}`;
-    } else {
-      this.stageLabelEl.textContent = `ENDLESS — WAVE ${endlessWave}`;
-    }
-
-    // Combat Power Score
-    const startTroops = getStartingSquadCount(save.upgrades.startingSquad);
-    const dpsMult =
-      getFireRateMultiplier(save.upgrades.fireRate) *
-      getBulletPowerMultiplier(save.upgrades.bulletPower);
-    const combatPower = Math.round(100 * dpsMult + (startTroops - 1) * 28);
-    this.hubPowerRating.textContent = `SQUAD PWR ${combatPower}`;
-    this.upgradesPowerPill.textContent = `COMBAT PWR ${combatPower}`;
-
-    this.syncDioramaBadges(save);
+    this.hubBossPreviewEl.textContent = `BOSS: ${bossName.toUpperCase()}`;
 
     const muteLabel = save.settings.muted ? 'OFF' : 'ON';
     const hapticsLabel = save.settings.haptics ? 'ON' : 'OFF';
@@ -437,63 +432,45 @@ export class HudController {
     this.recordSquadEl.textContent = `${save.highScoreSquad}`;
     this.recordEndlessEl.textContent = `${Math.round(save.bestEndlessDistance)}m`;
 
-    let anyAffordable = false;
-
     for (const key of UPGRADE_ORDER) {
       const lvl = save.upgrades[key];
       const cost = computeUpgradeCost(key, lvl);
       const preview = formatUpgradeStatPreview(key, lvl);
-      const affordable = save.coins >= cost;
-      if (affordable) {
-        anyAffordable = true;
+
+      if (key === 'startingSquad') {
+        const maxed = lvl >= MAX_STARTING_SQUAD_LEVEL;
+        const affordable = !maxed && save.coins >= cost;
+        this.btnAddSoldier.classList.toggle('is-affordable', affordable);
+        this.btnAddSoldier.disabled = maxed;
+        const countNow = getStartingSquadCount(lvl);
+        const sLvl = document.querySelector<HTMLElement>('[data-lvl="startingSquad"]');
+        if (sLvl) sLvl.textContent = `${countNow}/${1 + MAX_STARTING_SQUAD_LEVEL}`;
+        const sCost = document.querySelector<HTMLElement>('[data-cost="startingSquad"]');
+        if (sCost) sCost.textContent = maxed ? 'MAX' : `${cost}`;
+        continue;
       }
 
-      // 1. Sync Battle Tab Quick-Upgrade Card
-      const quickCard = document.querySelector<HTMLButtonElement>(
-        `.quick-upg-card[data-upgrade="${key}"]`
+      const affordable = save.coins >= cost;
+      const card = document.querySelector<HTMLButtonElement>(
+        `.tactical-upg-card[data-upgrade="${key}"]`
       );
-      if (quickCard) {
-        quickCard.classList.toggle('is-affordable', affordable);
-        quickCard.classList.toggle('is-locked', !affordable);
+      if (card) {
+        card.classList.toggle('is-affordable', affordable);
       }
+
       const qLvl = document.querySelector<HTMLElement>(`[data-lvl="${key}"]`);
-      if (qLvl) qLvl.textContent = `Lv${lvl}`;
+      if (qLvl) qLvl.textContent = `${lvl + 1}`;
       const qCost = document.querySelector<HTMLElement>(`[data-cost="${key}"]`);
       if (qCost) qCost.textContent = `${cost}`;
       const qStat = document.querySelector<HTMLElement>(`[data-stat="${key}"]`);
       if (qStat) {
-        qStat.textContent =
-          key === 'startingSquad'
-            ? `${preview.currentLabel} → ${preview.nextLabel}`
-            : `${preview.currentLabel} → ${preview.nextLabel}`;
-      }
-
-      // 2. Sync War Room Full Card + 10-Pip Bar
-      const warCard = document.querySelector<HTMLElement>(`[data-war-card="${key}"]`);
-      if (warCard) {
-        warCard.classList.toggle('is-affordable', affordable);
-      }
-      const fLvl = document.querySelector<HTMLElement>(`[data-full-lvl="${key}"]`);
-      if (fLvl) fLvl.textContent = `LVL ${lvl}`;
-      const fCost = document.querySelector<HTMLElement>(`[data-full-cost="${key}"]`);
-      if (fCost) fCost.textContent = `${cost}`;
-      const fDelta = document.querySelector<HTMLElement>(`[data-full-delta="${key}"]`);
-      if (fDelta) {
-        const suffix =
-          key === 'fireRate'
-            ? 'Volley Speed'
-            : key === 'bulletPower'
-              ? 'Bullet Damage'
-              : key === 'startingSquad'
-                ? 'Commandos'
-                : 'Coin Bounty';
-        fDelta.textContent = `${preview.currentLabel} → ${preview.nextLabel} ${suffix}`;
+        qStat.textContent = `${preview.currentLabel} → ${preview.nextLabel}`;
       }
 
       const pipBar = document.querySelector<HTMLElement>(`[data-pips="${key}"]`);
       if (pipBar) {
-        const filled = lvl > 0 && lvl % 10 === 0 ? 10 : lvl % 10;
-        const isPrestige = lvl >= 10;
+        const filled = lvl > 0 && lvl % 5 === 0 ? 5 : lvl % 5;
+        const isPrestige = lvl >= 5;
         const segs = pipBar.children;
         for (let s = 0; s < segs.length; s++) {
           segs[s].classList.toggle('is-filled', s < filled);
@@ -502,22 +479,11 @@ export class HudController {
       }
     }
 
-    this.navUpgDot.classList.toggle('is-hidden', !anyAffordable);
-    this.mapProgressBadge.textContent = `UNLOCKED ${save.unlockedStage} / 10`;
+    this.mapProgressBadge.textContent = `${save.unlockedStage} / 10`;
 
     if (this.activeTab === 'MAP') {
       this.renderSectorMap(save);
     }
-  }
-
-  private syncDioramaBadges(save: SaveDataV1): void {
-    const troops = getStartingSquadCount(save.upgrades.startingSquad);
-    this.dioramaSquadBadgeEl.textContent = `${troops} ${troops === 1 ? 'COMMANDO' : 'COMMANDOS'} READY`;
-    const gunSpec = WEAPON_SPECS[this.hubPreviewWeaponTier];
-    this.dioramaGunBadgeEl.textContent =
-      this.hubPreviewWeaponTier === 1
-        ? `ARMED: ${gunSpec.shortBadge}`
-        : `PREVIEW: ${gunSpec.shortBadge}`;
   }
 
   private renderArmoryPanel(): void {
@@ -548,11 +514,11 @@ export class HudController {
 
       const isHeld = this.hubPreviewWeaponTier === spec.tier;
       this.btnArmoryPreviewEquip.classList.toggle('is-equipped', isHeld);
-      this.btnArmoryPreviewEquip.textContent = isHeld ? 'HELD IN HUB ✓' : 'HOLD IN HUB';
+      this.btnArmoryPreviewEquip.textContent = isHeld ? 'HELD ON BRIDGE ✓' : 'HOLD ON BRIDGE';
 
-      const ratePct = Math.min(100, Math.round((spec.fireRate / 8.5) * 100));
+      const ratePct = Math.min(100, Math.round((spec.fireRate / 8.0) * 100));
       const dmgPct = Math.min(100, Math.round((spec.damageMultiplier / 2.75) * 100));
-      const velPct = Math.min(100, Math.round((spec.projectileSpeed / 42) * 100));
+      const velPct = Math.min(100, Math.round((spec.projectileSpeed / 40) * 100));
       const armorPct = spec.bossArmorFactor > 1 ? 100 : 65;
 
       this.armoryStatBars.innerHTML = `
@@ -575,8 +541,8 @@ export class HudController {
       `;
       this.armoryItemNote.textContent =
         spec.tier === 1
-          ? 'Standard issue sidearm equipped at deployment. Break bridge tire barricades to upgrade live!'
-          : 'Weapon Lock Rule: Breaking lower/equal tire barricades keeps this gun and awards +50 Coins & +3 Squad.';
+          ? 'Standard sidearm equipped at launch. Shatter Supply Drums & Tire Walls on the bridge to upgrade live!'
+          : `Weapon Lock Rule: Breaking lower/equal weapon drops keeps this gun and awards +${WEAPON_LOCK_BONUS_COINS} Coins & +${WEAPON_LOCK_BONUS_SQUAD} Commando (overflow >10 converts to +${OVERFLOW_SQUAD_COIN_BONUS} Coins).`;
     } else {
       for (const stage of CAMPAIGN_STAGES) {
         const chip = document.createElement('button');
@@ -596,10 +562,10 @@ export class HudController {
       this.armoryItemKicker.textContent = `SECTOR ${st.stageNumber} // ${CHASSIS_LABELS[boss.chassis]}`;
       this.armoryItemName.textContent = boss.name.toUpperCase();
 
-      const hpPct = Math.min(100, Math.max(12, Math.round((boss.maxHp / 38000) * 100)));
+      const hpPct = Math.min(100, Math.max(10, Math.round((boss.maxHp / 52000) * 100)));
       const segPct = Math.round((boss.segments / 10) * 100);
-      const spdPct = Math.round((boss.advanceSpeed / 1.55) * 100);
-      const rewPct = Math.round((boss.rewardCoins / 380) * 100);
+      const spdPct = Math.round((boss.advanceSpeed / 1.5) * 100);
+      const rewPct = Math.round((boss.rewardCoins / 850) * 100);
 
       this.armoryStatBars.innerHTML = `
         <div class="stat-meter">
@@ -619,14 +585,13 @@ export class HudController {
           <div class="stat-meter__track"><div class="stat-meter__fill" style="width:${rewPct}%"></div></div>
         </div>
       `;
-      this.armoryItemNote.textContent = `Guarding ${st.title} (${st.trackLength}m). Fires ${boss.salvoLanes}-lane telegraphed plasma salvos every ${boss.salvoInterval.toFixed(1)}s — steer into the safe lane!`;
+      this.armoryItemNote.textContent = `Guarding ${st.title} (${st.trackLength}m). Fires ${boss.salvoLanes}-lane telegraphed plasma salvos every ${boss.salvoInterval.toFixed(1)}s — steer into the open lane!`;
     }
   }
 
   private renderSectorMap(save: SaveDataV1): void {
     this.sectorMapList.innerHTML = '';
 
-    // Endless Mode Sector Card at Top
     const endlessBtn = document.createElement('button');
     endlessBtn.type = 'button';
     const endlessSelected = save.selectedMode === 'ENDLESS';
@@ -635,7 +600,7 @@ export class HudController {
       <div class="sector-node__num">∞</div>
       <div class="sector-node__info">
         <span class="sector-node__title">ENDLESS BRIDGE GAUNTLET</span>
-        <span class="sector-node__sub">Rotating War-Machine Bosses • Best: ${Math.round(save.bestEndlessDistance)}m</span>
+        <span class="sector-node__sub">Escalating Drums, Tire Walls &amp; Bosses • Best: ${Math.round(save.bestEndlessDistance)}m</span>
       </div>
       <span class="sector-node__status">${endlessSelected ? 'ACTIVE' : 'DEPLOY'}</span>
     `;
@@ -645,7 +610,6 @@ export class HudController {
     });
     this.sectorMapList.appendChild(endlessBtn);
 
-    // 10 Campaign Bridge Sectors
     for (const st of CAMPAIGN_STAGES) {
       const unlocked = st.stageNumber <= save.unlockedStage;
       const cleared = st.stageNumber < save.unlockedStage;
@@ -676,7 +640,7 @@ export class HudController {
         <div class="sector-node__num">${String(st.stageNumber).padStart(2, '0')}</div>
         <div class="sector-node__info">
           <span class="sector-node__title">${st.title.toUpperCase()}</span>
-          <span class="sector-node__sub">${st.boss.name} (${CHASSIS_LABELS[st.boss.chassis]}) • +${st.boss.rewardCoins} Coins</span>
+          <span class="sector-node__sub">${st.boss.name} • +${st.boss.rewardCoins} Clear Coins</span>
         </div>
         <span class="sector-node__status">${statusText}</span>
       `;
@@ -698,15 +662,15 @@ export class HudController {
   public updateTrackProgress(
     progressRatio: number,
     mode: GameMode,
-    distanceMeters: number,
+    _distanceMeters: number,
     endlessWave: number
   ): void {
     const pct = Math.max(0, Math.min(100, progressRatio * 100));
     this.progressFillEl.style.width = `${pct.toFixed(1)}%`;
-    this.distanceEl.textContent = `${Math.floor(distanceMeters)}m`;
-    if (mode === 'ENDLESS') {
-      this.stageLabelEl.textContent = `ENDLESS — WAVE ${endlessWave}`;
-    }
+    this.progressPctEl.textContent =
+      mode === 'ENDLESS'
+        ? `W${endlessWave} • ${Math.round(pct)}%`
+        : `${Math.round(pct)}%`;
   }
 
   public updateWorldOverlays(
@@ -723,12 +687,11 @@ export class HudController {
     bossMaxHp: number,
     bossSegments: number
   ): void {
-    // Only project floating world squad pill during active combat (clean diorama in Hub)
-    const showSquadPill =
-      logicalSquad > 0 && (state === 'RUNNING' || state === 'BOSS_FIGHT');
+    const inCombat = state === 'RUNNING' || state === 'BOSS_FIGHT';
+    const showSquadPill = logicalSquad > 0 && inCombat;
 
     if (showSquadPill) {
-      sceneManager.projectToScreen(squadX, 1.38, squadZ, _projScratch);
+      sceneManager.projectToScreen(squadX, 1.88, squadZ, _projScratch);
       if (_projScratch.visible) {
         this.squadPillEl.classList.remove('is-hidden');
         this.squadPillEl.style.transform = `translate3d(${_projScratch.x.toFixed(1)}px, ${_projScratch.y.toFixed(1)}px, 0) translate(-50%, -100%)`;
@@ -748,31 +711,41 @@ export class HudController {
       this.squadPillEl.classList.add('is-hidden');
     }
 
-    // Enemy Wave Floating Counters
-    const showWavePills = state === 'RUNNING' || state === 'BOSS_FIGHT';
-    for (let i = 0; i < MAX_ENEMY_PILLS; i++) {
-      const pill = this.enemyPills[i];
-      const wave = enemyWaves[i];
-      if (
-        !showWavePills ||
-        !wave ||
-        !wave.active ||
-        wave.aliveCount <= 0 ||
-        squadZ - wave.z > 80 ||
-        wave.z > squadZ + 6
-      ) {
-        pill.classList.add('is-hidden');
-        continue;
-      }
+    // Project floating red-on-black HP bars above nearby Heavy Juggernauts!
+    let usedBars = 0;
+    if (inCombat) {
+      for (let w = 0; w < enemyWaves.length && usedBars < MAX_HEAVY_HP_BARS; w++) {
+        const wave = enemyWaves[w];
+        if (!wave || !wave.active || wave.aliveCount <= 0) {
+          continue;
+        }
+        const totalUnits = wave.getConfiguredCount();
+        for (let u = 0; u < totalUnits && usedBars < MAX_HEAVY_HP_BARS; u++) {
+          if (wave.unitAlive[u] === 0 || wave.unitIsHeavy[u] === 0) {
+            continue;
+          }
+          const uz = wave.unitZ[u];
+          const distAhead = squadZ - uz;
+          if (distAhead > 38 || distAhead < -4) {
+            continue;
+          }
+          sceneManager.projectToScreen(wave.unitX[u], 1.98, uz, _projScratch);
+          if (!_projScratch.visible) {
+            continue;
+          }
 
-      sceneManager.projectToScreen(wave.x, 1.48, wave.z, _projScratch);
-      if (_projScratch.visible) {
-        pill.classList.remove('is-hidden');
-        pill.textContent = `${wave.aliveCount}`;
-        pill.style.transform = `translate3d(${_projScratch.x.toFixed(1)}px, ${_projScratch.y.toFixed(1)}px, 0) translate(-50%, -100%)`;
-      } else {
-        pill.classList.add('is-hidden');
+          const bar = this.heavyHpBars[usedBars];
+          const fill = this.heavyHpFills[usedBars];
+          const ratio = Math.max(0, Math.min(1, wave.unitHp[u] / Math.max(1, wave.unitMaxHp[u])));
+          bar.classList.remove('is-hidden');
+          bar.style.transform = `translate3d(${_projScratch.x.toFixed(1)}px, ${_projScratch.y.toFixed(1)}px, 0) translate(-50%, -100%)`;
+          fill.style.width = `${(ratio * 100).toFixed(1)}%`;
+          usedBars++;
+        }
       }
+    }
+    for (let i = usedBars; i < MAX_HEAVY_HP_BARS; i++) {
+      this.heavyHpBars[i].classList.add('is-hidden');
     }
 
     // Boss Segmented Health Bar
@@ -806,57 +779,42 @@ export class HudController {
         : `SECTOR ${summary.stageNumber}`;
 
     this.summaryKickerEl.textContent = isVictory
-      ? `${modeLabel} CLEARED`
+      ? `${modeLabel} CLEARED!`
       : `${modeLabel} — ${Math.round(summary.progressRatio * 100)}% PROGRESS`;
 
-    this.summaryTitleEl.textContent = isVictory ? 'VICTORY!' : 'SQUAD WIPED OUT';
+    this.summaryTitleEl.textContent = isVictory ? 'VICTORY!' : 'RUN COMPLETE';
     this.summaryTitleEl.classList.toggle('summary-card__title--victory', isVictory);
     this.summaryTitleEl.classList.toggle('summary-card__title--defeat', !isVictory);
 
-    if (isVictory) {
-      this.summaryStarsEl.textContent = '★ ★ ★';
-    } else if (summary.progressRatio >= 0.7) {
-      this.summaryStarsEl.textContent = '★ ★ ☆';
-    } else if (summary.progressRatio >= 0.35) {
-      this.summaryStarsEl.textContent = '★ ☆ ☆';
-    } else {
-      this.summaryStarsEl.textContent = '☆ ☆ ☆';
-    }
-
     this.sumDistanceEl.textContent = `${Math.round(summary.distanceMeters)}m`;
+    this.sumDrumsEl.textContent = `${summary.drumsBroken}`;
     this.sumEnemiesEl.textContent = `${summary.enemiesDefeated}`;
-    this.sumGatesEl.textContent = `${summary.gatesFlipped}`;
-    this.sumPeakSquadEl.textContent = `${summary.peakSquad}`;
 
-    this.sumDistCoinsEl.textContent = `+${summary.distanceCoins}`;
-    this.sumKillCoinsEl.textContent = `+${summary.killCoins}`;
-    this.sumBonusCoinsEl.textContent = `+${summary.bonusCoins}`;
+    const endBonusEarned = Math.max(0, summary.totalCoinsEarned - summary.liveCoinsEarned);
+    this.sumLiveCoinsEl.textContent = `+${summary.liveCoinsEarned}`;
+    this.sumBonusCoinsEl.textContent = `+${endBonusEarned}`;
     this.sumMultEl.textContent = `×${summary.warChestMultiplier.toFixed(2)}`;
+    this.btnSummaryContinue.textContent = 'NEXT';
 
-    this.btnSummaryContinue.textContent = isVictory
-      ? 'CONTINUE TO NEXT SECTOR'
-      : 'RETURN & UPGRADE SQUAD';
-
-    // Animated Coin Rollup Counter
     if (this.coinRollupRaf) {
       cancelAnimationFrame(this.coinRollupRaf);
       this.coinRollupRaf = 0;
     }
     const targetCoins = summary.totalCoinsEarned;
     const startTs = performance.now();
-    const durationMs = 520;
-    this.sumTotalCoinsEl.textContent = `+${targetCoins} Coins`;
+    const durationMs = 460;
+    this.sumTotalCoinsEl.textContent = `+${targetCoins}`;
 
     if (targetCoins > 0) {
       const stepRollup = (now: number): void => {
         const t = Math.min(1, (now - startTs) / durationMs);
         const eased = 1 - Math.pow(1 - t, 3);
         const shown = Math.round(targetCoins * eased);
-        this.sumTotalCoinsEl.textContent = `+${shown} Coins`;
+        this.sumTotalCoinsEl.textContent = `+${shown}`;
         if (t < 1) {
           this.coinRollupRaf = requestAnimationFrame(stepRollup);
         } else {
-          this.sumTotalCoinsEl.textContent = `+${targetCoins} Coins`;
+          this.sumTotalCoinsEl.textContent = `+${targetCoins}`;
           this.coinRollupRaf = 0;
         }
       };

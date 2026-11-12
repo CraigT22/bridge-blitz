@@ -3,15 +3,16 @@ import type { TireStackDefinition, WeaponTierId } from '../core/types';
 import { WEAPON_SPECS } from '../math/weaponMath';
 import {
   createStaticWeaponBadgeTexture,
-  EditableTirePlaqueTexture,
+  EditableArcadeHpTexture,
 } from '../rendering/CanvasLabelCache';
+import { createGoldCoinPickupGroup } from '../rendering/ProceduralGeometries';
 import {
   createShowcaseWeaponGroup,
   type ShowcaseWeaponRig,
 } from '../rendering/WeaponRigFactory';
 
 const MAX_TIRE_LAYERS = 5;
-const TIRE_HIT_RADIUS_X = 1.25;
+const TIRE_HIT_RADIUS_X = 1.56;
 
 function createOffRoadTireTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
@@ -21,8 +22,7 @@ function createOffRoadTireTexture(): THREE.CanvasTexture {
   ctx.fillStyle = '#14171c';
   ctx.fillRect(0, 0, 256, 128);
 
-  // Deep off-road chevron lug blocks
-  ctx.fillStyle = '#2c333d';
+  ctx.fillStyle = '#2d3540';
   for (let x = 0; x < 256; x += 16) {
     ctx.fillRect(x + 2, 6, 10, 50);
     ctx.fillRect(x + 8, 70, 10, 50);
@@ -47,17 +47,19 @@ export class TireWeaponStackSlot {
   public broken = false;
   public x = 0;
   public z = 0;
-  public initialBreakCount = 20;
-  public remainingBreakCount = 20;
-  public weaponTier: WeaponTierId = 2;
+  public initialBreakCount = 150;
+  public remainingBreakCount = 150;
+  public weaponTier: WeaponTierId | null = null;
+  public coinReward = 40;
 
   private readonly tireMeshes: THREE.Group[] = [];
   private readonly rubberMat: THREE.MeshStandardMaterial;
   private readonly holoBeamMat: THREE.MeshBasicMaterial;
   private readonly outerHoloRing: THREE.Mesh;
   private readonly plaqueMesh: THREE.Mesh;
-  private readonly plaqueTex: EditableTirePlaqueTexture;
+  private readonly plaqueTex: EditableArcadeHpTexture;
   private readonly pickupPivot = new THREE.Group();
+  private readonly coinPickupGroup: THREE.Group;
   private readonly weaponRigs: Record<WeaponTierId, ShowcaseWeaponRig>;
   private readonly badgeMeshes: Record<WeaponTierId, THREE.Mesh>;
   private flashTimer = 0;
@@ -70,9 +72,9 @@ export class TireWeaponStackSlot {
       color: 0xffffff,
       map: _sharedTreadTex,
       bumpMap: _sharedTreadTex,
-      bumpScale: 0.035,
-      roughness: 0.82,
-      metalness: 0.08,
+      bumpScale: 0.04,
+      roughness: 0.80,
+      metalness: 0.10,
       emissive: 0x000000,
     });
     const rimMat = new THREE.MeshStandardMaterial({
@@ -80,19 +82,18 @@ export class TireWeaponStackSlot {
       roughness: 0.34,
       metalness: 0.46,
     });
-    const lugMat = new THREE.MeshStandardMaterial({
-      color: 0xdbe5f0,
-      roughness: 0.24,
-      metalness: 0.5,
+    const outlineMat = new THREE.MeshBasicMaterial({
+      color: 0x080a0e,
+      side: THREE.BackSide,
     });
 
-    // Grounded AO shadow disc beneath tire barricade
+    // Grounded AO shadow disc beneath wide tire barricade
     const stackShadow = new THREE.Mesh(
-      new THREE.CircleGeometry(1.18, 20),
+      new THREE.CircleGeometry(1.58, 20),
       new THREE.MeshBasicMaterial({
         color: 0x05080d,
         transparent: true,
-        opacity: 0.48,
+        opacity: 0.52,
         depthWrite: false,
       })
     );
@@ -100,75 +101,64 @@ export class TireWeaponStackSlot {
     stackShadow.position.set(0, 0.02, 0.08);
     this.root.add(stackShadow);
 
-    const tireGeo = new THREE.TorusGeometry(0.74, 0.24, 12, 24);
+    // Wide heavy-duty barricade tires (3 stacks side-by-side at -3.15, 0, +3.15 seal the whole bridge!)
+    const tireGeo = new THREE.TorusGeometry(1.12, 0.34, 12, 24);
     tireGeo.rotateX(Math.PI / 2);
-    const hubGeo = new THREE.CylinderGeometry(0.56, 0.56, 0.36, 16);
-    const centerCapGeo = new THREE.CylinderGeometry(0.18, 0.22, 0.42, 10);
-    const lugGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.4, 6);
+    const tireOutlineGeo = new THREE.TorusGeometry(1.12, 0.39, 10, 24);
+    tireOutlineGeo.rotateX(Math.PI / 2);
+    const hubGeo = new THREE.CylinderGeometry(0.84, 0.84, 0.48, 16);
 
     for (let i = 0; i < MAX_TIRE_LAYERS; i++) {
       const layerGroup = new THREE.Group();
       const offsetX = i % 2 === 0 ? 0.02 : -0.025;
-      layerGroup.position.set(offsetX, 0.24 + i * 0.41, 0);
-      layerGroup.rotation.y = i * 0.55;
+      layerGroup.position.set(offsetX, 0.32 + i * 0.52, 0);
+      layerGroup.rotation.y = i * 0.45;
 
       const tire = new THREE.Mesh(tireGeo, this.rubberMat);
+      const outline = new THREE.Mesh(tireOutlineGeo, outlineMat);
       const hub = new THREE.Mesh(hubGeo, rimMat);
-      const cap = new THREE.Mesh(centerCapGeo, lugMat);
-      layerGroup.add(tire, hub, cap);
-
-      for (let l = 0; l < 6; l++) {
-        const ang = (l / 6) * Math.PI * 2;
-        const lug = new THREE.Mesh(lugGeo, lugMat);
-        lug.position.set(Math.cos(ang) * 0.34, 0, Math.sin(ang) * 0.34);
-        layerGroup.add(lug);
-      }
+      layerGroup.add(tire, outline, hub);
 
       this.tireMeshes.push(layerGroup);
       this.root.add(layerGroup);
     }
 
-    this.plaqueTex = new EditableTirePlaqueTexture();
+    this.plaqueTex = new EditableArcadeHpTexture();
     const plaqueMat = new THREE.MeshBasicMaterial({
       map: this.plaqueTex.texture,
       transparent: true,
+      depthWrite: false,
     });
-    this.plaqueMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.52, 0.96), plaqueMat);
-    this.plaqueMesh.position.set(0, 0.95, 1.06);
+    this.plaqueMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.55, 1.48), plaqueMat);
+    this.plaqueMesh.position.set(0, 1.15, 1.56);
     this.root.add(this.plaqueMesh);
 
-    // Holo-Pedestal Emitter Dual Rings & Vertical Light Cone beneath Weapon Pickup
     this.root.add(this.pickupPivot);
     this.holoBeamMat = new THREE.MeshBasicMaterial({
       color: 0xffd447,
       transparent: true,
-      opacity: 0.24,
+      opacity: 0.22,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
     const holoCone = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.84, 0.48, 1.08, 18, 1, true),
+      new THREE.CylinderGeometry(0.92, 0.56, 1.05, 18, 1, true),
       this.holoBeamMat
     );
     holoCone.position.set(0, 0.02, 0);
     this.pickupPivot.add(holoCone);
 
-    const emitterRing = new THREE.Mesh(
-      new THREE.TorusGeometry(0.52, 0.036, 8, 22),
-      this.holoBeamMat
-    );
-    emitterRing.rotation.x = Math.PI / 2;
-    emitterRing.position.set(0, -0.50, 0);
-    this.pickupPivot.add(emitterRing);
-
     this.outerHoloRing = new THREE.Mesh(
-      new THREE.TorusGeometry(0.76, 0.024, 8, 24),
+      new THREE.TorusGeometry(0.84, 0.028, 8, 24),
       this.holoBeamMat
     );
     this.outerHoloRing.rotation.x = Math.PI / 2.2;
     this.outerHoloRing.position.set(0, -0.34, 0);
     this.pickupPivot.add(this.outerHoloRing);
+
+    this.coinPickupGroup = createGoldCoinPickupGroup();
+    this.pickupPivot.add(this.coinPickupGroup);
 
     this.weaponRigs = {
       1: createShowcaseWeaponGroup(1),
@@ -178,7 +168,7 @@ export class TireWeaponStackSlot {
       5: createShowcaseWeaponGroup(5),
     };
 
-    const badgeGeo = new THREE.PlaneGeometry(2.14, 0.64);
+    const badgeGeo = new THREE.PlaneGeometry(2.18, 0.64);
     this.badgeMeshes = {
       1: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(1), transparent: true })),
       2: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(2), transparent: true })),
@@ -189,10 +179,10 @@ export class TireWeaponStackSlot {
 
     for (const t of [1, 2, 3, 4, 5] as const) {
       const rig = this.weaponRigs[t];
-      rig.root.scale.setScalar(1.26);
+      rig.root.scale.setScalar(1.32);
       rig.root.rotation.z = 0.20;
       this.pickupPivot.add(rig.root);
-      this.badgeMeshes[t].position.set(0, 1.02, 0);
+      this.badgeMeshes[t].position.set(0, 1.04, 0);
       this.pickupPivot.add(this.badgeMeshes[t]);
     }
 
@@ -203,25 +193,35 @@ export class TireWeaponStackSlot {
     this.active = true;
     this.broken = false;
     this.z = def.z;
-    this.x = def.lane === 'LEFT' ? -2.45 : def.lane === 'RIGHT' ? 2.45 : 0;
+    this.x = def.lane === 'LEFT' ? -3.15 : def.lane === 'RIGHT' ? 3.15 : 0;
     this.initialBreakCount = Math.max(1, def.breakCount);
     this.remainingBreakCount = this.initialBreakCount;
-    this.weaponTier = def.weaponTier;
+    this.weaponTier = def.weaponTier ?? null;
+    this.coinReward = def.coinReward ?? 45;
     this.flashTimer = 0;
 
     this.root.position.set(this.x, 0, this.z);
     this.root.visible = true;
 
-    this.holoBeamMat.color.setHex(WEAPON_SPECS[def.weaponTier].colorHex);
+    const hasWeapon = this.weaponTier !== null;
+    const hasCoin = !hasWeapon && this.coinReward > 0;
+    this.pickupPivot.visible = hasWeapon || hasCoin;
+    this.coinPickupGroup.visible = hasCoin;
+
+    if (this.weaponTier) {
+      this.holoBeamMat.color.setHex(WEAPON_SPECS[this.weaponTier].colorHex);
+    } else {
+      this.holoBeamMat.color.setHex(0xffd447);
+    }
 
     for (const t of [1, 2, 3, 4, 5] as const) {
-      const show = t === def.weaponTier;
+      const show = this.weaponTier === t;
       this.weaponRigs[t].root.visible = show;
       this.badgeMeshes[t].visible = show;
     }
 
     this.syncStackHeight();
-    this.plaqueTex.redrawIfDirty(this.remainingBreakCount);
+    this.plaqueTex.redrawIfDirty(this.remainingBreakCount, 0);
   }
 
   public hide(): void {
@@ -233,25 +233,25 @@ export class TireWeaponStackSlot {
   private syncStackHeight(): void {
     const ratio = Math.max(0, this.remainingBreakCount / this.initialBreakCount);
     const totalLayers =
-      this.initialBreakCount >= 120 ? 5 : this.initialBreakCount >= 40 ? 4 : 3;
+      this.initialBreakCount >= 400 ? 5 : this.initialBreakCount >= 140 ? 4 : 3;
     const visibleLayers = Math.max(1, Math.ceil(ratio * totalLayers));
 
     for (let i = 0; i < MAX_TIRE_LAYERS; i++) {
       this.tireMeshes[i].visible = i < visibleLayers;
     }
 
-    const topY = 0.35 + visibleLayers * 0.41;
+    const topY = 0.42 + visibleLayers * 0.52;
     this.pickupPivot.position.set(0, topY + 0.68, 0);
-    this.plaqueMesh.position.y = Math.max(0.64, topY * 0.52);
+    this.plaqueMesh.position.y = Math.max(0.75, topY * 0.52);
   }
 
   public update(dt: number, squadZ: number): void {
     if (!this.active || this.broken) {
       return;
     }
-    if (squadZ < this.z - 3.6) {
+    if (squadZ < this.z - 3.8) {
       this.root.position.y -= dt * 16.0;
-      if (this.root.position.y <= -3.6 || squadZ < this.z - 5.5) {
+      if (this.root.position.y <= -3.8 || squadZ < this.z - 5.8) {
         this.hide();
       }
       return;
@@ -259,27 +259,30 @@ export class TireWeaponStackSlot {
     this.spinAngle += dt * 2.15;
     this.outerHoloRing.rotation.z = -this.spinAngle * 0.8;
 
-    const activeRig = this.weaponRigs[this.weaponTier];
-    if (activeRig.root.visible) {
-      activeRig.root.rotation.y = this.spinAngle;
-      activeRig.root.position.y = 0.08 + Math.sin(this.spinAngle * 1.6) * 0.09;
-      if (activeRig.spinCluster) {
-        activeRig.spinCluster.rotation.x += dt * 14.0;
+    if (this.weaponTier) {
+      const activeRig = this.weaponRigs[this.weaponTier];
+      if (activeRig.root.visible) {
+        activeRig.root.rotation.y = this.spinAngle;
+        activeRig.root.position.y = 0.08 + Math.sin(this.spinAngle * 1.6) * 0.09;
+        if (activeRig.spinCluster) {
+          activeRig.spinCluster.rotation.x += dt * 14.0;
+        }
       }
+    } else if (this.coinPickupGroup.visible) {
+      this.coinPickupGroup.rotation.y = this.spinAngle * 1.15;
     }
 
     if (this.flashTimer > 0) {
       this.flashTimer = Math.max(0, this.flashTimer - dt * 8);
-      const g = this.flashTimer * 0.48;
-      this.rubberMat.emissive.setRGB(g, g * 0.85, g * 0.65);
+      const g = this.flashTimer * 0.62;
+      this.rubberMat.emissive.setRGB(g, g * 0.25, 0.04);
     } else {
       this.rubberMat.emissive.setRGB(0, 0, 0);
     }
+
+    this.plaqueTex.redrawIfDirty(this.remainingBreakCount, this.flashTimer);
   }
 
-  /**
-   * Returns `'HIT'` when damaged or `'SHATTERED'` on the exact shot that breaks the stack!
-   */
   public tryBulletHit(
     bx: number,
     bz: number,
@@ -290,8 +293,8 @@ export class TireWeaponStackSlot {
     if (!this.active || this.broken || lastHitId === this.entityId) {
       return 'NONE';
     }
-    const minZ = Math.min(bz, prevBz) - 0.95;
-    const maxZ = Math.max(bz, prevBz) + 0.95;
+    const minZ = Math.min(bz, prevBz) - 1.25;
+    const maxZ = Math.max(bz, prevBz) + 1.25;
     if (this.z < minZ || this.z > maxZ) {
       return 'NONE';
     }
@@ -311,27 +314,32 @@ export class TireWeaponStackSlot {
     }
 
     this.syncStackHeight();
-    this.plaqueTex.redrawIfDirty(this.remainingBreakCount);
+    this.plaqueTex.redrawIfDirty(this.remainingBreakCount, 1.0);
     return 'HIT';
   }
 
   /**
-   * If the squad physically runs into an unbroken tire stack, shatter it as a minor roadblock (-1 soldier)
-   * without granting the weapon pickup.
+   * Returns commando crash casualties if the squad slams into an unbroken Tire Wall barricade!
+   * High-HP unbroken tire walls act as genuine DPS gear-check barricades.
    */
-  public checkUnbrokenSquadBump(squadX: number, squadZ: number, squadRadius: number): boolean {
+  public resolveUnbrokenSquadCrash(
+    squadX: number,
+    squadZ: number,
+    squadRadius: number
+  ): number {
     if (!this.active || this.broken) {
-      return false;
+      return 0;
     }
     if (
-      Math.abs(squadZ - this.z) < 0.85 + squadRadius * 0.35 &&
-      Math.abs(squadX - this.x) < 0.95 + squadRadius * 0.65
+      Math.abs(squadZ - this.z) < 1.18 + squadRadius * 0.28 &&
+      Math.abs(squadX - this.x) < 1.46 + squadRadius * 0.45
     ) {
+      const crashDamage = Math.max(2, Math.ceil(this.remainingBreakCount / 35));
       this.broken = true;
       this.active = false;
       this.root.visible = false;
-      return true;
+      return crashDamage;
     }
-    return false;
+    return 0;
   }
 }

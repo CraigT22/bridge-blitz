@@ -1,40 +1,56 @@
 import { describe, expect, it } from 'vitest';
 import {
   BRIDGE_PLAYABLE_HALF_WIDTH,
-  buildHoneycombSlots,
   clampSquadCenterX,
   computeSquadOuterRadius,
+  ELITE_ROW_SPACING_Z,
+  ELITE_SLOT_SPACING_X,
+  getEliteFormationOffset,
   GUARDRAIL_MARGIN,
 } from '../src/math/formationMath';
 
 describe('formationMath', () => {
-  it('builds 150 concentric honeycomb slots ordered radially around (0, 0)', () => {
-    const slots = buildHoneycombSlots(150);
-    expect(slots).toHaveLength(150);
-    expect(slots[0].x).toBe(0);
-    expect(slots[0].z).toBe(0);
+  it('centers 1..5 elite commandos symmetrically shoulder-to-shoulder and places 6..10 in a centered 2nd rank', () => {
+    const out = { x: 0, z: 0 };
 
-    for (let i = 1; i < slots.length; i++) {
-      expect(slots[i].radius).toBeGreaterThanOrEqual(slots[i - 1].radius - 1e-9);
+    getEliteFormationOffset(0, 1, out);
+    expect(out.x).toBeCloseTo(0);
+    expect(out.z).toBeCloseTo(0);
+
+    const twoX: number[] = [];
+    for (let i = 0; i < 2; i++) {
+      getEliteFormationOffset(i, 2, out);
+      twoX.push(out.x);
+      expect(out.z).toBeCloseTo(0);
     }
+    expect(twoX[0]).toBeCloseTo(-ELITE_SLOT_SPACING_X * 0.5);
+    expect(twoX[1]).toBeCloseTo(ELITE_SLOT_SPACING_X * 0.5);
+
+    // 7 commandos => 5 in front rank (z = 0), 2 centered in rear rank (z = +ELITE_ROW_SPACING_Z)
+    getEliteFormationOffset(5, 7, out);
+    expect(out.x).toBeCloseTo(-ELITE_SLOT_SPACING_X * 0.5);
+    expect(out.z).toBeCloseTo(ELITE_ROW_SPACING_Z);
+    getEliteFormationOffset(6, 7, out);
+    expect(out.x).toBeCloseTo(ELITE_SLOT_SPACING_X * 0.5);
+    expect(out.z).toBeCloseTo(ELITE_ROW_SPACING_Z);
   });
 
-  it('expands squad outer radius smoothly up to the 150-model visual cap and clamps inside bridge guardrails', () => {
+  it('expands squad outer radius up to the 5-wide front rank and clamps cleanly inside bridge guardrails', () => {
     const r1 = computeSquadOuterRadius(1);
-    const r30 = computeSquadOuterRadius(30);
-    const r150 = computeSquadOuterRadius(150);
-    const r5000 = computeSquadOuterRadius(5000);
+    const r3 = computeSquadOuterRadius(3);
+    const r5 = computeSquadOuterRadius(5);
+    const r10 = computeSquadOuterRadius(10);
 
-    expect(r30).toBeGreaterThan(r1);
-    expect(r150).toBeGreaterThan(r30);
-    expect(r5000).toBeCloseTo(r150, 6);
+    expect(r3).toBeGreaterThan(r1);
+    expect(r5).toBeGreaterThan(r3);
+    expect(r10).toBeCloseTo(r5, 6);
 
-    const clampedRight = clampSquadCenterX(99, 80);
-    expect(clampedRight + computeSquadOuterRadius(80) + GUARDRAIL_MARGIN).toBeLessThanOrEqual(
+    const clampedRight = clampSquadCenterX(99, 5);
+    expect(clampedRight + computeSquadOuterRadius(5) + GUARDRAIL_MARGIN).toBeLessThanOrEqual(
       BRIDGE_PLAYABLE_HALF_WIDTH + 1e-6
     );
 
-    const clampedLeft = clampSquadCenterX(-99, 80);
+    const clampedLeft = clampSquadCenterX(-99, 5);
     expect(clampedLeft).toBeCloseTo(-clampedRight, 6);
   });
 });

@@ -1,4 +1,5 @@
 import type { GateOperator } from '../core/types';
+import { MAX_SQUAD_COUNT } from './weaponMath';
 
 export interface GateHitState {
   readonly operator: GateOperator;
@@ -18,18 +19,24 @@ export interface GateHitOutcome {
   readonly ringProgress: number;
 }
 
-export const MAX_ADD_GATE_VALUE = 30;
-export const POSITIVE_GATE_RESISTANCE_SLOPE = 0.22;
+export const MAX_ADD_GATE_VALUE = 8;
+export const MAX_SHOOTABLE_MUL_VALUE = 2.2;
+export const POSITIVE_GATE_RESISTANCE_SLOPE = 0.32;
+export const MUL_GATE_RESISTANCE_SLOPE = 0.16;
 
 /**
- * Computes damage required for the next +1 increment on a shootable ADD gate:
- * - Negative values (< 0) use 1.0x base threshold so flipping red gates to blue feels responsive.
- * - Non-negative values (>= 0) require progressively more damage per +1 to prevent +200 runaway snowballs.
+ * Computes damage required for the next +1 increment on a shootable ADD gate
+ * or the next +0.1 increment on a shootable fractional MUL gate (X1 -> X1.7 -> X2.2).
  */
 export function computeGateStepThreshold(
   baseDamagePerIncrement: number,
-  currentValue: number
+  currentValue: number,
+  operator: GateOperator = 'ADD'
 ): number {
+  if (operator === 'MUL') {
+    const tenthsAboveOne = Math.max(0, Math.round((currentValue - 1.0) * 10));
+    return baseDamagePerIncrement * (1 + tenthsAboveOne * MUL_GATE_RESISTANCE_SLOPE);
+  }
   if (currentValue < 0) {
     return baseDamagePerIncrement;
   }
@@ -37,12 +44,13 @@ export function computeGateStepThreshold(
 }
 
 /**
- * Applies incoming projectile damage to a gate.
- * - Shootable ADD gates accumulate damage with progressive resistance above 0 up to MAX_ADD_GATE_VALUE (+30).
+ * Applies incoming projectile damage to a gate:
+ * - Shootable ADD gates increment by +1 up to MAX_ADD_GATE_VALUE (+8).
+ * - Shootable fractional MUL gates increment by +0.1 (X1.0 -> X1.1 -> ... -> X2.2).
  * - Locked MUL/DIV gates ignore projectile damage and signal a metallic ricochet.
  */
 export function applyGateBulletHit(state: GateHitState, bulletDamage: number): GateHitOutcome {
-  if (state.isLocked || state.operator !== 'ADD' || state.damagePerIncrement <= 0 || bulletDamage <= 0) {
+  if (state.isLocked || state.operator === 'DIV' || state.damagePerIncrement <= 0 || bulletDamage <= 0) {
     return {
       value: state.value,
       hitAccumulator: state.hitAccumulator,
@@ -54,6 +62,64 @@ export function applyGateBulletHit(state: GateHitState, bulletDamage: number): G
     };
   }
 
+  // Shootable Fractional Multiplier Gate (X1.0 -> X2.2 in +0.1 steps)
+  if (state.operator === 'MUL') {
+    const startTenths = Math.round(state.value * 10);
+    const maxTenths = Math.round(MAX_SHOOTABLE_MUL_VALUE * 10);
+    if (startTenths >= maxTenths) {
+      return {
+        value: MAX_SHOOTABLE_MUL_VALUE,
+        hitAccumulator: 0,
+        deltaIncrements: 0,
+        crossedZeroOrPositive: false,
+        flippedToPositive: false,
+        ricochet: false,
+        ringProgress: 0.999,
+      };
+    }
+
+    let curTenths = startTenths;
+    let acc = state.hitAccumulator + bulletDamage;
+    let deltaSteps = 0;
+
+    while (curTenths < maxTenths) {
+      const stepCost = computeGateStepThreshold(
+        state.damagePerIncrement,
+        curTenths / 10,
+        'MUL'
+      );
+      if (acc + 1e-9 < stepCost) {
+        break;
+      }
+      acc = Math.max(0, acc - stepCost);
+      curTenths += 1;
+      deltaSteps += 1;
+    }
+
+    if (curTenths >= maxTenths) {
+      acc = 0;
+    }
+
+    const nextVal = curTenths / 10;
+    const nextThreshold = computeGateStepThreshold(state.damagePerIncrement, nextVal, 'MUL');
+    // Crossing X1.5 is the key threshold where 1 solo commando rounds up to 2 commandos!
+    const flippedMilestone = startTenths < 15 && curTenths >= 15;
+
+    return {
+      value: nextVal,
+      hitAccumulator: acc,
+      deltaIncrements: deltaSteps,
+      crossedZeroOrPositive: flippedMilestone,
+      flippedToPositive: flippedMilestone,
+      ricochet: false,
+      ringProgress:
+        curTenths >= maxTenths
+          ? 0.999
+          : Math.min(0.999, Math.max(0, acc / nextThreshold)),
+    };
+  }
+
+  // Shootable ADD Gate
   if (state.value >= MAX_ADD_GATE_VALUE) {
     return {
       value: state.value,
@@ -71,7 +137,7 @@ export function applyGateBulletHit(state: GateHitState, bulletDamage: number): G
   let deltaIncrements = 0;
 
   while (curValue < MAX_ADD_GATE_VALUE) {
-    const stepThreshold = computeGateStepThreshold(state.damagePerIncrement, curValue);
+    const stepThreshold = computeGateStepThreshold(state.damagePerIncrement, curValue, 'ADD');
     if (acc + 1e-9 < stepThreshold) {
       break;
     }
@@ -84,7 +150,7 @@ export function applyGateBulletHit(state: GateHitState, bulletDamage: number): G
     acc = 0;
   }
 
-  const nextThreshold = computeGateStepThreshold(state.damagePerIncrement, curValue);
+  const nextThreshold = computeGateStepThreshold(state.damagePerIncrement, curValue, 'ADD');
   const crossedZeroOrPositive = state.value < 0 && curValue >= 0;
   const flippedToPositive = state.value <= 0 && curValue > 0;
 
@@ -103,14 +169,14 @@ export function applyGateBulletHit(state: GateHitState, bulletDamage: number): G
 }
 
 /**
- * Resolves the new logical squad count when passing through a gate.
- * Logical squad count can scale past 9,999+ and clamps cleanly at 0 on lethal negative gates.
+ * Resolves the new elite squad count when passing through a gate.
+ * Fractional MUL gates round cleanly (e.g., 1 commando * X1.7 => 2 commandos!).
  */
 export function resolveGateSquadCount(
   currentSquad: number,
   operator: GateOperator,
   value: number,
-  maxLogicalSquad = 99999
+  maxLogicalSquad = MAX_SQUAD_COUNT
 ): number {
   if (currentSquad <= 0) {
     return 0;
@@ -122,7 +188,7 @@ export function resolveGateSquadCount(
       next = currentSquad + Math.round(value);
       break;
     case 'MUL':
-      next = Math.floor(currentSquad * Math.max(1, value));
+      next = Math.round(currentSquad * Math.max(1, value));
       break;
     case 'DIV': {
       const divisor = Math.max(1, value);
@@ -135,10 +201,18 @@ export function resolveGateSquadCount(
 }
 
 /**
- * Formats a gate's operator and value into a high-contrast label string (+10, -25, x3, ÷2).
+ * Formats a gate's operator and value into a high-contrast label string (+2, -28, X1, X1.7, x2, ÷2).
  */
-export function formatGateLabel(operator: GateOperator, value: number): string {
+export function formatGateLabel(
+  operator: GateOperator,
+  value: number,
+  isLocked = true
+): string {
   if (operator === 'MUL') {
+    if (!isLocked) {
+      const tenths = Math.round(value * 10) / 10;
+      return Number.isInteger(tenths) ? `X${tenths.toFixed(0)}` : `X${tenths.toFixed(1)}`;
+    }
     return `x${Math.round(value)}`;
   }
   if (operator === 'DIV') {

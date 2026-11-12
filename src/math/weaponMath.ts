@@ -1,10 +1,13 @@
 import type { WeaponSpec, WeaponTierId } from '../core/types';
 
 export const WEAPON_LOCK_BONUS_COINS = 50;
-export const WEAPON_LOCK_BONUS_SQUAD = 3;
-export const MAX_VISUAL_SOLDIERS = 150;
-export const MAX_ACTIVE_VOLLEY_EMITTERS = 48;
-export const BASE_SOLDIER_BULLET_DAMAGE = 1.0;
+export const WEAPON_LOCK_BONUS_SQUAD = 1;
+export const MAX_SQUAD_COUNT = 10;
+export const MAX_VISUAL_SOLDIERS = 10;
+export const MAX_ACTIVE_VOLLEY_EMITTERS = 10;
+export const OVERFLOW_SQUAD_COIN_BONUS = 25;
+export const COMMANDO_MODEL_SCALE = 1.42;
+export const BASE_SOLDIER_BULLET_DAMAGE = 5.0;
 
 const DEG_TO_RAD = Math.PI / 180;
 
@@ -14,12 +17,12 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Sidearm Pistol',
     shortBadge: 'Lv1 PISTOL',
     pattern: 'SINGLE',
-    fireRate: 2.5,
+    fireRate: 3.4,
     damageMultiplier: 1.0,
-    projectileSpeed: 28,
+    projectileSpeed: 29,
     pierceCount: 1,
     spreadRadians: 0,
-    colorHex: 0xffd85a,
+    colorHex: 0x62f4ff,
     bossArmorFactor: 1.0,
   },
   2: {
@@ -27,12 +30,12 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Tactical SMG',
     shortBadge: 'Lv2 SMG',
     pattern: 'SINGLE',
-    fireRate: 5.0,
-    damageMultiplier: 1.15,
-    projectileSpeed: 32,
+    fireRate: 6.2,
+    damageMultiplier: 1.08,
+    projectileSpeed: 33,
     pierceCount: 1,
-    spreadRadians: 0.9 * DEG_TO_RAD,
-    colorHex: 0xffe66d,
+    spreadRadians: 0.8 * DEG_TO_RAD,
+    colorHex: 0x45ffdf,
     bossArmorFactor: 1.0,
   },
   3: {
@@ -41,11 +44,11 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     shortBadge: 'Lv3 RIFLE',
     pattern: 'BURST_2',
     fireRate: 4.5,
-    damageMultiplier: 1.6,
+    damageMultiplier: 1.85,
     projectileSpeed: 36,
     pierceCount: 1,
     spreadRadians: 0.4 * DEG_TO_RAD,
-    colorHex: 0xffae42,
+    colorHex: 0xffe066,
     bossArmorFactor: 1.0,
   },
   4: {
@@ -53,12 +56,12 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Rotary Minigun',
     shortBadge: 'Lv4 MINIGUN',
     pattern: 'TWIN_SPREAD',
-    fireRate: 8.5,
-    damageMultiplier: 1.4,
+    fireRate: 7.4,
+    damageMultiplier: 1.75,
     projectileSpeed: 39,
     pierceCount: 1,
-    spreadRadians: 3.0 * DEG_TO_RAD,
-    colorHex: 0xff8c38,
+    spreadRadians: 2.6 * DEG_TO_RAD,
+    colorHex: 0xff9f43,
     bossArmorFactor: 1.0,
   },
   5: {
@@ -66,12 +69,12 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Plasma Pulse Rifle',
     shortBadge: 'Lv5 PLASMA',
     pattern: 'PIERCING',
-    fireRate: 4.0,
-    damageMultiplier: 2.75,
+    fireRate: 5.2,
+    damageMultiplier: 3.15,
     projectileSpeed: 42,
     pierceCount: 2,
     spreadRadians: 0,
-    colorHex: 0x36f3ff,
+    colorHex: 0x38f6ff,
     bossArmorFactor: 1.35,
   },
 };
@@ -87,8 +90,8 @@ export interface WeaponPickupResolution {
 
 /**
  * Mandatory Weapon Lock Rule:
- * Breaking a tire stack with a lower or equal tier weapon NEVER downgrades the player's weapon;
- * instead it keeps their higher-tier weapon and grants +50 coins and +3 squad soldiers.
+ * Breaking a crate/tire stack with a lower or equal tier weapon NEVER downgrades the player's weapon;
+ * instead it keeps their higher-tier weapon and grants +50 coins and +1 elite commando.
  */
 export function resolveWeaponPickup(
   currentTier: WeaponTierId,
@@ -125,24 +128,21 @@ export interface VolleyDamagePlan {
 }
 
 /**
- * Models front-rank clear line-of-sight (1:1 up to 6 commandos) plus smooth C1 sublinear
- * rear-platoon suppressive fire (4 * sqrt(n - 2) - 2 for n > 6).
- * Every additional commando increases total squad DPS and 1-for-1 durability without letting
- * 500+ troop snowballs vaporize Bosses in 0.2 seconds.
+ * Front-rank elite commandos (1..5) fire at full 1:1 line-of-sight efficiency;
+ * second-rank commandos (6..10) add 0.82x over-the-shoulder suppressive fire.
  */
 export function computeEffectiveFiringSquad(logicalSquad: number): number {
   if (logicalSquad <= 0) {
     return 0;
   }
-  if (logicalSquad <= 6) {
+  if (logicalSquad <= 5) {
     return logicalSquad;
   }
-  return 4 * Math.sqrt(logicalSquad - 2) - 2;
+  return 5 + (logicalSquad - 5) * 0.82;
 }
 
 /**
- * Computes visual soldier cap (<=150), emitter count (<=48), and platoon-scaled
- * per-projectile damage while keeping projectile counts inside the fixed BulletPool at 60 FPS.
+ * Computes 1:1 per-commando emitter streams and projectile damage for our 1-10 elite commando squad.
  */
 export function computeSquadVolleyPlan(
   logicalSquad: number,
@@ -161,15 +161,16 @@ export function computeSquadVolleyPlan(
   }
 
   const spec = WEAPON_SPECS[weaponTier];
-  const visualSoldiers = Math.min(logicalSquad, MAX_VISUAL_SOLDIERS);
-  const activeEmitters = Math.min(logicalSquad, MAX_ACTIVE_VOLLEY_EMITTERS);
+  const clampedSquad = Math.min(logicalSquad, MAX_SQUAD_COUNT);
+  const visualSoldiers = Math.min(clampedSquad, MAX_VISUAL_SOLDIERS);
+  const activeEmitters = Math.min(clampedSquad, MAX_ACTIVE_VOLLEY_EMITTERS);
 
   const projectilesPerEmitter =
     spec.pattern === 'BURST_2' || spec.pattern === 'TWIN_SPREAD' ? 2 : 1;
 
   const perEventDamage =
     BASE_SOLDIER_BULLET_DAMAGE * bulletPowerMultiplier * spec.damageMultiplier;
-  const effectiveSquad = computeEffectiveFiringSquad(logicalSquad);
+  const effectiveSquad = computeEffectiveFiringSquad(clampedSquad);
   const squadScale = effectiveSquad / activeEmitters;
   const damagePerProjectile = (perEventDamage / projectilesPerEmitter) * squadScale;
 
