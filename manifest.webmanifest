@@ -1,0 +1,33 @@
+{
+  "name": "Bridge Blitz",
+  "short_name": "Bridge Blitz",
+  "description": "60 FPS 3D Math Army Gate-Runner with tiered weapons, anti-downgrade weapon lock, and Endless Bridge Mode.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "portrait",
+  "background_color": "#111c27",
+  "theme_color": "#111c27",
+  "categories": ["games", "action", "arcade"],
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
