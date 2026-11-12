@@ -7,6 +7,7 @@ declare global {
   interface Window {
     __BRIDGE_BLITZ__?: {
       getSnapshot: () => TelemetrySnapshot;
+      step: (seconds: number, targetX?: number) => TelemetrySnapshot;
     };
   }
 }
@@ -16,4 +17,5 @@ const game = new BridgeBlitzGame();
 
 window.__BRIDGE_BLITZ__ = {
   getSnapshot: () => game.getTelemetrySnapshot(),
+  step: (seconds: number, targetX?: number) => game.advanceSimulation(seconds, targetX),
 };

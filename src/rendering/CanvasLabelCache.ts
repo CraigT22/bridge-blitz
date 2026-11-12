@@ -3,6 +3,26 @@ import type { GateOperator, WeaponTierId } from '../core/types';
 import { formatGateLabel } from '../math/gateMath';
 import { WEAPON_SPECS } from '../math/weaponMath';
 
+function traceChamferRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  cut: number
+): void {
+  ctx.beginPath();
+  ctx.moveTo(x + cut, y);
+  ctx.lineTo(x + w - cut, y);
+  ctx.lineTo(x + w, y + cut);
+  ctx.lineTo(x + w, y + h - cut);
+  ctx.lineTo(x + w - cut, y + h);
+  ctx.lineTo(x + cut, y + h);
+  ctx.lineTo(x, y + h - cut);
+  ctx.lineTo(x, y + cut);
+  ctx.closePath();
+}
+
 export class EditableGateTexture {
   public readonly canvas: HTMLCanvasElement;
   public readonly ctx: CanvasRenderingContext2D;
@@ -11,8 +31,8 @@ export class EditableGateTexture {
 
   constructor() {
     this.canvas = document.createElement('canvas');
-    this.canvas.width = 256;
-    this.canvas.height = 256;
+    this.canvas.width = 512;
+    this.canvas.height = 512;
     const ctx = this.canvas.getContext('2d');
     if (!ctx) {
       throw new Error('2D canvas context unavailable');
@@ -45,43 +65,75 @@ export class EditableGateTexture {
     const h = this.canvas.height;
     ctx.clearRect(0, 0, w, h);
 
-    let bgTop = 'rgba(12, 205, 148, 0.78)';
-    let bgBottom = 'rgba(8, 124, 152, 0.86)';
-    let borderStroke = '#69ffca';
+    // Tactical Holographic Forcefield Palette
+    let bgTop = 'rgba(10, 178, 122, 0.74)';
+    let bgBottom = 'rgba(6, 78, 96, 0.84)';
+    let borderStroke = '#5effb8';
+    let bracketStroke = '#b8ffe0';
+    let headerText = 'TARGET // SHOOT +1';
 
     if (isLocked && operator === 'MUL') {
-      bgTop = 'rgba(245, 179, 36, 0.86)';
-      bgBottom = 'rgba(184, 102, 12, 0.90)';
-      borderStroke = '#ffe484';
+      bgTop = 'rgba(218, 148, 22, 0.82)';
+      bgBottom = 'rgba(116, 62, 8, 0.88)';
+      borderStroke = '#ffd966';
+      bracketStroke = '#fff2bd';
+      headerText = 'LOCKED // FORCE MULTIPLIER';
     } else if (isLocked && operator === 'DIV') {
-      bgTop = 'rgba(220, 48, 62, 0.88)';
-      bgBottom = 'rgba(128, 22, 34, 0.92)';
-      borderStroke = '#ffbe42';
+      bgTop = 'rgba(198, 32, 48, 0.84)';
+      bgBottom = 'rgba(92, 12, 22, 0.90)';
+      borderStroke = '#ffb830';
+      bracketStroke = '#ffe082';
+      headerText = 'HAZARD // ARMOR LOCKED';
     } else if (rounded < 0) {
-      bgTop = 'rgba(232, 42, 74, 0.82)';
-      bgBottom = 'rgba(138, 16, 40, 0.88)';
-      borderStroke = '#ff7b93';
+      bgTop = 'rgba(212, 34, 62, 0.78)';
+      bgBottom = 'rgba(98, 12, 28, 0.86)';
+      borderStroke = '#ff6b81';
+      bracketStroke = '#ffc2cb';
+      headerText = 'HOSTILE // SHOOT TO FLIP';
     }
 
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    ctx.save();
+    traceChamferRect(ctx, 14, 14, w - 28, h - 28, 34);
+    ctx.clip();
+
+    const grad = ctx.createLinearGradient(0, 14, 0, h - 14);
     grad.addColorStop(0, bgTop);
+    grad.addColorStop(0.5, 'rgba(12, 22, 32, 0.56)');
     grad.addColorStop(1, bgBottom);
     ctx.fillStyle = grad;
-    ctx.fillRect(8, 8, w - 16, h - 16);
+    ctx.fillRect(0, 0, w, h);
 
-    // Hazard stripes on Locked Divider gates
+    // Subtle Holographic Horizontal Scanlines & Tactical Crosshair Grid
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.045)';
+    for (let sy = 20; sy < h - 20; sy += 8) {
+      ctx.fillRect(14, sy, w - 28, 2);
+    }
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(w / 2, 84);
+    ctx.lineTo(w / 2, h - 84);
+    ctx.moveTo(48, h / 2 + 12);
+    ctx.lineTo(w - 48, h / 2 + 12);
+    ctx.stroke();
+
+    // Top Dark Tactical Header Bar
+    ctx.fillStyle = 'rgba(9, 14, 20, 0.72)';
+    ctx.fillRect(14, 14, w - 28, 68);
+
+    // Hazard diagonal stripes on Locked Divider / Negative Penalty Gates
     if (isLocked && operator === 'DIV') {
       ctx.save();
       ctx.beginPath();
-      ctx.rect(12, 12, w - 24, 34);
+      ctx.rect(14, 14, w - 28, 68);
       ctx.clip();
-      ctx.fillStyle = 'rgba(255, 196, 46, 0.88)';
-      for (let sx = -40; sx < w + 40; sx += 28) {
+      ctx.fillStyle = 'rgba(245, 178, 34, 0.34)';
+      for (let sx = -80; sx < w + 80; sx += 44) {
         ctx.beginPath();
-        ctx.moveTo(sx, 12);
-        ctx.lineTo(sx + 14, 12);
-        ctx.lineTo(sx - 4, 46);
-        ctx.lineTo(sx - 18, 46);
+        ctx.moveTo(sx, 14);
+        ctx.lineTo(sx + 22, 14);
+        ctx.lineTo(sx - 12, 82);
+        ctx.lineTo(sx - 34, 82);
         ctx.closePath();
         ctx.fill();
       }
@@ -90,44 +142,69 @@ export class EditableGateTexture {
 
     if (flashFlag) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.34)';
-      ctx.fillRect(8, 8, w - 16, h - 16);
+      ctx.fillRect(14, 14, w - 28, h - 28);
     }
 
-    // Crisp outer energy border
-    ctx.lineWidth = 8;
-    ctx.strokeStyle = borderStroke;
-    ctx.strokeRect(10, 10, w - 20, h - 20);
+    ctx.restore();
 
-    // Subtle status subtitle
+    // Chamfered Outer Energy Frame
+    traceChamferRect(ctx, 14, 14, w - 28, h - 28, 34);
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = borderStroke;
+    ctx.stroke();
+
+    // Reinforced Corner Tactical Brackets
+    ctx.strokeStyle = bracketStroke;
+    ctx.lineWidth = 6;
+    const bLen = 46;
+    for (const [cx, cy, dx, dy] of [
+      [26, 26, 1, 1],
+      [w - 26, 26, -1, 1],
+      [26, h - 26, 1, -1],
+      [w - 26, h - 26, -1, -1],
+    ]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + dx * bLen, cy);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx, cy + dy * bLen);
+      ctx.stroke();
+    }
+
+    // Stencil Tactical Status Subtitle
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '800 22px system-ui, -apple-system, sans-serif';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
-    if (isLocked) {
-      ctx.fillText('LOCKED', w / 2, 38);
-    } else {
-      ctx.fillText('SHOOT +1', w / 2, 36);
-    }
+    ctx.font = '900 26px system-ui, -apple-system, sans-serif';
+    ctx.fillStyle = bracketStroke;
+    ctx.fillText(headerText, w / 2, 50);
 
-    // Main bold math operator (+10, -25, x3, ÷2)
+    // Main High-Impact Stencil Math Value (+12, -25, x3, ÷2)
     const label = formatGateLabel(operator, rounded);
-    ctx.font = '900 94px system-ui, -apple-system, sans-serif';
-    ctx.lineWidth = 12;
-    ctx.strokeStyle = 'rgba(10, 18, 28, 0.82)';
-    ctx.strokeText(label, w / 2, h / 2 + 12);
+    ctx.font = '900 182px system-ui, -apple-system, sans-serif';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 24;
+    ctx.strokeStyle = 'rgba(7, 12, 18, 0.92)';
+    ctx.strokeText(label, w / 2, h / 2 + 22);
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(label, w / 2, h / 2 + 12);
+    ctx.fillText(label, w / 2, h / 2 + 22);
 
-    // Hit accumulator progress bar along the bottom of shootable gates
+    // 16-Segment Tactical LED Charge Meter along bottom of shootable gates
     if (!isLocked) {
-      const barW = w - 56;
-      const barH = 14;
-      const bx = 28;
-      const by = h - 34;
-      ctx.fillStyle = 'rgba(9, 16, 24, 0.55)';
-      ctx.fillRect(bx, by, barW, barH);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(bx, by, Math.max(4, barW * (progBucket / 16)), barH);
+      const segs = 16;
+      const totalW = w - 108;
+      const startX = 54;
+      const barY = h - 62;
+      const gap = 5;
+      const segW = (totalW - gap * (segs - 1)) / segs;
+
+      ctx.fillStyle = 'rgba(7, 12, 18, 0.74)';
+      ctx.fillRect(startX - 8, barY - 6, totalW + 16, 32);
+
+      for (let s = 0; s < segs; s++) {
+        const sx = startX + s * (segW + gap);
+        ctx.fillStyle =
+          s < progBucket ? borderStroke : 'rgba(255, 255, 255, 0.16)';
+        ctx.fillRect(sx, barY, segW, 20);
+      }
     }
 
     this.texture.needsUpdate = true;
@@ -142,8 +219,8 @@ export class EditableTirePlaqueTexture {
 
   constructor() {
     this.canvas = document.createElement('canvas');
-    this.canvas.width = 192;
-    this.canvas.height = 128;
+    this.canvas.width = 256;
+    this.canvas.height = 160;
     const ctx = this.canvas.getContext('2d');
     if (!ctx) {
       throw new Error('2D canvas context unavailable');
@@ -165,18 +242,35 @@ export class EditableTirePlaqueTexture {
     const h = this.canvas.height;
     ctx.clearRect(0, 0, w, h);
 
-    ctx.fillStyle = 'rgba(15, 21, 29, 0.92)';
-    ctx.fillRect(8, 10, w - 16, h - 20);
+    traceChamferRect(ctx, 10, 10, w - 20, h - 20, 18);
+    ctx.fillStyle = 'rgba(16, 21, 28, 0.95)';
+    ctx.fill();
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#f5b82e';
+    ctx.stroke();
 
-    ctx.lineWidth = 5;
-    ctx.strokeStyle = '#ffd166';
-    ctx.strokeRect(10, 12, w - 20, h - 24);
+    // Corner rivets
+    ctx.fillStyle = '#9aa6b4';
+    for (const [rx, ry] of [
+      [26, 26],
+      [w - 26, 26],
+      [26, h - 26],
+      [w - 26, h - 26],
+    ]) {
+      ctx.beginPath();
+      ctx.arc(rx, ry, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '900 66px system-ui, -apple-system, sans-serif';
+    ctx.font = '800 20px system-ui, -apple-system, sans-serif';
+    ctx.fillStyle = '#f5b82e';
+    ctx.fillText('BARRICADE HP', w / 2, 36);
+
+    ctx.font = '900 84px system-ui, -apple-system, sans-serif';
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(`${shown}`, w / 2, h / 2 + 4);
+    ctx.fillText(`${shown}`, w / 2, 98);
 
     this.texture.needsUpdate = true;
   }
@@ -184,8 +278,8 @@ export class EditableTirePlaqueTexture {
 
 export function createStaticWeaponBadgeTexture(tier: WeaponTierId): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 80;
+  canvas.width = 320;
+  canvas.height = 96;
   const ctx = canvas.getContext('2d');
   if (!ctx) {
     throw new Error('2D canvas context unavailable');
@@ -194,17 +288,18 @@ export function createStaticWeaponBadgeTexture(tier: WeaponTierId): THREE.Canvas
   const spec = WEAPON_SPECS[tier];
   const hex = `#${spec.colorHex.toString(16).padStart(6, '0')}`;
 
-  ctx.fillStyle = 'rgba(12, 19, 28, 0.9)';
-  ctx.fillRect(6, 8, 244, 64);
-  ctx.lineWidth = 4;
+  traceChamferRect(ctx, 8, 10, 304, 76, 14);
+  ctx.fillStyle = 'rgba(13, 18, 25, 0.94)';
+  ctx.fill();
+  ctx.lineWidth = 5;
   ctx.strokeStyle = hex;
-  ctx.strokeRect(8, 10, 240, 60);
+  ctx.stroke();
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = '800 30px system-ui, -apple-system, sans-serif';
+  ctx.font = '900 36px system-ui, -apple-system, sans-serif';
   ctx.fillStyle = hex;
-  ctx.fillText(spec.shortBadge, 128, 41);
+  ctx.fillText(spec.shortBadge.toUpperCase(), 160, 49);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;

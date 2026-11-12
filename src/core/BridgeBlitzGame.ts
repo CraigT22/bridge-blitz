@@ -20,6 +20,7 @@ import {
 } from '../math/weaponMath';
 import { BridgeEnvironment } from '../rendering/BridgeEnvironment';
 import { CombatTextOverlay } from '../rendering/CombatTextOverlay';
+import { CombatVfxRenderer } from '../rendering/CombatVfxRenderer';
 import { InstancedBatchRenderer } from '../rendering/InstancedBatchRenderer';
 import { SceneManager } from '../rendering/SceneManager';
 import { HudController } from '../ui/HudController';
@@ -50,6 +51,7 @@ export class BridgeBlitzGame {
   private readonly bulletPool = new BulletPool(1200);
   private readonly particlePool = new ParticlePool(900);
   private readonly batchRenderer: InstancedBatchRenderer;
+  private readonly vfx: CombatVfxRenderer;
   private readonly combatText: CombatTextOverlay;
 
   private readonly squad = new SquadController();
@@ -95,6 +97,7 @@ export class BridgeBlitzGame {
       this.bulletPool.capacity,
       this.particlePool.capacity
     );
+    this.vfx = new CombatVfxRenderer(this.sceneManager.scene);
     this.combatText = new CombatTextOverlay(combatTextContainer);
 
     for (let i = 0; i < MAX_GATE_PAIRS; i++) {
@@ -167,6 +170,7 @@ export class BridgeBlitzGame {
 
     this.bulletPool.clear();
     this.particlePool.clear();
+    this.vfx.clear();
     this.combatText.clear();
     this.input.resetFrameDeltas();
 
@@ -329,6 +333,53 @@ export class BridgeBlitzGame {
     this.prepareStagingArea();
   }
 
+  private spawnVolleyMuzzleVfx(): void {
+    const vis = Math.min(this.squad.logicalCount, MAX_VISUAL_SOLDIERS);
+    if (vis <= 0) {
+      return;
+    }
+    const tier = this.squad.weaponTier;
+    const flashColor = tier === 5 ? 0x38f6ff : 0xffbe42;
+    const flashScale = tier >= 4 ? 1.25 : 0.92;
+    const burstCount = Math.min(3, vis);
+    const seed = Math.floor(this.elapsedTime * 60);
+
+    for (let k = 0; k < burstCount; k++) {
+      const idx = (seed + k * 5) % vis;
+      const sx = this.squad.soldierWorldX[idx] + 0.09;
+      const sz = this.squad.soldierWorldZ[idx] - 0.56;
+      this.vfx.spawnMuzzleFlash(sx, 0.48, sz, flashScale, flashColor);
+
+      if (k === 0) {
+        // Ejected spinning brass shell casing + rising tactical gunsmoke puff
+        this.particlePool.spawn(
+          sx + 0.08,
+          0.5,
+          sz + 0.22,
+          1.8 + (seed % 3) * 0.45,
+          2.6,
+          0.6,
+          -14,
+          0.34,
+          0.065,
+          0xf5b82e
+        );
+        this.particlePool.spawn(
+          sx,
+          0.52,
+          sz - 0.12,
+          ((seed % 5) - 2) * 0.3,
+          1.2,
+          -2.4,
+          1.8,
+          0.26,
+          0.14,
+          0x636e7b
+        );
+      }
+    }
+  }
+
   private fixedUpdate(rawDt: number): void {
     const dt = rawDt * this.stateMachine.timeScale;
     this.elapsedTime += dt;
@@ -355,6 +406,7 @@ export class BridgeBlitzGame {
       );
       if (fired) {
         this.sound.playGunfire(this.squad.weaponTier);
+        this.spawnVolleyMuzzleVfx();
       }
 
       // Check transition to Boss Platform at 100% sector progress
@@ -381,13 +433,14 @@ export class BridgeBlitzGame {
       );
       if (fired) {
         this.sound.playGunfire(this.squad.weaponTier);
+        this.spawnVolleyMuzzleVfx();
       }
     }
 
     // Update Gate Visuals & Squad Gate Passes
     for (let i = 0; i < MAX_GATE_PAIRS; i++) {
       const pair = this.gatePairs[i];
-      pair.updateVisuals(dt);
+      pair.updateVisuals(dt, this.squad.z);
       if (state === 'RUNNING' && this.squad.logicalCount > 0) {
         const collect = pair.trySquadCollect(
           this.squad.x,
@@ -397,13 +450,21 @@ export class BridgeBlitzGame {
         if (collect) {
           this.squad.setLogicalCount(collect.nextSquadCount);
           this.sound.playGateCollect(collect.positive);
+          const fxColor = collect.positive ? 0x3bf088 : 0xff4757;
+          this.vfx.spawnShockwave(
+            collect.worldX,
+            collect.worldZ,
+            2.9,
+            0.34,
+            fxColor
+          );
           this.particlePool.spawnBurst(
             collect.worldX,
             1.2,
             collect.worldZ,
             18,
             5.8,
-            collect.positive ? 0x3bf088 : 0xff4757
+            fxColor
           );
           const sign = collect.deltaSquad >= 0 ? '+' : '';
           this.combatText.spawn(
@@ -424,13 +485,14 @@ export class BridgeBlitzGame {
     const squadRadius = computeSquadOuterRadius(this.squad.logicalCount);
     for (let i = 0; i < MAX_TIRE_STACKS; i++) {
       const stack = this.tireStacks[i];
-      stack.update(dt);
+      stack.update(dt, this.squad.z);
       if (
         state === 'RUNNING' &&
         this.squad.logicalCount > 0 &&
         stack.checkUnbrokenSquadBump(this.squad.x, this.squad.z, squadRadius)
       ) {
         this.sceneManager.addShake(0.32);
+        this.vfx.spawnShockwave(stack.x, stack.z, 2.5, 0.3, 0xff4757);
         this.particlePool.spawnBurst(stack.x, 0.8, stack.z, 14, 5.0, 0x2d3436);
         this.squad.setLogicalCount(this.squad.logicalCount - 1);
         this.combatText.spawn(stack.x, 1.4, stack.z, '-1 TIRE CRASH', 'negative');
@@ -490,7 +552,15 @@ export class BridgeBlitzGame {
         this.squad.logicalCount
       );
       if (this.boss.lastStepTriggeredShake) {
-        this.sceneManager.addShake(this.boss.lastStepSlamDamage > 0 ? 0.55 : 0.16);
+        const isSlam = this.boss.lastStepSlamDamage > 0;
+        this.sceneManager.addShake(isSlam ? 0.55 : 0.16);
+        this.vfx.spawnShockwave(
+          this.boss.x,
+          this.boss.z + 0.4,
+          isSlam ? 4.2 : 2.5,
+          isSlam ? 0.38 : 0.28,
+          0xff4757
+        );
       }
       if (this.boss.lastStepSlamDamage > 0 && this.squad.logicalCount > 0) {
         const lost = Math.min(this.squad.logicalCount, this.boss.lastStepSlamDamage);
@@ -531,12 +601,17 @@ export class BridgeBlitzGame {
     }
 
     this.particlePool.update(dt);
-    this.bridgeEnv.update(dt, this.elapsedTime, this.squad.z);
     this.sceneManager.updateCamera(
       dt,
       this.squad.x,
       this.squad.z,
       this.stateMachine.state === 'BOSS_FIGHT'
+    );
+    this.bridgeEnv.update(
+      dt,
+      this.elapsedTime,
+      this.squad.z,
+      this.sceneManager.camera.position
     );
   }
 
@@ -596,6 +671,7 @@ export class BridgeBlitzGame {
             this.gatesFlippedThisRun++;
             this.sound.playGateFlipChime();
             this.sceneManager.addShake(0.2);
+            this.vfx.spawnShockwave(hit.hitX, hit.hitZ, 3.2, 0.38, 0x36f3ff);
             this.particlePool.spawnBurst(hit.hitX, 1.5, hit.hitZ, 20, 6.5, 0x36f3ff, 0.18, 0.55);
             this.combatText.spawn(hit.hitX, 2.3, hit.hitZ, 'GATE FLIPPED!', 'cyan', 0.95);
           } else if (hit.deltaIncrements > 0) {
@@ -690,6 +766,13 @@ export class BridgeBlitzGame {
   private handleTireStackShattered(stack: TireWeaponStackSlot): void {
     this.tiresBrokenThisRun++;
     this.sceneManager.addShake(0.38);
+    this.vfx.spawnShockwave(
+      stack.x,
+      stack.z,
+      3.4,
+      0.42,
+      WEAPON_SPECS[stack.weaponTier].colorHex
+    );
     this.particlePool.spawnBurst(stack.x, 1.1, stack.z, 24, 6.8, 0x2d3436, 0.2, 0.55);
 
     const pickup = resolveWeaponPickup(this.squad.weaponTier, stack.weaponTier);
@@ -727,6 +810,8 @@ export class BridgeBlitzGame {
   private handleBossDefeated(): void {
     this.sound.playBossDefeat();
     this.sceneManager.addShake(0.68);
+    this.vfx.spawnShockwave(this.boss.x, this.boss.z, 6.5, 0.62, 0xffae42);
+    this.vfx.spawnShockwave(this.boss.x, this.boss.z, 4.2, 0.44, 0xff384c);
     this.particlePool.spawnBurst(this.boss.x, 2.0, this.boss.z, 46, 9.5, 0xffae42, 0.26, 0.85);
     this.particlePool.spawnBurst(this.boss.x, 2.2, this.boss.z, 32, 8.0, 0xff384c, 0.24, 0.75);
 
@@ -867,6 +952,7 @@ export class BridgeBlitzGame {
 
     this.batchRenderer.syncBullets(this.bulletPool);
     this.batchRenderer.syncParticles(this.particlePool);
+    this.vfx.updateAndSync(realDt * this.stateMachine.timeScale);
 
     this.sceneManager.render();
 
@@ -898,6 +984,23 @@ export class BridgeBlitzGame {
     );
 
     this.combatText.update(realDt, this.sceneManager);
+  }
+
+  /**
+   * Deterministic fixed-step simulation helper for headless software-WebGL automated playtests.
+   */
+  public advanceSimulation(seconds: number, targetX?: number): TelemetrySnapshot {
+    const step = 1 / 60;
+    const ticks = Math.max(1, Math.round(seconds / step));
+    for (let i = 0; i < ticks; i++) {
+      if (typeof targetX === 'number') {
+        const dx = targetX - this.squad.x;
+        this.squad.x += Math.sign(dx) * Math.min(Math.abs(dx), 12 * step);
+      }
+      this.fixedUpdate(step);
+    }
+    this.renderFrame(step);
+    return this.getTelemetrySnapshot();
   }
 
   /**

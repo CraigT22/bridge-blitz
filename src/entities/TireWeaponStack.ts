@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { TireStackDefinition, WeaponTierId } from '../core/types';
+import { WEAPON_SPECS } from '../math/weaponMath';
 import {
   createStaticWeaponBadgeTexture,
   EditableTirePlaqueTexture,
@@ -8,6 +9,33 @@ import { createWeaponPickupGroup } from '../rendering/ProceduralGeometries';
 
 const MAX_TIRE_LAYERS = 5;
 const TIRE_HIT_RADIUS_X = 1.25;
+
+function createOffRoadTireTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#14171c';
+  ctx.fillRect(0, 0, 256, 128);
+
+  // Deep off-road chevron lug blocks
+  ctx.fillStyle = '#2c333d';
+  for (let x = 0; x < 256; x += 16) {
+    ctx.fillRect(x + 2, 6, 10, 50);
+    ctx.fillRect(x + 8, 70, 10, 50);
+  }
+  ctx.fillStyle = '#0d0f13';
+  ctx.fillRect(0, 60, 256, 8);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(6, 2);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+const _sharedTreadTex = createOffRoadTireTexture();
 
 export class TireWeaponStackSlot {
   public readonly entityId: number;
@@ -20,8 +48,9 @@ export class TireWeaponStackSlot {
   public remainingBreakCount = 20;
   public weaponTier: WeaponTierId = 2;
 
-  private readonly tireMeshes: THREE.Mesh[] = [];
+  private readonly tireMeshes: THREE.Group[] = [];
   private readonly rubberMat: THREE.MeshStandardMaterial;
+  private readonly holoBeamMat: THREE.MeshBasicMaterial;
   private readonly plaqueMesh: THREE.Mesh;
   private readonly plaqueTex: EditableTirePlaqueTexture;
   private readonly pickupPivot = new THREE.Group();
@@ -34,31 +63,56 @@ export class TireWeaponStackSlot {
     this.entityId = 500 + slotIndex;
 
     this.rubberMat = new THREE.MeshStandardMaterial({
-      color: 0x1d232b,
-      roughness: 0.72,
-      metalness: 0.14,
+      color: 0xffffff,
+      map: _sharedTreadTex,
+      bumpMap: _sharedTreadTex,
+      bumpScale: 0.035,
+      roughness: 0.82,
+      metalness: 0.08,
       emissive: 0x000000,
     });
     const rimMat = new THREE.MeshStandardMaterial({
-      color: 0x5c6b7a,
-      roughness: 0.4,
-      metalness: 0.65,
+      color: 0x45515e,
+      roughness: 0.34,
+      metalness: 0.82,
+    });
+    const lugMat = new THREE.MeshStandardMaterial({
+      color: 0xcbd5e1,
+      roughness: 0.22,
+      metalness: 0.9,
     });
 
-    const tireGeo = new THREE.TorusGeometry(0.72, 0.24, 10, 20);
+    const tireGeo = new THREE.TorusGeometry(0.74, 0.24, 12, 24);
     tireGeo.rotateX(Math.PI / 2);
-    const hubGeo = new THREE.CylinderGeometry(0.56, 0.56, 0.36, 14);
+    const hubGeo = new THREE.CylinderGeometry(0.56, 0.56, 0.36, 16);
+    const centerCapGeo = new THREE.CylinderGeometry(0.18, 0.22, 0.42, 10);
+    const lugGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.4, 6);
 
     for (let i = 0; i < MAX_TIRE_LAYERS; i++) {
+      const layerGroup = new THREE.Group();
+      // Slight realistic offset/rotation per stacked military tire
+      const offsetX = i % 2 === 0 ? 0.02 : -0.025;
+      layerGroup.position.set(offsetX, 0.24 + i * 0.41, 0);
+      layerGroup.rotation.y = i * 0.55;
+
       const tire = new THREE.Mesh(tireGeo, this.rubberMat);
-      tire.position.set(0, 0.24 + i * 0.41, 0);
+      tire.castShadow = true;
+      tire.receiveShadow = true;
+
       const hub = new THREE.Mesh(hubGeo, rimMat);
-      hub.rotation.x = Math.PI / 2;
-      // Keep hub flat inside torus
-      hub.rotation.set(0, 0, 0);
-      tire.add(hub);
-      this.tireMeshes.push(tire);
-      this.root.add(tire);
+      hub.castShadow = true;
+      const cap = new THREE.Mesh(centerCapGeo, lugMat);
+      layerGroup.add(tire, hub, cap);
+
+      for (let l = 0; l < 6; l++) {
+        const ang = (l / 6) * Math.PI * 2;
+        const lug = new THREE.Mesh(lugGeo, lugMat);
+        lug.position.set(Math.cos(ang) * 0.34, 0, Math.sin(ang) * 0.34);
+        layerGroup.add(lug);
+      }
+
+      this.tireMeshes.push(layerGroup);
+      this.root.add(layerGroup);
     }
 
     this.plaqueTex = new EditableTirePlaqueTexture();
@@ -66,12 +120,35 @@ export class TireWeaponStackSlot {
       map: this.plaqueTex.texture,
       transparent: true,
     });
-    this.plaqueMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.45, 0.96), plaqueMat);
-    this.plaqueMesh.position.set(0, 0.95, 1.04);
+    this.plaqueMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.52, 0.96), plaqueMat);
+    this.plaqueMesh.position.set(0, 0.95, 1.06);
     this.root.add(this.plaqueMesh);
 
-    // Pre-build all 5 procedural weapon pickups & tier badges once at boot (zero runtime allocations!)
+    // Holo-Pedestal Emitter Ring & Vertical Light Cone beneath Weapon Pickup
     this.root.add(this.pickupPivot);
+    this.holoBeamMat = new THREE.MeshBasicMaterial({
+      color: 0xffd447,
+      transparent: true,
+      opacity: 0.22,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const holoCone = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.68, 0.42, 0.95, 18, 1, true),
+      this.holoBeamMat
+    );
+    holoCone.position.set(0, -0.05, 0);
+    this.pickupPivot.add(holoCone);
+
+    const emitterRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.46, 0.032, 8, 20),
+      this.holoBeamMat
+    );
+    emitterRing.rotation.x = Math.PI / 2;
+    emitterRing.position.set(0, -0.48, 0);
+    this.pickupPivot.add(emitterRing);
+
     this.weaponModels = {
       1: createWeaponPickupGroup(1),
       2: createWeaponPickupGroup(2),
@@ -80,7 +157,7 @@ export class TireWeaponStackSlot {
       5: createWeaponPickupGroup(5),
     };
 
-    const badgeGeo = new THREE.PlaneGeometry(1.85, 0.58);
+    const badgeGeo = new THREE.PlaneGeometry(1.96, 0.58);
     this.badgeMeshes = {
       1: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(1), transparent: true })),
       2: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(2), transparent: true })),
@@ -91,7 +168,7 @@ export class TireWeaponStackSlot {
 
     for (const t of [1, 2, 3, 4, 5] as const) {
       this.pickupPivot.add(this.weaponModels[t]);
-      this.badgeMeshes[t].position.set(0, 0.85, 0);
+      this.badgeMeshes[t].position.set(0, 0.88, 0);
       this.pickupPivot.add(this.badgeMeshes[t]);
     }
 
@@ -110,6 +187,8 @@ export class TireWeaponStackSlot {
 
     this.root.position.set(this.x, 0, this.z);
     this.root.visible = true;
+
+    this.holoBeamMat.color.setHex(WEAPON_SPECS[def.weaponTier].colorHex);
 
     for (const t of [1, 2, 3, 4, 5] as const) {
       const show = t === def.weaponTier;
@@ -138,26 +217,33 @@ export class TireWeaponStackSlot {
     }
 
     const topY = 0.35 + visibleLayers * 0.41;
-    this.pickupPivot.position.set(0, topY + 0.55, 0);
-    this.plaqueMesh.position.y = Math.max(0.62, topY * 0.52);
+    this.pickupPivot.position.set(0, topY + 0.58, 0);
+    this.plaqueMesh.position.y = Math.max(0.64, topY * 0.52);
   }
 
-  public update(dt: number): void {
+  public update(dt: number, squadZ: number): void {
     if (!this.active || this.broken) {
       return;
     }
-    this.spinAngle += dt * 2.1;
+    if (squadZ < this.z - 3.6) {
+      this.root.position.y -= dt * 16.0;
+      if (this.root.position.y <= -3.6 || squadZ < this.z - 5.5) {
+        this.hide();
+      }
+      return;
+    }
+    this.spinAngle += dt * 2.15;
     for (const t of [1, 2, 3, 4, 5] as const) {
       if (this.weaponModels[t].visible) {
         this.weaponModels[t].rotation.y = this.spinAngle;
-        this.weaponModels[t].position.y = Math.sin(this.spinAngle * 1.5) * 0.1;
+        this.weaponModels[t].position.y = Math.sin(this.spinAngle * 1.6) * 0.09;
       }
     }
 
     if (this.flashTimer > 0) {
       this.flashTimer = Math.max(0, this.flashTimer - dt * 8);
-      const g = this.flashTimer * 0.55;
-      this.rubberMat.emissive.setRGB(g, g, g);
+      const g = this.flashTimer * 0.48;
+      this.rubberMat.emissive.setRGB(g, g * 0.85, g * 0.65);
     } else {
       this.rubberMat.emissive.setRGB(0, 0, 0);
     }
@@ -209,7 +295,10 @@ export class TireWeaponStackSlot {
     if (!this.active || this.broken) {
       return false;
     }
-    if (Math.abs(squadZ - this.z) < 0.85 + squadRadius * 0.35 && Math.abs(squadX - this.x) < 0.95 + squadRadius * 0.65) {
+    if (
+      Math.abs(squadZ - this.z) < 0.85 + squadRadius * 0.35 &&
+      Math.abs(squadX - this.x) < 0.95 + squadRadius * 0.65
+    ) {
       this.broken = true;
       this.active = false;
       this.root.visible = false;

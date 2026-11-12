@@ -1,67 +1,134 @@
 import * as THREE from 'three';
+import {
+  createProceduralSurfaceTextures,
+  type RoadwayTextures,
+} from './ProceduralTextures';
 
 const WATER_VERTEX_SHADER = /* glsl */ `
   uniform float uTime;
-  varying vec2 vWorldXZ;
-  varying float vWaveHeight;
+  varying vec3 vWorldPos;
+  varying float vWaveElev;
 
   void main() {
     vec4 worldPos = modelMatrix * vec4(position, 1.0);
-    float w1 = sin(worldPos.x * 0.14 + uTime * 1.6) * 0.22;
-    float w2 = cos(worldPos.z * 0.11 - uTime * 1.25) * 0.18;
-    worldPos.y += w1 + w2;
-    vWorldXZ = worldPos.xz;
-    vWaveHeight = w1 + w2;
+    float w1 = sin(worldPos.x * 0.12 + worldPos.z * 0.05 + uTime * 1.45) * 0.28;
+    float w2 = cos(worldPos.x * -0.07 + worldPos.z * 0.14 - uTime * 1.15) * 0.22;
+    float w3 = sin(worldPos.x * 0.23 - worldPos.z * 0.19 + uTime * 2.1) * 0.09;
+    worldPos.y += w1 + w2 + w3;
+    vWorldPos = worldPos.xyz;
+    vWaveElev = w1 + w2 + w3;
     gl_Position = projectionMatrix * viewMatrix * worldPos;
   }
 `;
 
 const WATER_FRAGMENT_SHADER = /* glsl */ `
   uniform float uTime;
-  varying vec2 vWorldXZ;
-  varying float vWaveHeight;
+  uniform vec3 uCamPos;
+  varying vec3 vWorldPos;
+  varying float vWaveElev;
 
   void main() {
-    vec3 deepSea = vec3(0.04, 0.22, 0.39);
-    vec3 shallowCyan = vec3(0.08, 0.48, 0.66);
-    float crest = smoothstep(-0.30, 0.34, vWaveHeight);
-    vec3 col = mix(deepSea, shallowCyan, crest);
+    vec2 p = vWorldPos.xz;
 
-    // Organic multi-octave diagonal ocean ripples (zero regular dot grid)
-    float r1 = sin(vWorldXZ.x * 0.31 + vWorldXZ.y * 0.19 + uTime * 1.9);
-    float r2 = sin(vWorldXZ.x * -0.23 + vWorldXZ.y * 0.41 - uTime * 1.45);
-    float r3 = cos(vWorldXZ.x * 0.67 - vWorldXZ.y * 0.53 + uTime * 2.6);
-    float ripple = (r1 + r2 + r3 * 0.6) / 2.6;
-    float foam = smoothstep(0.62, 0.88, ripple);
-    col = mix(col, vec3(0.68, 0.93, 1.0), foam * 0.36);
+    // Multi-directional analytic wave derivatives for crisp wind-chopped ocean normals
+    float dx =
+      0.16 * cos(p.x * 0.34 + p.y * 0.21 + uTime * 1.8) -
+      0.13 * sin(p.x * -0.27 + p.y * 0.43 - uTime * 1.4) +
+      0.09 * cos(p.x * 0.78 - p.y * 0.61 + uTime * 2.7);
+    float dz =
+      0.11 * cos(p.x * 0.34 + p.y * 0.21 + uTime * 1.8) +
+      0.18 * sin(p.x * -0.27 + p.y * 0.43 - uTime * 1.4) -
+      0.08 * cos(p.x * 0.78 - p.y * 0.61 + uTime * 2.7);
 
-    // Subtle bridge shadow band around X = 0
-    float underBridge = 1.0 - smoothstep(4.8, 9.8, abs(vWorldXZ.x));
-    col *= (1.0 - underBridge * 0.26);
+    vec3 N = normalize(vec3(-dx, 1.0, -dz));
+    vec3 V = normalize(uCamPos - vWorldPos);
+
+    // Schlick Fresnel sky reflection
+    float NoV = max(0.02, dot(N, V));
+    float fresnel = pow(1.0 - NoV, 4.0);
+
+    vec3 deepTrough = vec3(0.028, 0.068, 0.105);
+    vec3 seaBody = vec3(0.055, 0.145, 0.195);
+    vec3 skyReflect = mix(vec3(0.22, 0.26, 0.36), vec3(0.88, 0.44, 0.21), smoothstep(-0.2, 0.85, -V.z));
+
+    float crestMix = smoothstep(-0.38, 0.42, vWaveElev);
+    vec3 col = mix(deepTrough, seaBody, crestMix);
+    col = mix(col, skyReflect, clamp(fresnel * 0.78 + 0.08, 0.0, 0.88));
+
+    // Golden-Hour Sun Specular Glitter Path across the bay
+    vec3 sunDir = normalize(vec3(-0.38, 0.21, -0.90));
+    vec3 H = normalize(sunDir + V);
+    float specTight = pow(max(0.0, dot(N, H)), 96.0);
+    float specBroad = pow(max(0.0, dot(N, H)), 18.0);
+    col += vec3(1.55, 0.86, 0.38) * specTight * 1.35;
+    col += vec3(0.55, 0.26, 0.10) * specBroad * 0.42;
+
+    // Subtle whitecap foam streaks on high wave crests
+    float chop = sin(p.x * 0.63 + p.y * 0.39 + uTime * 2.1) * cos(p.x * -0.49 + p.y * 0.71 - uTime * 1.6);
+    float whitecap = smoothstep(0.32, 0.56, vWaveElev + chop * 0.22);
+    col = mix(col, vec3(0.76, 0.72, 0.68), whitecap * 0.28);
+
+    // Bridge deck shadow band directly beneath roadway (X in [-5.8, +5.8])
+    float underBridge = 1.0 - smoothstep(5.2, 10.5, abs(p.x));
+    col *= (1.0 - underBridge * 0.44);
+
+    // Distance atmospheric golden-haze blend
+    float dist = length(uCamPos.xz - p);
+    float fogFactor = 1.0 - exp(-pow(dist * 0.0046, 2.0));
+    col = mix(col, vec3(0.56, 0.31, 0.22), clamp(fogFactor, 0.0, 0.92));
 
     gl_FragColor = vec4(col, 1.0);
   }
 `;
 
 const CHUNK_LENGTH = 40;
-const CHUNK_COUNT = 10;
+const CHUNK_COUNT = 10; // 5 seamless 80m suspension catenary spans!
+
+/**
+ * Exact catenary height for each half of an 80m suspension span:
+ * - phase 0: descends from tower saddle (17.4m at localZ=0) to mid-span trough (3.65m at localZ=-40)
+ * - phase 1: ascends symmetrically from mid-span trough (3.65m at localZ=0) to next tower saddle (17.4m at localZ=-40)
+ */
+function sampleCatenaryY(spanPhase: 0 | 1, localZ: number): number {
+  const u = Math.max(0, Math.min(1, -localZ / CHUNK_LENGTH));
+  const sag = spanPhase === 0 ? 1 - u : u;
+  return 3.65 + 13.75 * sag * sag;
+}
+
+function createCatenaryCableGeometry(spanPhase: 0 | 1, sideX: number): THREE.TubeGeometry {
+  const pts: THREE.Vector3[] = [];
+  const steps = 16;
+  for (let s = 0; s <= steps; s++) {
+    const lz = -(s / steps) * CHUNK_LENGTH;
+    pts.push(new THREE.Vector3(sideX, sampleCatenaryY(spanPhase, lz), lz));
+  }
+  const curve = new THREE.CatmullRomCurve3(pts);
+  return new THREE.TubeGeometry(curve, 20, 0.17, 8, false);
+}
 
 export class BridgeEnvironment {
   public readonly root = new THREE.Group();
+  public readonly textures: RoadwayTextures;
   private readonly waterMesh: THREE.Mesh;
-  private readonly waterUniforms: { uTime: { value: number } };
+  private readonly waterUniforms: {
+    uTime: { value: number };
+    uCamPos: { value: THREE.Vector3 };
+  };
   private readonly chunks: THREE.Group[] = [];
   private readonly bossPlatform: THREE.Group;
   private readonly atmospherePoints: THREE.Points;
   private readonly motePositions: Float32Array;
-  private readonly moteCount = 140;
+  private readonly moteCount = 160;
 
   constructor() {
-    // 1. Stylized Animated Ocean Water
+    this.textures = createProceduralSurfaceTextures();
+
+    // 1. Realistic Golden-Hour Fresnel & Specular Ocean Water
     this.waterUniforms = {
       uTime: { value: 0 },
+      uCamPos: { value: new THREE.Vector3(0, 9, 14) },
     };
-    const waterGeo = new THREE.PlaneGeometry(340, 520, 56, 72);
+    const waterGeo = new THREE.PlaneGeometry(420, 560, 72, 96);
     waterGeo.rotateX(-Math.PI / 2);
     const waterMat = new THREE.ShaderMaterial({
       vertexShader: WATER_VERTEX_SHADER,
@@ -69,65 +136,133 @@ export class BridgeEnvironment {
       uniforms: this.waterUniforms,
     });
     this.waterMesh = new THREE.Mesh(waterGeo, waterMat);
-    this.waterMesh.position.set(0, -4.4, -140);
+    this.waterMesh.position.set(0, -4.6, -140);
     this.root.add(this.waterMesh);
 
-    // Shared Bridge Materials
+    // Shared Gritty Tactical PBR Bridge Materials
     const deckMat = new THREE.MeshStandardMaterial({
-      color: 0x2a3340,
-      roughness: 0.78,
-      metalness: 0.12,
+      map: this.textures.albedo,
+      bumpMap: this.textures.bump,
+      bumpScale: 0.045,
+      roughnessMap: this.textures.roughness,
+      roughness: 0.88,
+      metalness: 0.14,
     });
-    const curbMat = new THREE.MeshStandardMaterial({
-      color: 0xf4b93b,
-      roughness: 0.5,
-      metalness: 0.2,
-    });
-    const railMat = new THREE.MeshStandardMaterial({
-      color: 0x8fa1b5,
-      roughness: 0.35,
-      metalness: 0.68,
-    });
-    const towerMat = new THREE.MeshStandardMaterial({
-      color: 0xd9483b,
-      roughness: 0.42,
-      metalness: 0.35,
-    });
-    const laneDashMat = new THREE.MeshBasicMaterial({ color: 0xe6edf5 });
 
-    // 2. Modular Recycling Suspension Bridge Chunks
+    const concreteBarrierMat = new THREE.MeshStandardMaterial({
+      color: 0x5c626b,
+      bumpMap: this.textures.bump,
+      bumpScale: 0.03,
+      roughness: 0.85,
+      metalness: 0.08,
+    });
+
+    const curbMat = new THREE.MeshStandardMaterial({
+      map: this.textures.hazardCurb,
+      roughness: 0.58,
+      metalness: 0.18,
+    });
+
+    const gunmetalMat = new THREE.MeshStandardMaterial({
+      color: 0x434c56,
+      bumpMap: this.textures.steelPlate,
+      bumpScale: 0.025,
+      roughness: 0.36,
+      metalness: 0.78,
+    });
+
+    const cableSteelMat = new THREE.MeshStandardMaterial({
+      color: 0x6b7682,
+      roughness: 0.32,
+      metalness: 0.84,
+    });
+
+    const towerMat = new THREE.MeshStandardMaterial({
+      color: 0x9e3426,
+      bumpMap: this.textures.steelPlate,
+      bumpScale: 0.035,
+      roughness: 0.46,
+      metalness: 0.52,
+    });
+
+    const lampGlowMat = new THREE.MeshStandardMaterial({
+      color: 0xffd28a,
+      emissive: 0xff9b38,
+      emissiveIntensity: 2.1,
+      roughness: 0.2,
+    });
+
+    const beaconGlowMat = new THREE.MeshStandardMaterial({
+      color: 0xff4d4d,
+      emissive: 0xff1e26,
+      emissiveIntensity: 2.6,
+      roughness: 0.2,
+    });
+
+    // Shared catenary cable geometries for phase 0 & phase 1
+    const catenaryGeos: Record<0 | 1, [THREE.TubeGeometry, THREE.TubeGeometry]> = {
+      0: [createCatenaryCableGeometry(0, -6.05), createCatenaryCableGeometry(0, 6.05)],
+      1: [createCatenaryCableGeometry(1, -6.05), createCatenaryCableGeometry(1, 6.05)],
+    };
+
+    // 2. Modular Recycling 80m-Paired Suspension Bridge Chunks
     for (let i = 0; i < CHUNK_COUNT; i++) {
+      const spanPhase: 0 | 1 = (i % 2) as 0 | 1;
       const chunk = this.createBridgeChunk(
-        i % 2 === 1,
+        spanPhase,
+        catenaryGeos[spanPhase],
         deckMat,
+        concreteBarrierMat,
         curbMat,
-        railMat,
+        gunmetalMat,
+        cableSteelMat,
         towerMat,
-        laneDashMat
+        lampGlowMat,
+        beaconGlowMat
       );
-      chunk.position.z = 20 - i * CHUNK_LENGTH;
+      chunk.position.z = 40 - i * CHUNK_LENGTH;
       this.chunks.push(chunk);
       this.root.add(chunk);
     }
 
-    // 3. Widened Armored Boss Platform
-    this.bossPlatform = this.createBossPlatform(deckMat, curbMat, towerMat);
+    // 3. Widened Armored Boss Bastion Platform
+    this.bossPlatform = this.createBossPlatform(
+      deckMat,
+      concreteBarrierMat,
+      curbMat,
+      gunmetalMat,
+      towerMat,
+      lampGlowMat
+    );
     this.root.add(this.bossPlatform);
 
-    // 4. Subtle Drifting Atmospheric Motes
+    // 4. Drifting Golden-Hour Battle Embers & Ash Motes
     this.motePositions = new Float32Array(this.moteCount * 3);
+    const moteColors = new Float32Array(this.moteCount * 3);
+    const cEmber = new THREE.Color();
     for (let i = 0; i < this.moteCount; i++) {
       this.motePositions[i * 3] = ((i * 37) % 36) - 18;
-      this.motePositions[i * 3 + 1] = 0.6 + ((i * 19) % 10) * 0.9;
+      this.motePositions[i * 3 + 1] = 0.4 + ((i * 19) % 11) * 0.85;
       this.motePositions[i * 3 + 2] = -((i * 29) % 140) + 15;
+
+      if (i % 3 === 0) {
+        cEmber.setHex(0xff9f43); // Glowing ember spark
+      } else {
+        cEmber.setHex(0xdcc6b4); // Warm sunlit dust/ash
+      }
+      moteColors[i * 3] = cEmber.r;
+      moteColors[i * 3 + 1] = cEmber.g;
+      moteColors[i * 3 + 2] = cEmber.b;
     }
     const moteGeo = new THREE.BufferGeometry();
     moteGeo.setAttribute('position', new THREE.BufferAttribute(this.motePositions, 3));
+    moteGeo.setAttribute('color', new THREE.BufferAttribute(moteColors, 3));
     const moteMat = new THREE.PointsMaterial({
-      color: 0xd8f6ff,
       size: 0.16,
+      vertexColors: true,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.72,
+      blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
     this.atmospherePoints = new THREE.Points(moteGeo, moteMat);
@@ -135,69 +270,158 @@ export class BridgeEnvironment {
   }
 
   private createBridgeChunk(
-    includeSuspensionTower: boolean,
+    spanPhase: 0 | 1,
+    catenaryPair: [THREE.TubeGeometry, THREE.TubeGeometry],
     deckMat: THREE.Material,
+    concreteBarrierMat: THREE.Material,
     curbMat: THREE.Material,
-    railMat: THREE.Material,
+    gunmetalMat: THREE.Material,
+    cableSteelMat: THREE.Material,
     towerMat: THREE.Material,
-    laneDashMat: THREE.Material
+    lampGlowMat: THREE.Material,
+    beaconGlowMat: THREE.Material
   ): THREE.Group {
     const group = new THREE.Group();
 
-    // Roadway deck (playable width = 10.0m across [-5, +5], outer deck = 11.4m)
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(11.4, 0.7, CHUNK_LENGTH), deckMat);
-    deck.position.set(0, -0.35, -CHUNK_LENGTH / 2);
+    // Weathered Asphalt Roadway Deck + Underside Steel Box Girder
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(11.5, 0.55, CHUNK_LENGTH), deckMat);
+    deck.position.set(0, -0.275, -CHUNK_LENGTH / 2);
+    deck.receiveShadow = true;
     group.add(deck);
 
-    // Left & Right hazard curbs + guardrails
-    for (const sign of [-1, 1]) {
-      const curb = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.22, CHUNK_LENGTH), curbMat);
-      curb.position.set(sign * 5.25, 0.11, -CHUNK_LENGTH / 2);
+    const underGirder = new THREE.Mesh(
+      new THREE.BoxGeometry(12.2, 1.05, CHUNK_LENGTH),
+      gunmetalMat
+    );
+    underGirder.position.set(0, -1.05, -CHUNK_LENGTH / 2);
+    group.add(underGirder);
+
+    // True Sweeping Parabolic Main Suspension Cables (Left & Right)
+    const mainCableL = new THREE.Mesh(catenaryPair[0], cableSteelMat);
+    const mainCableR = new THREE.Mesh(catenaryPair[1], cableSteelMat);
+    mainCableL.castShadow = true;
+    mainCableR.castShadow = true;
+    group.add(mainCableL, mainCableR);
+
+    // Hazard Curbs, Concrete K-Rail Jersey Barriers, Steel Guardrails, Suspender Ropes & Streetlamps
+    for (let sideIdx = 0; sideIdx < 2; sideIdx++) {
+      const sign = sideIdx === 0 ? -1 : 1;
+
+      // Diagonal Yellow/Black Hazard Curb Strip
+      const curb = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.18, CHUNK_LENGTH), curbMat);
+      curb.position.set(sign * 5.18, 0.09, -CHUNK_LENGTH / 2);
+      curb.receiveShadow = true;
       group.add(curb);
 
-      const topRail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.14, CHUNK_LENGTH), railMat);
-      topRail.position.set(sign * 5.52, 0.72, -CHUNK_LENGTH / 2);
-      group.add(topRail);
+      // Sloped Concrete Jersey Barrier Wall
+      const kRailBase = new THREE.Mesh(
+        new THREE.BoxGeometry(0.46, 0.52, CHUNK_LENGTH),
+        concreteBarrierMat
+      );
+      kRailBase.position.set(sign * 5.54, 0.26, -CHUNK_LENGTH / 2);
+      kRailBase.castShadow = true;
+      kRailBase.receiveShadow = true;
+      group.add(kRailBase);
 
-      for (let pz = -4; pz >= -CHUNK_LENGTH + 2; pz -= 6) {
-        const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.75, 0.16), railMat);
-        post.position.set(sign * 5.52, 0.38, pz);
-        group.add(post);
+      const topSteelRail = new THREE.Mesh(
+        new THREE.BoxGeometry(0.16, 0.12, CHUNK_LENGTH),
+        gunmetalMat
+      );
+      topSteelRail.position.set(sign * 5.62, 0.88, -CHUNK_LENGTH / 2);
+      group.add(topSteelRail);
+
+      for (let pz = -3; pz >= -CHUNK_LENGTH + 2; pz -= 5) {
+        const stanchion = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.45, 0.14), gunmetalMat);
+        stanchion.position.set(sign * 5.62, 0.68, pz);
+        group.add(stanchion);
       }
 
-      // Vertical suspension cables
-      for (let cz = -5; cz >= -CHUNK_LENGTH + 3; cz -= 10) {
-        const distNorm = Math.abs((cz + CHUNK_LENGTH / 2) / (CHUNK_LENGTH / 2));
-        const cableH = 5.5 + distNorm * 4.5;
-        const cable = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.035, 0.035, cableH, 6),
-          railMat
+      // Twin Vertical Steel Suspender Ropes hanging accurately from the Main Catenary Curve!
+      for (let cz = -4; cz >= -CHUNK_LENGTH + 3; cz -= 8) {
+        const catY = sampleCatenaryY(spanPhase, cz);
+        const ropeH = Math.max(1.0, catY - 0.5);
+        const rope = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.032, 0.032, ropeH, 6),
+          cableSteelMat
         );
-        cable.position.set(sign * 5.8, cableH / 2, cz);
-        group.add(cable);
+        rope.position.set(sign * 6.05, 0.5 + ropeH * 0.5, cz);
+        group.add(rope);
+
+        const clamp = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.22, 0.22, 0.24, 8),
+          gunmetalMat
+        );
+        clamp.rotation.x = Math.PI / 2;
+        clamp.position.set(sign * 6.05, catY, cz);
+        group.add(clamp);
       }
+
+      // Tactical Overhead Highway Streetlamp Pole (one per 40m span on each side)
+      const lampZ = -20;
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 6.2, 8), gunmetalMat);
+      pole.position.set(sign * 5.72, 3.1, lampZ);
+      pole.castShadow = true;
+      group.add(pole);
+
+      const mastArm = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.1, 0.12), gunmetalMat);
+      mastArm.position.set(sign * 5.05, 6.12, lampZ);
+      mastArm.rotation.z = -sign * 0.12;
+      group.add(mastArm);
+
+      const lampHead = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.09, 0.24), lampGlowMat);
+      lampHead.position.set(sign * 4.42, 6.0, lampZ);
+      group.add(lampHead);
     }
 
-    // Crisp center dashed lane line (dividing Left & Right gate lanes)
-    for (let dz = -2.5; dz >= -CHUNK_LENGTH + 2; dz -= 5) {
-      const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 2.6), laneDashMat);
-      dash.rotation.x = -Math.PI / 2;
-      dash.position.set(0, 0.015, dz);
-      group.add(dash);
-    }
+    // Iconic Riveted Steel Suspension Tower + X-Trusses + Concrete Sea Pier at localZ = 0 of Phase 0
+    if (spanPhase === 0) {
+      // Concrete sea caisson pier beneath tower
+      const pier = new THREE.Mesh(
+        new THREE.BoxGeometry(15.6, 4.2, 3.4),
+        concreteBarrierMat
+      );
+      pier.position.set(0, -3.4, 0);
+      group.add(pier);
 
-    // Iconic Suspension Tower Pair
-    if (includeSuspensionTower) {
       for (const sign of [-1, 1]) {
-        const leg = new THREE.Mesh(new THREE.BoxGeometry(1.15, 18.5, 1.35), towerMat);
-        leg.position.set(sign * 6.2, 6.8, -CHUNK_LENGTH / 2);
-        group.add(leg);
+        // Stepped Industrial Tower Legs
+        const lowerLeg = new THREE.Mesh(new THREE.BoxGeometry(1.55, 11.5, 1.75), towerMat);
+        lowerLeg.position.set(sign * 6.05, 4.2, 0);
+        lowerLeg.castShadow = true;
+        lowerLeg.receiveShadow = true;
+        group.add(lowerLeg);
+
+        const upperLeg = new THREE.Mesh(new THREE.BoxGeometry(1.22, 9.2, 1.4), towerMat);
+        upperLeg.position.set(sign * 6.05, 13.6, 0);
+        upperLeg.castShadow = true;
+        group.add(upperLeg);
+
+        // Steel Cable Saddle & Aviation Warning Beacon on Peak
+        const saddle = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.55, 1.65), gunmetalMat);
+        saddle.position.set(sign * 6.05, 18.25, 0);
+        group.add(saddle);
+
+        const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), beaconGlowMat);
+        beacon.position.set(sign * 6.05, 18.72, 0);
+        group.add(beacon);
       }
-      const crossBeamHigh = new THREE.Mesh(new THREE.BoxGeometry(13.6, 1.1, 1.1), towerMat);
-      crossBeamHigh.position.set(0, 13.8, -CHUNK_LENGTH / 2);
-      const crossBeamMid = new THREE.Mesh(new THREE.BoxGeometry(13.6, 0.85, 0.95), towerMat);
-      crossBeamMid.position.set(0, 9.2, -CHUNK_LENGTH / 2);
-      group.add(crossBeamHigh, crossBeamMid);
+
+      // Portal Crossbeams + Diagonal Steel X-Bracing Trusses
+      for (const beamY of [8.8, 13.2, 17.1]) {
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(13.4, 0.92, 1.15), towerMat);
+        beam.position.set(0, beamY, 0);
+        beam.castShadow = true;
+        group.add(beam);
+      }
+
+      for (const bayMidY of [11.0, 15.15]) {
+        for (const diagSign of [-1, 1]) {
+          const strut = new THREE.Mesh(new THREE.BoxGeometry(11.6, 0.26, 0.34), gunmetalMat);
+          strut.position.set(0, bayMidY, 0);
+          strut.rotation.z = diagSign * 0.32;
+          group.add(strut);
+        }
+      }
     }
 
     return group;
@@ -205,22 +429,48 @@ export class BridgeEnvironment {
 
   private createBossPlatform(
     deckMat: THREE.Material,
+    concreteBarrierMat: THREE.Material,
     curbMat: THREE.Material,
-    towerMat: THREE.Material
+    gunmetalMat: THREE.Material,
+    towerMat: THREE.Material,
+    lampGlowMat: THREE.Material
   ): THREE.Group {
     const group = new THREE.Group();
-    const pad = new THREE.Mesh(new THREE.BoxGeometry(15.6, 0.82, 28), deckMat);
-    pad.position.set(0, -0.38, -12);
+
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(16.2, 0.84, 30), deckMat);
+    pad.position.set(0, -0.39, -13);
+    pad.receiveShadow = true;
     group.add(pad);
 
     for (const sign of [-1, 1]) {
-      const border = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.35, 28), curbMat);
-      border.position.set(sign * 7.45, 0.17, -12);
-      group.add(border);
+      const blastWall = new THREE.Mesh(
+        new THREE.BoxGeometry(0.75, 0.85, 30),
+        concreteBarrierMat
+      );
+      blastWall.position.set(sign * 7.7, 0.42, -13);
+      blastWall.castShadow = true;
+      blastWall.receiveShadow = true;
+      group.add(blastWall);
 
-      const pylon = new THREE.Mesh(new THREE.BoxGeometry(1.3, 9.5, 1.3), towerMat);
-      pylon.position.set(sign * 7.5, 4.5, -24);
+      const hazardStrip = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.24, 30), curbMat);
+      hazardStrip.position.set(sign * 7.15, 0.12, -13);
+      group.add(hazardStrip);
+
+      // Heavy Armored Bastion Pylons + Floodlights
+      const pylon = new THREE.Mesh(new THREE.BoxGeometry(1.55, 10.5, 1.65), towerMat);
+      pylon.position.set(sign * 7.65, 5.0, -25);
+      pylon.castShadow = true;
       group.add(pylon);
+
+      const floodBox = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.55, 0.45), gunmetalMat);
+      floodBox.position.set(sign * 7.3, 9.4, -24.2);
+      floodBox.rotation.x = 0.35;
+      group.add(floodBox);
+
+      const floodLens = new THREE.Mesh(new THREE.PlaneGeometry(0.92, 0.38), lampGlowMat);
+      floodLens.position.set(sign * 7.3, 9.32, -23.95);
+      floodLens.rotation.x = 0.35;
+      group.add(floodLens);
     }
 
     return group;
@@ -231,34 +481,47 @@ export class BridgeEnvironment {
   }
 
   /**
-   * Zero-allocation per-frame update recycling modular bridge spans & ocean position around cameraZ.
+   * Zero-allocation per-frame update recycling 80m-paired bridge spans & ocean position around camera.
    */
-  public update(dt: number, elapsedSeconds: number, squadZ: number): void {
+  public update(
+    dt: number,
+    elapsedSeconds: number,
+    squadZ: number,
+    camPos?: THREE.Vector3
+  ): void {
     this.waterUniforms.uTime.value = elapsedSeconds;
+    if (camPos) {
+      this.waterUniforms.uCamPos.value.copy(camPos);
+    }
     this.waterMesh.position.z = squadZ - 130;
 
-    // Recycle chunks smoothly ahead of the squad so Endless Mode & long stages never run out of bridge
+    // Recycle chunks by totalSpan (400m = 5 * 80m) so catenary phase 0/1 pairs stay 100% seamless!
     const totalSpan = CHUNK_COUNT * CHUNK_LENGTH;
     for (let i = 0; i < this.chunks.length; i++) {
       const chunk = this.chunks[i];
-      if (chunk.position.z - CHUNK_LENGTH > squadZ + 38) {
+      if (chunk.position.z - CHUNK_LENGTH > squadZ + 50) {
         chunk.position.z -= totalSpan;
-      } else if (chunk.position.z < squadZ - totalSpan + 38) {
+      } else if (chunk.position.z < squadZ - totalSpan + 50) {
         chunk.position.z += totalSpan;
       }
     }
 
-    // Drift atmospheric motes cleanly around squadZ
+    // Drift golden embers & battlefield ash cleanly across the bridge
     const posAttr = this.atmospherePoints.geometry.getAttribute(
       'position'
     ) as THREE.BufferAttribute;
     for (let i = 0; i < this.moteCount; i++) {
       const base = i * 3;
-      let mx = this.motePositions[base] + dt * 0.45;
+      let mx = this.motePositions[base] + dt * (0.85 + (i % 4) * 0.22);
       if (mx > 18) {
         mx = -18;
       }
       this.motePositions[base] = mx;
+
+      let my = this.motePositions[base + 1] + Math.sin(elapsedSeconds * 2.0 + i) * dt * 0.25;
+      if (my < 0.3) my = 8.5;
+      if (my > 9.5) my = 0.4;
+      this.motePositions[base + 1] = my;
 
       let mz = this.motePositions[base + 2];
       if (mz > squadZ + 22) {

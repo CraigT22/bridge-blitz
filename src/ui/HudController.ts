@@ -115,11 +115,26 @@ export class HudController {
       this.bossTicks.push(tick);
     }
 
+    // Adapt deploy & summary copy cleanly between mobile touchscreens and desktop keyboards
+    const isCoarseTouch =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(pointer: coarse)').matches;
+    const startMainEl = document.getElementById('label-start-main');
+    const startSubEl = document.getElementById('label-start-sub');
+    if (startMainEl && startSubEl && !isCoarseTouch) {
+      startMainEl.textContent = 'DEPLOY SQUAD · TAP OR SPACE';
+      startSubEl.textContent = 'Drag, A / D, Arrow Keys, or Gamepad to Steer';
+    }
+
     this.bindUiEvents();
   }
 
   private bindUiEvents(): void {
-    mustEl<HTMLButtonElement>('btn-start-march').addEventListener('click', (e) => {
+    const startBtn = mustEl<HTMLButtonElement>('btn-start-march');
+    startBtn.addEventListener('pointerdown', () => {
+      this.actions.onStartMarch();
+    });
+    startBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.actions.onStartMarch();
     });
@@ -224,13 +239,16 @@ export class HudController {
   public showSummaryModal(summary: RunSummary): void {
     this.summaryModalEl.classList.remove('is-hidden');
     const isVictory = summary.outcome === 'VICTORY';
+    const isCoarseTouch =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(pointer: coarse)').matches;
 
     this.summaryKickerEl.textContent =
       summary.mode === 'ENDLESS'
         ? `ENDLESS BRIDGE · WAVE ${summary.stageNumber}`
-        : `STAGE ${summary.stageNumber} REPORT`;
+        : `STAGE ${summary.stageNumber} AFTER-ACTION REPORT`;
 
-    this.summaryTitleEl.textContent = isVictory ? 'STAGE CLEARED!' : 'SQUAD WIPED OUT';
+    this.summaryTitleEl.textContent = isVictory ? 'SECTOR SECURED!' : 'SQUAD WIPED OUT';
     this.summaryTitleEl.className = `summary-card__title ${
       isVictory ? 'summary-card__title--victory' : 'summary-card__title--defeat'
     }`;
@@ -246,9 +264,10 @@ export class HudController {
     this.summaryCoinMultEl.textContent = `×${summary.warChestMultiplier.toFixed(2)}`;
     this.summaryCoinTotalEl.textContent = `+${summary.totalCoinsEarned} COINS`;
 
+    const suffix = isCoarseTouch ? '' : ' (SPACE)';
     this.summaryContinueBtn.textContent = isVictory
-      ? 'NEXT STAGE (SPACE)'
-      : 'UPGRADE & RETRY (SPACE)';
+      ? `DEPLOY NEXT SECTOR${suffix}`
+      : `UPGRADE & REDEPLOY${suffix}`;
   }
 
   public syncSaveState(save: SaveDataV1, stageTitle: string, endlessWave: number): void {

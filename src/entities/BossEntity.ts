@@ -20,6 +20,7 @@ export class BossEntity {
   private lastFootstepCycle = 0;
   private hitFlash = 0;
   private slamTimer = 0;
+  private barrelSpin = 0;
 
   constructor(scene: THREE.Scene) {
     this.rig = createBossMechRig();
@@ -42,7 +43,11 @@ export class BossEntity {
     this.lastFootstepCycle = 0;
     this.hitFlash = 0;
     this.slamTimer = 0;
+    this.barrelSpin = 0;
 
+    this.rig.leftLeg.rotation.set(0, 0, 0);
+    this.rig.rightLeg.rotation.set(0, 0, 0);
+    this.rig.torsoGroup.rotation.set(0, 0, 0);
     this.rig.root.position.set(this.x, 0, this.z);
     this.rig.root.visible = true;
     this.applyFlash(0);
@@ -54,15 +59,15 @@ export class BossEntity {
   }
 
   private applyFlash(amount: number): void {
-    const g = amount * 0.7;
+    const g = amount * 0.72;
     for (let i = 0; i < this.rig.flashMaterials.length; i++) {
-      this.rig.flashMaterials[i].emissive.setRGB(g, g * 0.85, g * 0.85);
+      this.rig.flashMaterials[i].emissive.setRGB(g, g * 0.78, g * 0.65);
     }
   }
 
   /**
    * Advances the Boss during BOSS_FIGHT.
-   * Returns `{ footstepShake, slamSoldierLoss }` without allocating objects by writing to scalar fields.
+   * Exposes scalar flags without allocating objects per frame.
    */
   public lastStepTriggeredShake = false;
   public lastStepSlamDamage = 0;
@@ -86,17 +91,26 @@ export class BossEntity {
       this.applyFlash(this.hitFlash);
     }
 
+    // Spin twin 6-barrel rotary Vulcan cannons (high-RPM during Boss Fight!)
+    this.barrelSpin += dt * (inBossFight ? 18.0 : 3.2);
+    this.rig.leftGatlingSpin.rotation.z = this.barrelSpin;
+    this.rig.rightGatlingSpin.rotation.z = -this.barrelSpin;
+
+    // Pulse ground threat ring
+    const ringPulse = 1 + Math.sin(this.barrelSpin * 0.35) * 0.06;
+    this.rig.hazardRing.scale.set(ringPulse, ringPulse, 1);
+
     if (!inBossFight) {
-      // Subtle idle breathing on platform before squad arrives
+      // Heavy hydraulic idle breathing on platform before squad arrives
       this.walkPhase += dt * 2.2;
       this.rig.torsoGroup.position.y = 1.55 + Math.sin(this.walkPhase) * 0.05;
+      this.rig.torsoGroup.rotation.x = 0;
       return;
     }
 
     const stopZ = squadZ - 2.1;
     if (this.z < stopZ) {
       this.z = Math.min(stopZ, this.z + this.advanceSpeed * dt);
-      // Track squad laterally very slightly so Boss looms directly toward the army
       const dx = squadX - this.x;
       this.x += Math.sign(dx) * Math.min(Math.abs(dx), 1.35 * dt);
 
@@ -107,12 +121,14 @@ export class BossEntity {
         this.lastStepTriggeredShake = true;
       }
 
-      const swing = Math.sin(this.walkPhase) * 0.35;
+      const swing = Math.sin(this.walkPhase) * 0.36;
       this.rig.leftLeg.rotation.x = swing;
       this.rig.rightLeg.rotation.x = -swing;
-      this.rig.torsoGroup.position.y = 1.55 + Math.abs(Math.cos(this.walkPhase)) * 0.1;
+      this.rig.torsoGroup.position.y = 1.55 + Math.abs(Math.cos(this.walkPhase)) * 0.11;
+      this.rig.torsoGroup.rotation.x = 0.06 + Math.abs(Math.sin(this.walkPhase)) * 0.04;
+      this.rig.torsoGroup.rotation.z = Math.sin(this.walkPhase) * 0.035;
     } else if (currentSquad > 0) {
-      // Boss has reached melee range — slam attack wipes soldiers rapidly!
+      // Boss has reached melee range — hydraulic slam attack wipes soldiers rapidly!
       this.slamTimer -= dt;
       if (this.slamTimer <= 0) {
         this.slamTimer = 0.16;
@@ -120,6 +136,7 @@ export class BossEntity {
         this.lastStepSlamDamage = Math.max(2, Math.ceil(currentSquad * 0.28));
       }
       this.rig.torsoGroup.position.y = 1.55 + Math.sin(this.slamTimer * 35) * 0.18;
+      this.rig.torsoGroup.rotation.x = 0.14 + Math.sin(this.slamTimer * 35) * 0.08;
     }
 
     this.rig.root.position.set(this.x, 0, this.z);

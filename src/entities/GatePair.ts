@@ -12,6 +12,7 @@ interface SingleLaneGateSlot {
   readonly entityId: number;
   readonly group: THREE.Group;
   readonly panelMesh: THREE.Mesh;
+  readonly ledMat: THREE.MeshBasicMaterial;
   readonly padlockGroup: THREE.Group;
   readonly labelTex: EditableGateTexture;
   active: boolean;
@@ -46,8 +47,8 @@ export interface GateSquadCollectEvent {
   readonly positive: boolean;
 }
 
-const LANE_WIDTH = 4.75;
-const PANEL_HEIGHT = 2.85;
+const LANE_WIDTH = 4.72;
+const PANEL_HEIGHT = 2.86;
 
 export class GatePairSlot {
   public readonly root = new THREE.Group();
@@ -59,21 +60,83 @@ export class GatePairSlot {
   private readonly rightSlot: SingleLaneGateSlot;
 
   constructor(pairIndex: number) {
-    const pillarMat = new THREE.MeshStandardMaterial({
-      color: 0xb8c7d9,
-      metalness: 0.78,
-      roughness: 0.26,
+    const gunmetalMat = new THREE.MeshStandardMaterial({
+      color: 0x2c3540,
+      metalness: 0.82,
+      roughness: 0.32,
+    });
+    const steelTrimMat = new THREE.MeshStandardMaterial({
+      color: 0x738294,
+      metalness: 0.86,
+      roughness: 0.24,
+    });
+    const hazardFootMat = new THREE.MeshStandardMaterial({
+      color: 0xd49424,
+      metalness: 0.45,
+      roughness: 0.48,
     });
 
-    // Left, Center, Right metallic framing pillars + top crossbar
-    for (const px of [-4.95, 0, 4.95]) {
-      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.24, 3.2, 0.28), pillarMat);
-      pillar.position.set(px, 1.6, 0);
-      this.root.add(pillar);
+    // Heavy Industrial Tactical Gantry Stanchions (Left, Center, Right)
+    for (const px of [-4.96, 0, 4.96]) {
+      const footing = new THREE.Mesh(
+        new THREE.BoxGeometry(0.56, 0.24, 0.66),
+        gunmetalMat
+      );
+      footing.position.set(px, 0.12, 0);
+      footing.castShadow = true;
+      footing.receiveShadow = true;
+
+      const hazardCollar = new THREE.Mesh(
+        new THREE.BoxGeometry(0.46, 0.14, 0.54),
+        hazardFootMat
+      );
+      hazardCollar.position.set(px, 0.3, 0);
+      hazardCollar.castShadow = true;
+
+      const post = new THREE.Mesh(
+        new THREE.BoxGeometry(0.28, 3.16, 0.34),
+        gunmetalMat
+      );
+      post.position.set(px, 1.72, 0);
+      post.castShadow = true;
+      post.receiveShadow = true;
+
+      const flange = new THREE.Mesh(
+        new THREE.BoxGeometry(0.34, 2.85, 0.12),
+        steelTrimMat
+      );
+      flange.position.set(px, 1.72, 0);
+
+      this.root.add(footing, hazardCollar, post, flange);
     }
-    const topBar = new THREE.Mesh(new THREE.BoxGeometry(10.15, 0.22, 0.3), pillarMat);
-    topBar.position.set(0, 3.16, 0);
-    this.root.add(topBar);
+
+    // Overhead Armored Holo-Projector Gantry Beam
+    const topBeam = new THREE.Mesh(
+      new THREE.BoxGeometry(10.35, 0.28, 0.42),
+      gunmetalMat
+    );
+    topBeam.position.set(0, 3.26, 0);
+    topBeam.castShadow = true;
+    topBeam.receiveShadow = true;
+    this.root.add(topBeam);
+
+    const topRail = new THREE.Mesh(
+      new THREE.BoxGeometry(10.42, 0.08, 0.48),
+      steelTrimMat
+    );
+    topRail.position.set(0, 3.43, 0);
+    this.root.add(topRail);
+
+    // Downward Holo-Projector Hoods centered above each lane
+    for (const lx of [-2.48, 2.48]) {
+      const emitterHood = new THREE.Mesh(
+        new THREE.BoxGeometry(1.55, 0.18, 0.52),
+        steelTrimMat
+      );
+      emitterHood.position.set(lx, 3.14, 0);
+      emitterHood.castShadow = true;
+      this.root.add(emitterHood);
+    }
 
     this.leftSlot = this.createLaneSlot(pairIndex * 2 + 100, -2.48);
     this.rightSlot = this.createLaneSlot(pairIndex * 2 + 101, 2.48);
@@ -91,12 +154,31 @@ export class GatePairSlot {
       side: THREE.DoubleSide,
       depthWrite: false,
     });
-    const panelMesh = new THREE.Mesh(new THREE.PlaneGeometry(LANE_WIDTH, PANEL_HEIGHT), panelMat);
-    panelMesh.position.set(0, 1.52, 0);
+    const panelMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(LANE_WIDTH, PANEL_HEIGHT),
+      panelMat
+    );
+    panelMesh.position.set(0, 1.56, 0);
     group.add(panelMesh);
 
+    // Glowing HDR Side Emitter Bars flanking the holographic energy field
+    const ledMat = new THREE.MeshBasicMaterial({
+      color: 0x48ffa7,
+    });
+    const barGeo = new THREE.BoxGeometry(0.065, 2.68, 0.09);
+    const barL = new THREE.Mesh(barGeo, ledMat);
+    barL.position.set(-2.32, 1.56, 0);
+    const barR = new THREE.Mesh(barGeo, ledMat);
+    barR.position.set(2.32, 1.56, 0);
+    const emitterLens = new THREE.Mesh(
+      new THREE.BoxGeometry(1.32, 0.06, 0.24),
+      ledMat
+    );
+    emitterLens.position.set(0, 3.04, 0);
+    group.add(barL, barR, emitterLens);
+
     const padlockGroup = createPadlockMesh();
-    padlockGroup.position.set(0, 3.38, 0.08);
+    padlockGroup.position.set(0, 3.55, 0.12);
     group.add(padlockGroup);
 
     this.root.add(group);
@@ -105,6 +187,7 @@ export class GatePairSlot {
       entityId,
       group,
       panelMesh,
+      ledMat,
       padlockGroup,
       labelTex,
       active: false,
@@ -116,6 +199,18 @@ export class GatePairSlot {
       ringProgress: 0,
       flashTimer: 0,
     };
+  }
+
+  private syncLedColor(slot: SingleLaneGateSlot): void {
+    if (slot.isLocked && slot.operator === 'MUL') {
+      slot.ledMat.color.setRGB(1.4, 1.02, 0.28);
+    } else if (slot.isLocked && slot.operator === 'DIV') {
+      slot.ledMat.color.setRGB(1.45, 0.28, 0.24);
+    } else if (slot.value < 0) {
+      slot.ledMat.color.setRGB(1.4, 0.26, 0.38);
+    } else {
+      slot.ledMat.color.setRGB(0.28, 1.38, 0.82);
+    }
   }
 
   public configure(def: GatePairDefinition): void {
@@ -145,6 +240,7 @@ export class GatePairSlot {
     slot.ringProgress = 0;
     slot.flashTimer = 0;
     slot.padlockGroup.visible = def.isLocked;
+    this.syncLedColor(slot);
     slot.labelTex.redrawIfDirty(def.operator, def.initialValue, def.isLocked, 0, 0);
   }
 
@@ -154,9 +250,18 @@ export class GatePairSlot {
     this.root.visible = false;
   }
 
-  public updateVisuals(dt: number): void {
+  public updateVisuals(dt: number, squadZ: number): void {
     if (!this.active) {
       return;
+    }
+    // Retract passed gate gantries cleanly beneath the deck so they never block trailing 20:9 portrait cameras
+    if (this.triggered || squadZ < this.z - 2.3) {
+      this.triggered = true;
+      this.root.position.y -= dt * 18.0;
+      if (this.root.position.y <= -3.9 || squadZ < this.z - 5.2) {
+        this.hide();
+        return;
+      }
     }
     this.tickSide(this.leftSlot, dt);
     this.tickSide(this.rightSlot, dt);
@@ -188,7 +293,6 @@ export class GatePairSlot {
     if (!this.active || this.triggered) {
       return null;
     }
-    // Check Z crossing / slab intersection
     const minZ = Math.min(bz, prevBz) - 0.35;
     const maxZ = Math.max(bz, prevBz) + 0.35;
     if (this.z < minZ || this.z > maxZ) {
@@ -224,6 +328,7 @@ export class GatePairSlot {
     targetSlot.hitAccumulator = res.hitAccumulator;
     targetSlot.ringProgress = res.ringProgress;
     targetSlot.flashTimer = 1.0;
+    this.syncLedColor(targetSlot);
     targetSlot.labelTex.redrawIfDirty(
       targetSlot.operator,
       targetSlot.value,

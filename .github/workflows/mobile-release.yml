@@ -130,11 +130,14 @@ jobs:
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: Bridge Blitz v1.0.0 — Android APK (Pixel 10 XL)
+          tag_name: v2.0.0
+          name: Bridge Blitz v2.0.0 — Tactical Visual Overhaul APK (Pixel 10 XL)
           body: |
-            ### Install on Google Pixel 10 XL (Android)
-            - **Direct Chrome Download (bypasses GitHub Mobile app)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk)
-            1. Open the downloaded `.apk` from Chrome Downloads or the **Files by Google** app and tap **Install** (if Play Protect prompts for an unknown developer debug build, tap **More details → Install anyway**).
-            2. Launch **Bridge Blitz** from your Pixel App Drawer in locked portrait mode with native linear haptics!
+            ### Bridge Blitz v2.0.0 — Gritty Tactical Visual Overhaul (Pixel 10 XL)
+            - **Direct Chrome Download (bypasses GitHub Mobile app)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=2)
+            - **What's New in v2.0**:
+              - **3D Models & GPU Limb Animation**: Articulated Special-Forces Rangers (NVGs, plate carriers, SOPMOD carbines), Crimson-Guard Mercenaries, 5 detailed tiered 3D firearms, and a towering **Heavy Industrial Siege Boss Mech** with spinning rotary Vulcan cannons & molten reactor core.
+              - **Golden-Hour Bay & Suspension Bridge**: Analytic Fresnel ocean waves with sunset glitter, parabolic suspension cables, riveted steel X-truss towers, PBR weathered asphalt, `PCFShadowMap` shadows, and selective HDR `UnrealBloomPass`.
+              - **Combat VFX & Weapon Juice**: HDR glowing tracer bolts, 3D star muzzle flashes, expanding shockwave rings, brass shell casings, and debris shrapnel.
+              - **Pixel 10 XL Mobile HUD**: Custom tactical SVG upgrade emblems, desktop hotkey suppression on touchscreens, instant-response deploy bar, and post-pass gate retraction for zero 20:9 camera obstruction.
           files: BridgeBlitz-Pixel10XL.apk
