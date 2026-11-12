@@ -2,8 +2,11 @@ import * as THREE from 'three';
 import type { GateDefinition, GateOperator, GatePairDefinition, LaneSide } from '../core/types';
 import {
   applyGateBulletHit,
+  computeSplitGateRatio,
   formatGateLabel,
   resolveGateSquadCount,
+  SPLIT_SPAN_MAX_X,
+  SPLIT_SPAN_MIN_X,
 } from '../math/gateMath';
 import { EditableGateTexture } from '../rendering/CanvasLabelCache';
 import { createPadlockMesh } from '../rendering/ProceduralGeometries';
@@ -11,10 +14,14 @@ import { createPadlockMesh } from '../rendering/ProceduralGeometries';
 interface SingleGateSlot {
   readonly entityId: number;
   readonly laneTag: LaneSide;
-  readonly minX: number;
-  readonly maxX: number;
-  readonly centerX: number;
+  minX: number;
+  maxX: number;
+  centerX: number;
+  panelWidth: number;
   readonly group: THREE.Group;
+  readonly panelMesh: THREE.Mesh;
+  readonly barL: THREE.Mesh;
+  readonly barR: THREE.Mesh;
   readonly ledMat: THREE.MeshBasicMaterial;
   readonly padlockGroup: THREE.Group;
   readonly labelTex: EditableGateTexture;
@@ -52,9 +59,10 @@ export interface GateSquadCollectEvent {
   readonly positive: boolean;
 }
 
-const SPLIT_WIDTH = 4.72;
+const SPLIT_WIDTH = 4.76;
 const FULL_WIDTH = 9.64;
 const PANEL_HEIGHT = 2.48;
+const CENTER_POST_GAP = 0.06;
 
 export class GatePairSlot {
   public readonly root = new THREE.Group();
@@ -62,7 +70,10 @@ export class GatePairSlot {
   public active = false;
   public triggered = false;
   public isFullSpan = false;
+  public currentSplitX = 0;
+  public targetSplitX = 0;
 
+  private appliedSplitX = Number.NaN;
   private readonly centerPostGroup = new THREE.Group();
   private readonly leftSlot: SingleGateSlot;
   private readonly rightSlot: SingleGateSlot;
@@ -93,31 +104,32 @@ export class GatePairSlot {
     gantryShadow.position.set(0, 0.018, 0.06);
     this.root.add(gantryShadow);
 
-    // Sleek Vertical Energy Pylons (No bulky top crossbar so low close camera sees down-bridge obstacles cleanly!)
+    // Sleek Vertical Energy Pylons (center post slides dynamically with splitX!)
     for (const px of [-4.92, 0, 4.92]) {
       const holder = px === 0 ? this.centerPostGroup : this.root;
+      const localX = px === 0 ? 0 : px;
       const post = new THREE.Mesh(
         new THREE.CylinderGeometry(0.14, 0.17, 2.75, 12),
         pylonMat
       );
-      post.position.set(px, 1.38, 0);
+      post.position.set(localX, 1.38, 0);
       const postOutline = new THREE.Mesh(
         new THREE.CylinderGeometry(0.18, 0.21, 2.81, 12),
         outlineMat
       );
-      postOutline.position.set(px, 1.38, 0);
+      postOutline.position.set(localX, 1.38, 0);
       const cap = new THREE.Mesh(
         new THREE.SphereGeometry(0.20, 10, 8),
         pylonMat
       );
-      cap.position.set(px, 2.78, 0);
+      cap.position.set(localX, 2.78, 0);
       holder.add(post, postOutline, cap);
     }
     this.root.add(this.centerPostGroup);
 
-    this.leftSlot = this.createGateSlot(pairIndex * 3 + 100, 'LEFT', -2.46, SPLIT_WIDTH, -4.88, -0.06, false);
-    this.rightSlot = this.createGateSlot(pairIndex * 3 + 101, 'RIGHT', 2.46, SPLIT_WIDTH, 0.06, 4.88, false);
-    this.fullSlot = this.createGateSlot(pairIndex * 3 + 102, 'LEFT', 0, FULL_WIDTH, -4.88, 4.88, true);
+    this.leftSlot = this.createGateSlot(pairIndex * 3 + 100, 'LEFT', -2.47, SPLIT_WIDTH, SPLIT_SPAN_MIN_X, -CENTER_POST_GAP, false);
+    this.rightSlot = this.createGateSlot(pairIndex * 3 + 101, 'RIGHT', 2.47, SPLIT_WIDTH, CENTER_POST_GAP, SPLIT_SPAN_MAX_X, false);
+    this.fullSlot = this.createGateSlot(pairIndex * 3 + 102, 'LEFT', 0, FULL_WIDTH, SPLIT_SPAN_MIN_X, SPLIT_SPAN_MAX_X, true);
 
     this.root.visible = false;
   }
@@ -141,10 +153,12 @@ export class GatePairSlot {
       side: THREE.DoubleSide,
       depthWrite: false,
     });
+    // Unit-width plane scaled dynamically along X so split gates expand & contract smoothly!
     const panelMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(width, PANEL_HEIGHT),
+      new THREE.PlaneGeometry(1.0, PANEL_HEIGHT),
       panelMat
     );
+    panelMesh.scale.x = width;
     panelMesh.position.set(0, 1.34, 0);
     group.add(panelMesh);
 
@@ -169,7 +183,11 @@ export class GatePairSlot {
       minX,
       maxX,
       centerX,
+      panelWidth: width,
       group,
+      panelMesh,
+      barL,
+      barR,
       ledMat,
       padlockGroup,
       labelTex,
@@ -182,6 +200,44 @@ export class GatePairSlot {
       ringProgress: 0,
       flashTimer: 0,
     };
+  }
+
+  private applySlotGeometry(slot: SingleGateSlot, minX: number, maxX: number): void {
+    const width = Math.max(1.2, maxX - minX);
+    const centerX = (minX + maxX) * 0.5;
+    slot.minX = minX;
+    slot.maxX = maxX;
+    slot.centerX = centerX;
+    slot.panelWidth = width;
+    slot.group.position.x = centerX;
+    slot.panelMesh.scale.x = width;
+    const halfSpan = width * 0.5 - 0.04;
+    slot.barL.position.x = -halfSpan;
+    slot.barR.position.x = halfSpan;
+  }
+
+  private recomputeTargetSplitX(): void {
+    if (this.isFullSpan || !this.leftSlot.active || !this.rightSlot.active) {
+      this.targetSplitX = 0;
+      return;
+    }
+    const leftRatio = computeSplitGateRatio(
+      this.leftSlot.operator,
+      this.leftSlot.value,
+      this.leftSlot.isLocked,
+      this.rightSlot.operator,
+      this.rightSlot.value,
+      this.rightSlot.isLocked
+    );
+    const totalSpan = SPLIT_SPAN_MAX_X - SPLIT_SPAN_MIN_X;
+    this.targetSplitX = SPLIT_SPAN_MIN_X + totalSpan * leftRatio;
+  }
+
+  private applySplitLayout(splitX: number): void {
+    this.appliedSplitX = splitX;
+    this.centerPostGroup.position.x = splitX;
+    this.applySlotGeometry(this.leftSlot, SPLIT_SPAN_MIN_X, splitX - CENTER_POST_GAP);
+    this.applySlotGeometry(this.rightSlot, splitX + CENTER_POST_GAP, SPLIT_SPAN_MAX_X);
   }
 
   private syncLedColor(slot: SingleGateSlot): void {
@@ -206,6 +262,10 @@ export class GatePairSlot {
     if (def.full) {
       this.isFullSpan = true;
       this.centerPostGroup.visible = false;
+      this.currentSplitX = 0;
+      this.targetSplitX = 0;
+      this.appliedSplitX = 0;
+      this.applySlotGeometry(this.fullSlot, -FULL_WIDTH * 0.5, FULL_WIDTH * 0.5);
       this.configureSlot(this.leftSlot, null);
       this.configureSlot(this.rightSlot, null);
       this.configureSlot(this.fullSlot, def.full);
@@ -215,6 +275,29 @@ export class GatePairSlot {
       this.configureSlot(this.fullSlot, null);
       this.configureSlot(this.leftSlot, def.left);
       this.configureSlot(this.rightSlot, def.right);
+      this.recomputeTargetSplitX();
+      this.currentSplitX = this.targetSplitX;
+      this.applySplitLayout(this.currentSplitX);
+      if (this.leftSlot.active) {
+        this.leftSlot.labelTex.redrawIfDirty(
+          this.leftSlot.operator,
+          this.leftSlot.value,
+          this.leftSlot.isLocked,
+          0,
+          0,
+          this.leftSlot.panelWidth
+        );
+      }
+      if (this.rightSlot.active) {
+        this.rightSlot.labelTex.redrawIfDirty(
+          this.rightSlot.operator,
+          this.rightSlot.value,
+          this.rightSlot.isLocked,
+          0,
+          0,
+          this.rightSlot.panelWidth
+        );
+      }
     }
   }
 
@@ -235,7 +318,14 @@ export class GatePairSlot {
     slot.flashTimer = 0;
     slot.padlockGroup.visible = def.isLocked;
     this.syncLedColor(slot);
-    slot.labelTex.redrawIfDirty(def.operator, def.initialValue, def.isLocked, 0, 0);
+    slot.labelTex.redrawIfDirty(
+      def.operator,
+      def.initialValue,
+      def.isLocked,
+      0,
+      0,
+      slot.panelWidth
+    );
   }
 
   public hide(): void {
@@ -256,6 +346,16 @@ export class GatePairSlot {
         return;
       }
     }
+    if (!this.isFullSpan) {
+      const blend = 1 - Math.exp(-18 * dt);
+      this.currentSplitX += (this.targetSplitX - this.currentSplitX) * blend;
+      if (Math.abs(this.targetSplitX - this.currentSplitX) < 0.002) {
+        this.currentSplitX = this.targetSplitX;
+      }
+      if (Math.abs(this.currentSplitX - this.appliedSplitX) > 0.001) {
+        this.applySplitLayout(this.currentSplitX);
+      }
+    }
     this.tickSide(this.leftSlot, dt);
     this.tickSide(this.rightSlot, dt);
     this.tickSide(this.fullSlot, dt);
@@ -273,7 +373,8 @@ export class GatePairSlot {
       slot.value,
       slot.isLocked,
       slot.ringProgress,
-      slot.flashTimer
+      slot.flashTimer,
+      slot.panelWidth
     );
   }
 
@@ -324,12 +425,16 @@ export class GatePairSlot {
     targetSlot.ringProgress = res.ringProgress;
     targetSlot.flashTimer = 1.0;
     this.syncLedColor(targetSlot);
+    if (!this.isFullSpan && res.deltaIncrements > 0) {
+      this.recomputeTargetSplitX();
+    }
     targetSlot.labelTex.redrawIfDirty(
       targetSlot.operator,
       targetSlot.value,
       targetSlot.isLocked,
       targetSlot.ringProgress,
-      targetSlot.flashTimer
+      targetSlot.flashTimer,
+      targetSlot.panelWidth
     );
 
     return {
@@ -363,7 +468,7 @@ export class GatePairSlot {
       chosen = this.fullSlot;
     } else {
       const chooseLeft =
-        (squadX < 0 && this.leftSlot.active) || !this.rightSlot.active;
+        (squadX < this.currentSplitX && this.leftSlot.active) || !this.rightSlot.active;
       chosen = chooseLeft ? this.leftSlot : this.rightSlot;
     }
 
@@ -379,7 +484,7 @@ export class GatePairSlot {
       currentSquad,
       chosen.operator,
       chosen.value,
-      999
+      9999
     );
     const nextSquadCount = resolveGateSquadCount(
       currentSquad,

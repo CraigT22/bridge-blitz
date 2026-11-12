@@ -31,7 +31,7 @@ export class EditableGateTexture {
 
   constructor(wide = false) {
     this.canvas = document.createElement('canvas');
-    this.canvas.width = wide ? 1024 : 512;
+    this.canvas.width = wide ? 1024 : 640;
     this.canvas.height = 264;
     const ctx = this.canvas.getContext('2d');
     if (!ctx) {
@@ -49,12 +49,14 @@ export class EditableGateTexture {
     value: number,
     isLocked: boolean,
     ringProgress: number,
-    flashIntensity: number
+    flashIntensity: number,
+    panelWidthMeters = 4.76
   ): void {
     const valKey = operator === 'MUL' && !isLocked ? Math.round(value * 10) : Math.round(value);
     const progBucket = isLocked ? 0 : Math.floor(ringProgress * 16);
     const flashFlag = flashIntensity > 0.15 ? 1 : 0;
-    const sig = `${operator}:${valKey}:${isLocked ? 1 : 0}:${progBucket}:${flashFlag}`;
+    const widthBucket = Math.round(panelWidthMeters * 10);
+    const sig = `${operator}:${valKey}:${isLocked ? 1 : 0}:${progBucket}:${flashFlag}:${widthBucket}`;
     if (sig === this.lastSignature) {
       return;
     }
@@ -64,6 +66,9 @@ export class EditableGateTexture {
     const w = this.canvas.width;
     const h = this.canvas.height;
     ctx.clearRect(0, 0, w, h);
+
+    // Orthographic world-proportioned virtual width so dynamic 22%..78% split panels never stretch text or bevels!
+    const virtW = Math.max(196, h * (panelWidthMeters / 2.48));
 
     // High-clarity translucent forcefield so obstacles behind the gate stay 100% readable!
     let bgTop = 'rgba(24, 198, 255, 0.50)';
@@ -85,49 +90,59 @@ export class EditableGateTexture {
     }
 
     ctx.save();
-    traceChamferRect(ctx, 10, 10, w - 20, h - 20, 22);
+    ctx.scale(w / virtW, 1);
+
+    ctx.save();
+    traceChamferRect(ctx, 8, 10, virtW - 16, h - 20, 20);
     ctx.clip();
 
     const grad = ctx.createLinearGradient(0, 10, 0, h - 10);
     grad.addColorStop(0, bgTop);
     grad.addColorStop(1, bgBottom);
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillRect(0, 0, virtW, h);
 
     // Subtle energy shimmer bands
     ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
     for (let sy = 22; sy < h - 22; sy += 24) {
-      ctx.fillRect(10, sy, w - 20, 4);
+      ctx.fillRect(8, sy, virtW - 16, 4);
     }
 
     if (flashFlag) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.34)';
-      ctx.fillRect(10, 10, w - 20, h - 20);
+      ctx.fillRect(8, 10, virtW - 16, h - 20);
     }
     ctx.restore();
 
     // Crisp Forcefield Border
-    traceChamferRect(ctx, 10, 10, w - 20, h - 20, 22);
+    traceChamferRect(ctx, 8, 10, virtW - 16, h - 20, 20);
     ctx.lineWidth = 8;
     ctx.strokeStyle = borderStroke;
     ctx.stroke();
 
-    // Giant Bold Arcade Label (X1, X1.7, +1, -28, x2)
+    // Giant Bold Arcade Label (scales subtly with panel width while auto-fitting narrow splits!)
     const label = formatGateLabel(operator, value, isLocked);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '900 142px system-ui, -apple-system, sans-serif';
+    let fontPx = Math.round(Math.max(108, Math.min(156, 98 + virtW * 0.078)));
+    ctx.font = `900 ${fontPx}px system-ui, -apple-system, sans-serif`;
+    const maxTextW = Math.max(120, virtW - 44);
+    const measuredW = ctx.measureText(label).width;
+    if (measuredW > maxTextW) {
+      fontPx = Math.max(76, Math.floor(fontPx * (maxTextW / measuredW)));
+      ctx.font = `900 ${fontPx}px system-ui, -apple-system, sans-serif`;
+    }
     ctx.lineJoin = 'round';
-    ctx.lineWidth = 22;
+    ctx.lineWidth = Math.max(15, Math.round(fontPx * 0.155));
     ctx.strokeStyle = '#09111c';
-    ctx.strokeText(label, w / 2, h / 2 - 4);
+    ctx.strokeText(label, virtW / 2, h / 2 - 4);
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(label, w / 2, h / 2 - 4);
+    ctx.fillText(label, virtW / 2, h / 2 - 4);
 
     // Compact Charge Bar along bottom for shootable ADD & fractional MUL gates
     if (!isLocked) {
-      const barW = Math.min(340, w - 120);
-      const startX = (w - barW) / 2;
+      const barW = Math.min(320, Math.max(96, virtW - 68));
+      const startX = (virtW - barW) / 2;
       const barY = h - 28;
       ctx.fillStyle = 'rgba(7, 12, 20, 0.72)';
       ctx.fillRect(startX - 4, barY - 4, barW + 8, 16);
@@ -135,6 +150,7 @@ export class EditableGateTexture {
       ctx.fillRect(startX, barY, Math.round(barW * (progBucket / 16)), 8);
     }
 
+    ctx.restore();
     this.texture.needsUpdate = true;
   }
 }

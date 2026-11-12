@@ -378,12 +378,8 @@ export class BridgeBlitzGame {
   ): void {
     const overflow = this.squad.setLogicalCount(targetCount);
     if (overflow > 0) {
-      const earned = this.awardLiveCoins(
-        overflow * OVERFLOW_SQUAD_COIN_BONUS,
-        worldX,
-        worldZ,
-        false
-      );
+      const cappedBase = Math.min(80, overflow * OVERFLOW_SQUAD_COIN_BONUS);
+      const earned = this.awardLiveCoins(cappedBase, worldX, worldZ, false);
       this.combatText.spawn(
         worldX,
         2.2,
@@ -1094,14 +1090,6 @@ export class BridgeBlitzGame {
               );
             } else if (hit.deltaIncrements > 0) {
               this.sound.playGateTick(hit.newValue);
-              this.combatText.spawn(
-                hit.hitX,
-                2.0,
-                hit.hitZ,
-                hit.formattedLabel,
-                hit.newValue >= 0 ? 'positive' : 'gold',
-                0.45
-              );
             }
           }
           break;

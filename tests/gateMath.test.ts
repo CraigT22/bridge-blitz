@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyGateBulletHit,
   computeGateStepThreshold,
+  computeSplitGateRatio,
   formatGateLabel,
   MAX_ADD_GATE_VALUE,
   MAX_SHOOTABLE_MUL_VALUE,
@@ -46,23 +47,22 @@ describe('gateMath', () => {
     expect(posHit.deltaIncrements).toBe(1);
   });
 
-  it('caps shootable ADD gates cleanly at MAX_ADD_GATE_VALUE (+8) for elite 1..10 squad scale', () => {
+  it('allows shootable ADD gates to climb smoothly past +10 (+2 -> +12+) without a low +8 ceiling', () => {
     const res = applyGateBulletHit(
       {
         operator: 'ADD',
-        value: 6,
+        value: 2,
         hitAccumulator: 0,
-        damagePerIncrement: 2,
+        damagePerIncrement: 4,
         isLocked: false,
       },
-      5000
+      120
     );
-    expect(res.value).toBe(MAX_ADD_GATE_VALUE);
-    expect(res.deltaIncrements).toBe(2);
-    expect(res.hitAccumulator).toBe(0);
+    expect(res.value).toBeGreaterThanOrEqual(12);
+    expect(res.value).toBeLessThanOrEqual(MAX_ADD_GATE_VALUE);
   });
 
-  it('charges shootable fractional MUL gates (X1.0 -> X1.5 -> X2.2) and flags X1.5 flip milestone', () => {
+  it('charges shootable fractional MUL gates freely past X2.2 (X1.0 -> X1.5 -> X3.5+) without an artificial 2.2x cap', () => {
     let mulState = {
       operator: 'MUL' as const,
       value: 1.0,
@@ -84,12 +84,36 @@ describe('gateMath', () => {
     expect(stepFlip.value).toBeGreaterThanOrEqual(1.5);
     expect(stepFlip.flippedToPositive).toBe(true);
 
-    // Cap at MAX_SHOOTABLE_MUL_VALUE (2.2)
-    const stepCap = applyGateBulletHit(
+    // High DPS pushes well past the old 2.2x cap (e.g., X3.5+)
+    const stepUncapped = applyGateBulletHit(
       { ...mulState, value: 1.9, hitAccumulator: 0 },
-      9000
+      900
     );
-    expect(stepCap.value).toBeCloseTo(MAX_SHOOTABLE_MUL_VALUE);
+    expect(stepUncapped.value).toBeGreaterThan(3.5);
+    expect(stepUncapped.value).toBeLessThanOrEqual(MAX_SHOOTABLE_MUL_VALUE);
+  });
+
+  it('expands split gate width when +2 grows to +10 and shrinks negative side when -10 drops to -2', () => {
+    // Equal magnitude (+2 vs -2) => 50/50 split
+    const equalSplit = computeSplitGateRatio('ADD', 2, false, 'ADD', -2, false);
+    expect(equalSplit).toBeCloseTo(0.5, 4);
+
+    // Left +2 vs Right -10: negative -10 starts wider (>65% on right, <35% on left)
+    const startRatio = computeSplitGateRatio('ADD', 2, false, 'ADD', -10, false);
+    expect(startRatio).toBeLessThan(0.35);
+
+    // Example 1: Left +2 grows to +10 -> Left portion gets BIGGER!
+    const grownLeftRatio = computeSplitGateRatio('ADD', 10, false, 'ADD', -10, false);
+    const grownFurtherRatio = computeSplitGateRatio('ADD', 10, false, 'ADD', -2, false);
+    expect(grownLeftRatio).toBeGreaterThan(startRatio);
+    expect(grownFurtherRatio).toBeGreaterThan(0.68);
+
+    // Example 2: Right -10 goes to -2 -> Right portion (1 - leftRatio) gets SMALLER!
+    const rightWidthAtMinus10 = 1 - computeSplitGateRatio('ADD', 2, false, 'ADD', -10, false);
+    const rightWidthAtMinus2 = 1 - computeSplitGateRatio('ADD', 2, false, 'ADD', -2, false);
+    const rightWidthAtZero = 1 - computeSplitGateRatio('ADD', 2, false, 'ADD', 0, false);
+    expect(rightWidthAtMinus2).toBeLessThan(rightWidthAtMinus10);
+    expect(rightWidthAtZero).toBeLessThan(rightWidthAtMinus2);
   });
 
   it('detects negative-to-positive gate flip across -2 -> -1 -> 0 -> +1', () => {
