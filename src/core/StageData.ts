@@ -1,4 +1,5 @@
 import type {
+  BossChassisId,
   GateDefinition,
   GatePairDefinition,
   StageDefinition,
@@ -57,6 +58,10 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     ],
     boss: {
       name: 'Iron Warden Mk-I',
+      chassis: 'WARDEN_MECH',
+      primaryHex: 0x384352,
+      accentHex: 0xc92a3e,
+      trimHex: 0xf5b42e,
       maxHp: 210,
       segments: 5,
       advanceSpeed: 1.85,
@@ -83,6 +88,10 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     ],
     boss: {
       name: 'Bastion Enforcer',
+      chassis: 'SIEGE_TANK',
+      primaryHex: 0x434d3e,
+      accentHex: 0xd9822b,
+      trimHex: 0xf7d154,
       maxHp: 370,
       segments: 5,
       advanceSpeed: 1.95,
@@ -109,6 +118,10 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     ],
     boss: {
       name: 'Crimson Juggernaut',
+      chassis: 'SIEGE_TANK',
+      primaryHex: 0x7a1c28,
+      accentHex: 0x242b35,
+      trimHex: 0xffb627,
       maxHp: 620,
       segments: 6,
       advanceSpeed: 2.0,
@@ -136,6 +149,10 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     ],
     boss: {
       name: 'Vulcan Siege Mech',
+      chassis: 'WARDEN_MECH',
+      primaryHex: 0x2b3440,
+      accentHex: 0xe66c1f,
+      trimHex: 0xffd15c,
       maxHp: 940,
       segments: 6,
       advanceSpeed: 2.05,
@@ -163,6 +180,10 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     ],
     boss: {
       name: 'Tempest Goliath',
+      chassis: 'KRAKEN_WALKER',
+      primaryHex: 0x26384a,
+      accentHex: 0x2dc7ff,
+      trimHex: 0xf5b82e,
       maxHp: 1380,
       segments: 7,
       advanceSpeed: 2.1,
@@ -189,6 +210,10 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     ],
     boss: {
       name: 'Aegis Dreadnought',
+      chassis: 'SIEGE_TANK',
+      primaryHex: 0x2c394b,
+      accentHex: 0xd9384a,
+      trimHex: 0x48e5ff,
       maxHp: 1850,
       segments: 7,
       advanceSpeed: 2.12,
@@ -216,6 +241,10 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     ],
     boss: {
       name: 'Kraken Command Rig',
+      chassis: 'KRAKEN_WALKER',
+      primaryHex: 0x1d2636,
+      accentHex: 0xe82c4f,
+      trimHex: 0x38f6ff,
       maxHp: 2450,
       segments: 8,
       advanceSpeed: 2.15,
@@ -243,6 +272,10 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     ],
     boss: {
       name: 'Obsidian Titan',
+      chassis: 'SOVEREIGN_TITAN',
+      primaryHex: 0x1d2028,
+      accentHex: 0xd92638,
+      trimHex: 0xffa62b,
       maxHp: 3200,
       segments: 8,
       advanceSpeed: 2.18,
@@ -270,6 +303,10 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     ],
     boss: {
       name: 'Hyperion Warlord',
+      chassis: 'SOVEREIGN_TITAN',
+      primaryHex: 0x263248,
+      accentHex: 0x36f3ff,
+      trimHex: 0xffc845,
       maxHp: 4200,
       segments: 9,
       advanceSpeed: 2.2,
@@ -298,6 +335,10 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     ],
     boss: {
       name: 'Apex Sovereign Mech',
+      chassis: 'SOVEREIGN_TITAN',
+      primaryHex: 0x462440,
+      accentHex: 0xf5b82e,
+      trimHex: 0x38f6ff,
       maxHp: 5600,
       segments: 10,
       advanceSpeed: 2.25,
@@ -311,9 +352,22 @@ export function getCampaignStage(stageNumber: number): StageDefinition {
   return CAMPAIGN_STAGES[idx];
 }
 
+const ENDLESS_CHASSIS_ROTATION: ReadonlyArray<{
+  chassis: BossChassisId;
+  label: string;
+  primaryHex: number;
+  accentHex: number;
+  trimHex: number;
+}> = [
+  { chassis: 'WARDEN_MECH', label: 'Warden', primaryHex: 0x344050, accentHex: 0xd9384a, trimHex: 0xf5b42e },
+  { chassis: 'SIEGE_TANK', label: 'Juggernaut', primaryHex: 0x5c2432, accentHex: 0xff8c38, trimHex: 0xffd15c },
+  { chassis: 'KRAKEN_WALKER', label: 'Kraken', primaryHex: 0x24364a, accentHex: 0x36f3ff, trimHex: 0xff4757 },
+  { chassis: 'SOVEREIGN_TITAN', label: 'Sovereign', primaryHex: 0x3d2342, accentHex: 0xf5b82e, trimHex: 0x38f6ff },
+];
+
 /**
  * Generates deterministic escalating sectors for Endless Bridge Mode.
- * Every sector spans 240m and culminates in an Endless Wave Boss before seamlessly continuing
+ * Every sector spans 255m and culminates in an Endless Wave Boss before seamlessly continuing
  * or advancing the wave counter!
  */
 export function generateEndlessWaveStage(waveNumber: number): StageDefinition {
@@ -347,6 +401,7 @@ export function generateEndlessWaveStage(waveNumber: number): StageDefinition {
 
   const tierA = Math.min(5, 2 + Math.floor((w - 1) / 2)) as WeaponTierId;
   const tierB = Math.min(5, 3 + Math.floor(w / 2)) as WeaponTierId;
+  const archetype = ENDLESS_CHASSIS_ROTATION[(w - 1) % ENDLESS_CHASSIS_ROTATION.length];
 
   return {
     stageNumber: w,
@@ -362,7 +417,11 @@ export function generateEndlessWaveStage(waveNumber: number): StageDefinition {
       { z: -234, lane: 'CENTER', count: Math.min(65, 14 + w * 5), hpPerEnemy: 4.0 + w * 2.8, speed: 2.5 + Math.min(1.0, w * 0.08) },
     ],
     boss: {
-      name: `Sector-${w} Dreadnought`,
+      name: `Sector-${w} ${archetype.label}`,
+      chassis: archetype.chassis,
+      primaryHex: archetype.primaryHex,
+      accentHex: archetype.accentHex,
+      trimHex: archetype.trimHex,
       maxHp: Math.round(280 * Math.pow(1.42, w - 1)),
       segments: Math.min(10, 5 + Math.floor(w / 2)),
       advanceSpeed: Math.min(2.4, 1.9 + w * 0.05),

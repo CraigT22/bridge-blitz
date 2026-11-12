@@ -2,6 +2,8 @@ import { BRIDGE_PLAYABLE_HALF_WIDTH } from '../math/formationMath';
 
 export interface InputCallbacks {
   onStartRequest: () => void;
+  onMenuCanvasDrag: (dxPixels: number) => void;
+  onTogglePause: () => void;
   onUpgradeShortcut: (index: 0 | 1 | 2 | 3) => void;
   onFirstGesture: () => void;
   onContinueModal: () => void;
@@ -9,9 +11,9 @@ export interface InputCallbacks {
 
 /**
  * Unified One-Axis Input Controller:
- * - Touch drag (1:1 horizontal finger tracking across screen width)
+ * - Touch drag (1:1 horizontal finger tracking across screen width during runs, 360° turntable spin in Armory)
  * - Mouse hold-and-drag across viewport
- * - Keyboard A/D or ArrowLeft/ArrowRight
+ * - Keyboard A/D or ArrowLeft/ArrowRight + Escape/P pause
  * - Standard Web Gamepad horizontal left stick / D-pad
  */
 export class InputController {
@@ -39,12 +41,10 @@ export class InputController {
         case 'ArrowLeft':
         case 'KeyA':
           this.leftPressed = true;
-          this.callbacks.onStartRequest();
           break;
         case 'ArrowRight':
         case 'KeyD':
           this.rightPressed = true;
-          this.callbacks.onStartRequest();
           break;
         case 'Space':
           e.preventDefault();
@@ -53,6 +53,10 @@ export class InputController {
           break;
         case 'Enter':
           this.callbacks.onContinueModal();
+          break;
+        case 'Escape':
+        case 'KeyP':
+          this.callbacks.onTogglePause();
           break;
         case 'Digit1':
         case 'Numpad1':
@@ -96,7 +100,6 @@ export class InputController {
       } catch {
         // Synthetic test events may omit active pointer registration
       }
-      this.callbacks.onStartRequest();
     });
 
     window.addEventListener('pointermove', (e) => {
@@ -108,6 +111,8 @@ export class InputController {
       }
       const dxPixels = e.clientX - this.lastPointerClientX;
       this.lastPointerClientX = e.clientX;
+
+      this.callbacks.onMenuCanvasDrag(dxPixels);
 
       const viewportW = Math.max(320, window.innerWidth);
       // Ergonomic 1-thumb sweep across playable bridge span on 6.8" Pixel 10 XL & desktop

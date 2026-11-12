@@ -22,25 +22,35 @@ import { BridgeEnvironment } from '../rendering/BridgeEnvironment';
 import { CombatTextOverlay } from '../rendering/CombatTextOverlay';
 import { CombatVfxRenderer } from '../rendering/CombatVfxRenderer';
 import { InstancedBatchRenderer } from '../rendering/InstancedBatchRenderer';
-import { SceneManager } from '../rendering/SceneManager';
+import {
+  SceneManager,
+  type CameraFramingMode,
+} from '../rendering/SceneManager';
 import { HudController } from '../ui/HudController';
 import { GameLoop } from './GameLoop';
 import { GameStateMachine } from './GameStateMachine';
 import { InputController } from './InputController';
-import { BulletPool, ParticlePool } from './ObjectPool';
+import { BulletPool, ParticlePool, RagdollPool } from './ObjectPool';
 import { SaveManager } from './SaveManager';
-import { getCampaignStage, generateEndlessWaveStage } from './StageData';
+import {
+  CAMPAIGN_STAGES,
+  generateEndlessWaveStage,
+  getCampaignStage,
+} from './StageData';
 import type {
   GameMode,
+  MenuTabId,
   RunSummary,
   StageDefinition,
   TelemetrySnapshot,
   UpgradeKey,
+  WeaponTierId,
 } from './types';
 
 const MAX_GATE_PAIRS = 6;
 const MAX_TIRE_STACKS = 5;
 const MAX_ENEMY_WAVES = 5;
+const HERO_DIORAMA_YAW = Math.PI * 0.84;
 
 export class BridgeBlitzGame {
   private readonly saveManager = new SaveManager();
@@ -50,6 +60,7 @@ export class BridgeBlitzGame {
   private readonly bridgeEnv: BridgeEnvironment;
   private readonly bulletPool = new BulletPool(1200);
   private readonly particlePool = new ParticlePool(900);
+  private readonly ragdollPool = new RagdollPool(64);
   private readonly batchRenderer: InstancedBatchRenderer;
   private readonly vfx: CombatVfxRenderer;
   private readonly combatText: CombatTextOverlay;
@@ -65,6 +76,11 @@ export class BridgeBlitzGame {
   private readonly loop: GameLoop;
 
   private activeStageDef: StageDefinition;
+  private activeMenuTab: MenuTabId = 'BATTLE';
+  private hubPreviewWeaponTier: WeaponTierId = 1;
+  private commandoFacingYaw = HERO_DIORAMA_YAW;
+  private dioramaYawOffset = 0;
+
   private sectorBaseZ = 0;
   private endlessWave = 1;
   private elapsedTime = 0;
@@ -122,6 +138,26 @@ export class BridgeBlitzGame {
       onBuyUpgrade: (key) => this.handleBuyUpgrade(key),
       onSelectMode: (mode) => this.handleSelectMode(mode),
       onStepStage: (delta) => this.handleStepStage(delta),
+      onSelectStageDirect: (stageNum) => this.handleSelectStageDirect(stageNum),
+      onHubStateChange: (info) => {
+        this.activeMenuTab = info.tab;
+        this.hubPreviewWeaponTier = info.hubPreviewWeaponTier;
+        if (info.tab === 'ARMORY') {
+          if (info.armorySubTab === 'WEAPONS') {
+            this.sceneManager.configureArmoryWeapon(info.armoryWeaponTier);
+          } else {
+            const stageIdx = Math.max(
+              0,
+              Math.min(CAMPAIGN_STAGES.length - 1, info.armoryBossStage - 1)
+            );
+            this.sceneManager.configureArmoryBoss(CAMPAIGN_STAGES[stageIdx].boss);
+          }
+        }
+      },
+      onPauseRequest: () => this.handlePauseRequest(),
+      onResumeRequest: () => this.handleResumeRequest(),
+      onRestartRequest: () => this.handleRestartSector(),
+      onRetreatToHubRequest: () => this.handleRetreatToHub(),
       onToggleMute: () => this.handleToggleMute(),
       onToggleHaptics: () => this.handleToggleHaptics(),
       onExportSave: () => this.handleExportSave(),
@@ -129,8 +165,35 @@ export class BridgeBlitzGame {
       onSummaryContinue: () => this.handleSummaryContinue(),
     });
 
+    this.stateMachine.onChange((next) => {
+      this.hud.syncTopHudForState(next);
+    });
+
     this.input = new InputController(canvasContainer, {
       onStartRequest: () => this.startRunIfStaging(),
+      onMenuCanvasDrag: (dxPixels) => {
+        if (this.stateMachine.state !== 'PRE_RUN') {
+          return;
+        }
+        if (this.activeMenuTab === 'ARMORY') {
+          this.sceneManager.rotateArmoryTurntable(dxPixels * 0.012);
+        } else if (this.activeMenuTab === 'BATTLE' || this.activeMenuTab === 'UPGRADES') {
+          this.dioramaYawOffset = Math.max(
+            -1.05,
+            Math.min(1.05, this.dioramaYawOffset + dxPixels * 0.009)
+          );
+        }
+      },
+      onTogglePause: () => {
+        if (this.stateMachine.state === 'PAUSED') {
+          this.handleResumeRequest();
+        } else if (
+          this.stateMachine.state === 'RUNNING' ||
+          this.stateMachine.state === 'BOSS_FIGHT'
+        ) {
+          this.handlePauseRequest();
+        }
+      },
       onUpgradeShortcut: (idx) => {
         if (this.stateMachine.state === 'PRE_RUN') {
           this.handleBuyUpgrade(UPGRADE_ORDER[idx]);
@@ -167,9 +230,12 @@ export class BridgeBlitzGame {
     this.bonusCoinsThisRun = 0;
     this.pendingSummary = null;
     this.coinFountainTimer = 0;
+    this.dioramaYawOffset = 0;
+    this.commandoFacingYaw = HERO_DIORAMA_YAW;
 
     this.bulletPool.clear();
     this.particlePool.clear();
+    this.ragdollPool.clear();
     this.vfx.clear();
     this.combatText.clear();
     this.input.resetFrameDeltas();
@@ -185,9 +251,16 @@ export class BridgeBlitzGame {
     this.squad.resetForRun(startTroops);
 
     this.stateMachine.transitionTo('PRE_RUN');
+    this.hud.hidePauseModal();
     this.hud.hideSummaryModal();
     this.hud.setStagingVisible(true);
-    this.hud.syncSaveState(save, this.activeStageDef.title, this.endlessWave);
+    this.hud.syncTopHudForState('PRE_RUN');
+    this.hud.syncSaveState(
+      save,
+      this.activeStageDef.title,
+      this.activeStageDef.boss.name,
+      this.endlessWave
+    );
     this.hud.updateTrackProgress(0, save.selectedMode, 0, this.endlessWave);
   }
 
@@ -238,8 +311,43 @@ export class BridgeBlitzGame {
       return;
     }
     this.sound.unlockOnGesture();
+    this.squad.weaponTier = 1;
     this.hud.setStagingVisible(false);
     this.stateMachine.transitionTo('RUNNING');
+  }
+
+  private handlePauseRequest(): void {
+    if (!this.stateMachine.pause()) {
+      return;
+    }
+    const progress = Math.max(
+      0,
+      Math.min(1, (this.sectorBaseZ - this.squad.z) / this.activeStageDef.trackLength)
+    );
+    this.hud.showPauseModal(
+      this.squad.logicalCount,
+      this.squad.weaponTier,
+      progress,
+      this.enemiesDefeatedThisRun
+    );
+  }
+
+  private handleResumeRequest(): void {
+    if (!this.stateMachine.resume()) {
+      return;
+    }
+    this.hud.hidePauseModal();
+  }
+
+  private handleRestartSector(): void {
+    this.hud.hidePauseModal();
+    this.prepareStagingArea();
+    this.startRunIfStaging();
+  }
+
+  private handleRetreatToHub(): void {
+    this.hud.hidePauseModal();
+    this.prepareStagingArea();
   }
 
   private handleBuyUpgrade(key: UpgradeKey): void {
@@ -263,12 +371,17 @@ export class BridgeBlitzGame {
       const nextCount = getStartingSquadCount(updated.upgrades.startingSquad);
       this.squad.setLogicalCount(nextCount);
       this.particlePool.spawnBurst(this.squad.x, 0.7, this.squad.z, 14, 4.5, 0x3bf088);
-      this.combatText.spawn(this.squad.x, 1.5, this.squad.z, '+1 STARTING SQUAD', 'positive');
+      this.combatText.spawn(this.squad.x, 1.5, this.squad.z, '+1 COMMANDO', 'positive');
     } else {
       this.particlePool.spawnBurst(this.squad.x, 0.7, this.squad.z, 10, 3.8, 0xffd166);
     }
 
-    this.hud.syncSaveState(updated, this.activeStageDef.title, this.endlessWave);
+    this.hud.syncSaveState(
+      updated,
+      this.activeStageDef.title,
+      this.activeStageDef.boss.name,
+      this.endlessWave
+    );
   }
 
   private handleSelectMode(mode: GameMode): void {
@@ -292,12 +405,28 @@ export class BridgeBlitzGame {
     this.prepareStagingArea();
   }
 
+  private handleSelectStageDirect(stageNumber: number): void {
+    if (this.stateMachine.state !== 'PRE_RUN') {
+      return;
+    }
+    this.saveManager.update((draft) => {
+      draft.selectedMode = 'CAMPAIGN';
+      draft.selectedStage = Math.max(1, Math.min(draft.unlockedStage, stageNumber));
+    });
+    this.prepareStagingArea();
+  }
+
   private handleToggleMute(): void {
     const next = this.saveManager.update((draft) => {
       draft.settings.muted = !draft.settings.muted;
     });
     this.sound.updateSettings(next.settings);
-    this.hud.syncSaveState(next, this.activeStageDef.title, this.endlessWave);
+    this.hud.syncSaveState(
+      next,
+      this.activeStageDef.title,
+      this.activeStageDef.boss.name,
+      this.endlessWave
+    );
   }
 
   private handleToggleHaptics(): void {
@@ -305,7 +434,12 @@ export class BridgeBlitzGame {
       draft.settings.haptics = !draft.settings.haptics;
     });
     this.sound.updateSettings(next.settings);
-    this.hud.syncSaveState(next, this.activeStageDef.title, this.endlessWave);
+    this.hud.syncSaveState(
+      next,
+      this.activeStageDef.title,
+      this.activeStageDef.boss.name,
+      this.endlessWave
+    );
   }
 
   private handleExportSave(): void {
@@ -340,22 +474,21 @@ export class BridgeBlitzGame {
     }
     const tier = this.squad.weaponTier;
     const flashColor = tier === 5 ? 0x38f6ff : 0xffbe42;
-    const flashScale = tier >= 4 ? 1.25 : 0.92;
+    const flashScale = tier >= 4 ? 1.28 : 0.94;
     const burstCount = Math.min(3, vis);
     const seed = Math.floor(this.elapsedTime * 60);
 
     for (let k = 0; k < burstCount; k++) {
       const idx = (seed + k * 5) % vis;
-      const sx = this.squad.soldierWorldX[idx] + 0.09;
-      const sz = this.squad.soldierWorldZ[idx] - 0.56;
-      this.vfx.spawnMuzzleFlash(sx, 0.48, sz, flashScale, flashColor);
+      const sx = this.squad.soldierWorldX[idx] + 0.105;
+      const sz = this.squad.soldierWorldZ[idx] - 0.68;
+      this.vfx.spawnMuzzleFlash(sx, 0.56, sz, flashScale, flashColor);
 
       if (k === 0) {
-        // Ejected spinning brass shell casing + rising tactical gunsmoke puff
         this.particlePool.spawn(
           sx + 0.08,
-          0.5,
-          sz + 0.22,
+          0.56,
+          sz + 0.24,
           1.8 + (seed % 3) * 0.45,
           2.6,
           0.6,
@@ -366,7 +499,7 @@ export class BridgeBlitzGame {
         );
         this.particlePool.spawn(
           sx,
-          0.52,
+          0.58,
           sz - 0.12,
           ((seed % 5) - 2) * 0.3,
           1.2,
@@ -380,12 +513,31 @@ export class BridgeBlitzGame {
     }
   }
 
+  private computeCameraFramingMode(): CameraFramingMode {
+    const state = this.stateMachine.state;
+    if (state === 'PRE_RUN') {
+      return this.activeMenuTab === 'ARMORY' ? 'ARMORY_INSPECT' : 'HERO_DIORAMA';
+    }
+    const effectiveRunState =
+      state === 'PAUSED' ? this.stateMachine.resumeTargetState : state;
+    if (effectiveRunState === 'BOSS_FIGHT' || effectiveRunState === 'VICTORY') {
+      return 'BOSS_TACTICAL';
+    }
+    return 'RUN_TACTICAL';
+  }
+
   private fixedUpdate(rawDt: number): void {
     const dt = rawDt * this.stateMachine.timeScale;
-    this.elapsedTime += dt;
-
     const state = this.stateMachine.state;
+
+    if (state === 'PAUSED') {
+      this.input.resetFrameDeltas();
+      return;
+    }
+
+    this.elapsedTime += dt;
     const save = this.saveManager.getData();
+
     const lateralDelta =
       state === 'RUNNING' || state === 'BOSS_FIGHT'
         ? this.input.consumeHorizontalDelta(dt)
@@ -393,6 +545,12 @@ export class BridgeBlitzGame {
     if (state !== 'RUNNING' && state !== 'BOSS_FIGHT') {
       this.input.resetFrameDeltas();
     }
+
+    // Smoothly orient commandos toward the low-angle Hero Diorama in PRE_RUN, and snap down-bridge (-Z) on Deploy!
+    const targetFacingYaw =
+      state === 'PRE_RUN' ? HERO_DIORAMA_YAW + this.dioramaYawOffset : 0;
+    this.commandoFacingYaw +=
+      (targetFacingYaw - this.commandoFacingYaw) * Math.min(1, dt * 12);
 
     if (state === 'PRE_RUN') {
       this.squad.updateMovement(dt, 0, false, false);
@@ -448,6 +606,12 @@ export class BridgeBlitzGame {
           this.squad.logicalCount
         );
         if (collect) {
+          if (collect.deltaSquad < 0) {
+            const ragCount = Math.min(3, Math.abs(collect.deltaSquad));
+            for (let r = 0; r < ragCount; r++) {
+              this.ragdollPool.spawnKnockback(this.squad.x, this.squad.z, false, 0.9);
+            }
+          }
           this.squad.setLogicalCount(collect.nextSquadCount);
           this.sound.playGateCollect(collect.positive);
           const fxColor = collect.positive ? 0x3bf088 : 0xff4757;
@@ -494,6 +658,7 @@ export class BridgeBlitzGame {
         this.sceneManager.addShake(0.32);
         this.vfx.spawnShockwave(stack.x, stack.z, 2.5, 0.3, 0xff4757);
         this.particlePool.spawnBurst(stack.x, 0.8, stack.z, 14, 5.0, 0x2d3436);
+        this.ragdollPool.spawnKnockback(stack.x, this.squad.z, false, 1.0);
         this.squad.setLogicalCount(this.squad.logicalCount - 1);
         this.combatText.spawn(stack.x, 1.4, stack.z, '-1 TIRE CRASH', 'negative');
         if (this.squad.logicalCount <= 0) {
@@ -516,6 +681,11 @@ export class BridgeBlitzGame {
           if (cancelled > 0) {
             this.enemiesDefeatedThisRun += cancelled;
             this.squad.setLogicalCount(this.squad.logicalCount - cancelled);
+            const ragBursts = Math.min(2, cancelled);
+            for (let r = 0; r < ragBursts; r++) {
+              this.ragdollPool.spawnKnockback(wave.x, wave.z, true, 0.95);
+              this.ragdollPool.spawnKnockback(this.squad.x, this.squad.z, false, 0.95);
+            }
             this.sceneManager.addShake(0.24);
             this.sound.playEnemyPop();
             this.particlePool.spawnBurst(
@@ -542,7 +712,7 @@ export class BridgeBlitzGame {
       }
     }
 
-    // Update Boss Mech
+    // Update Boss War Machine
     if (state === 'RUNNING' || state === 'BOSS_FIGHT') {
       this.boss.update(
         dt,
@@ -564,6 +734,10 @@ export class BridgeBlitzGame {
       }
       if (this.boss.lastStepSlamDamage > 0 && this.squad.logicalCount > 0) {
         const lost = Math.min(this.squad.logicalCount, this.boss.lastStepSlamDamage);
+        const ragLost = Math.min(4, lost);
+        for (let r = 0; r < ragLost; r++) {
+          this.ragdollPool.spawnKnockback(this.squad.x, this.squad.z, false, 1.35);
+        }
         this.squad.setLogicalCount(this.squad.logicalCount - lost);
         this.sound.playEnemyPop();
         this.particlePool.spawnBurst(this.squad.x, 0.9, this.squad.z, 18, 6.8, 0xff3838);
@@ -601,11 +775,13 @@ export class BridgeBlitzGame {
     }
 
     this.particlePool.update(dt);
+    this.ragdollPool.update(dt);
+
     this.sceneManager.updateCamera(
       dt,
       this.squad.x,
       this.squad.z,
-      this.stateMachine.state === 'BOSS_FIGHT'
+      this.computeCameraFramingMode()
     );
     this.bridgeEnv.update(
       dt,
@@ -723,6 +899,10 @@ export class BridgeBlitzGame {
           if (kills > 0) {
             this.enemiesDefeatedThisRun += kills;
             this.sound.playEnemyPop();
+            const ragCount = Math.min(3, kills);
+            for (let r = 0; r < ragCount; r++) {
+              this.ragdollPool.spawnKnockback(bx, wave.z, true, 1.0);
+            }
             this.particlePool.spawnBurst(bx, 0.65, wave.z, Math.min(10, 4 + kills * 2), 5.0, 0xff384c);
           } else {
             this.particlePool.spawnBurst(bx, 0.65, wave.z, 2, 3.2, 0xffffff, 0.09, 0.2);
@@ -731,7 +911,7 @@ export class BridgeBlitzGame {
         }
       }
 
-      // 4. Check Boss Entity (vulnerable once squad reaches Boss Platform in BOSS_FIGHT)
+      // 4. Check Boss Entity
       if (!consumedHit && this.stateMachine.state === 'BOSS_FIGHT' && this.boss.active) {
         const bossRes = this.boss.tryBulletHit(
           bx,
@@ -791,7 +971,6 @@ export class BridgeBlitzGame {
         1.1
       );
     } else {
-      // Mandatory Anti-Frustration Weapon Lock Bonus!
       this.weaponLocksThisRun++;
       this.bonusCoinsThisRun += pickup.bonusCoins;
       this.squad.setLogicalCount(this.squad.logicalCount + pickup.bonusSquad);
@@ -817,7 +996,6 @@ export class BridgeBlitzGame {
 
     const save = this.saveManager.getData();
 
-    // In Endless Bridge Mode, seamlessly chain into the next Endless Sector!
     if (save.selectedMode === 'ENDLESS') {
       this.bonusCoinsThisRun += this.boss.rewardCoins;
       this.combatText.spawn(
@@ -836,7 +1014,6 @@ export class BridgeBlitzGame {
       return;
     }
 
-    // Campaign Stage Cleared -> VICTORY!
     const summary = this.finalizeRunRewards('VICTORY', true);
     this.pendingSummary = summary;
     this.stateMachine.transitionTo('VICTORY');
@@ -890,9 +1067,10 @@ export class BridgeBlitzGame {
       mode: save.selectedMode,
       stageNumber:
         save.selectedMode === 'ENDLESS' ? this.endlessWave : save.selectedStage,
-      distanceMeters: clearedStage && save.selectedMode === 'CAMPAIGN'
-        ? this.activeStageDef.trackLength
-        : totalDistanceMeters,
+      distanceMeters:
+        clearedStage && save.selectedMode === 'CAMPAIGN'
+          ? this.activeStageDef.trackLength
+          : totalDistanceMeters,
       progressRatio: clearedStage ? 1 : sectorProgress,
       enemiesDefeated: this.enemiesDefeatedThisRun,
       gatesFlipped: this.gatesFlippedThisRun,
@@ -927,21 +1105,26 @@ export class BridgeBlitzGame {
   }
 
   private renderFrame(realDt: number): void {
-    // Advance real-time 0.8s wipeout slow-motion reveal
     if (this.stateMachine.tickRealTime(realDt) && this.pendingSummary) {
       this.hud.showSummaryModal(this.pendingSummary);
     }
 
     const state = this.stateMachine.state;
     const isMoving = state === 'RUNNING' || state === 'BOSS_FIGHT';
+    const displayedWeaponTier =
+      state === 'PRE_RUN' ? this.hubPreviewWeaponTier : this.squad.weaponTier;
 
-    // Sync GPU InstancedMesh batches
     this.batchRenderer.syncPlayerSoldiers(
       this.squad.logicalCount,
       this.squad.soldierWorldX,
       this.squad.soldierWorldZ,
       this.squad.marchPhase,
-      isMoving
+      isMoving,
+      displayedWeaponTier,
+      this.squad.steerBankAngle,
+      this.squad.recoilImpulse,
+      this.squad.barrelSpinAngle,
+      this.commandoFacingYaw
     );
 
     this.batchRenderer.beginEnemyFrame();
@@ -950,13 +1133,13 @@ export class BridgeBlitzGame {
     }
     this.batchRenderer.finishEnemyFrame();
 
+    this.batchRenderer.syncRagdolls(this.ragdollPool);
     this.batchRenderer.syncBullets(this.bulletPool);
     this.batchRenderer.syncParticles(this.particlePool);
     this.vfx.updateAndSync(realDt * this.stateMachine.timeScale);
 
     this.sceneManager.render();
 
-    // Update 2D / Projected HUD overlays
     const save = this.saveManager.getData();
     const sectorRatio = Math.max(
       0,
@@ -969,26 +1152,31 @@ export class BridgeBlitzGame {
       this.endlessWave
     );
 
+    const bossHudActive =
+      (state === 'BOSS_FIGHT' ||
+        (state === 'PAUSED' && this.stateMachine.resumeTargetState === 'BOSS_FIGHT')) &&
+      this.boss.active;
+
     this.hud.updateWorldOverlays(
       this.sceneManager,
+      state,
       this.squad.x,
       this.squad.z,
       this.squad.logicalCount,
       this.squad.weaponTier,
       this.enemyWaves,
-      state === 'BOSS_FIGHT' && this.boss.active,
+      bossHudActive,
       this.boss.name,
       this.boss.currentHp,
       this.boss.maxHp,
       this.boss.segments
     );
 
-    this.combatText.update(realDt, this.sceneManager);
+    if (state !== 'PAUSED') {
+      this.combatText.update(realDt, this.sceneManager);
+    }
   }
 
-  /**
-   * Deterministic fixed-step simulation helper for headless software-WebGL automated playtests.
-   */
   public advanceSimulation(seconds: number, targetX?: number): TelemetrySnapshot {
     const step = 1 / 60;
     const ticks = Math.max(1, Math.round(seconds / step));
@@ -1003,9 +1191,6 @@ export class BridgeBlitzGame {
     return this.getTelemetrySnapshot();
   }
 
-  /**
-   * Read-only telemetry snapshot & deterministic steering helper for automated verification.
-   */
   public getTelemetrySnapshot(): TelemetrySnapshot {
     const save = this.saveManager.getData();
     const progress = Math.max(

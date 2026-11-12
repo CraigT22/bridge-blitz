@@ -19,6 +19,9 @@ export class SquadController {
   public x = 0;
   public z = 0;
   public marchPhase = 0;
+  public steerBankAngle = 0;
+  public recoilImpulse = 0;
+  public barrelSpinAngle = 0;
 
   public readonly soldierWorldX = new Float32Array(MAX_VISUAL_SOLDIERS);
   public readonly soldierWorldZ = new Float32Array(MAX_VISUAL_SOLDIERS);
@@ -36,6 +39,9 @@ export class SquadController {
     this.x = 0;
     this.z = 0;
     this.marchPhase = 0;
+    this.steerBankAngle = 0;
+    this.recoilImpulse = 0;
+    this.barrelSpinAngle = 0;
     this.fireCooldown = 0.08;
     this.emitterCursor = 0;
     this.pendingBurstTimer = -1;
@@ -75,14 +81,25 @@ export class SquadController {
       return;
     }
 
+    const prevX = this.x;
     this.x = clampSquadCenterX(this.x + horizontalDelta, this.logicalCount);
+    const actualVelX = dt > 0 ? (this.x - prevX) / dt : 0;
+    const targetBank = Math.max(-0.24, Math.min(0.24, actualVelX * 0.022));
+    this.steerBankAngle += (targetBank - this.steerBankAngle) * Math.min(1, dt * 14);
+
+    if (this.recoilImpulse > 0) {
+      this.recoilImpulse = Math.max(0, this.recoilImpulse - dt * 9.5);
+    }
+
     if (advanceForward) {
       this.z -= SQUAD_MARCH_SPEED * dt;
     }
     if (animateMarch) {
       this.marchPhase += dt;
+      this.barrelSpinAngle += dt * (this.weaponTier === 4 ? 24.0 : 4.0);
     } else {
       this.marchPhase += dt * 0.35;
+      this.barrelSpinAngle += dt * 3.2;
     }
 
     const vis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
@@ -170,6 +187,10 @@ export class SquadController {
       firedAny = true;
     }
 
+    if (firedAny) {
+      this.recoilImpulse = 1.0;
+    }
+
     return firedAny;
   }
 
@@ -187,20 +208,21 @@ export class SquadController {
 
     const spec = WEAPON_SPECS[this.weaponTier];
     const speed = spec.projectileSpeed;
-    const bulletScale = this.weaponTier === 5 ? 1.35 : this.weaponTier >= 3 ? 1.1 : 0.95;
+    // Uniform crisp tracer bullet scale across all tiers
+    const bulletScale = 1.05;
     const maxAge = 1.25;
 
     for (let e = 0; e < emitterCount; e++) {
       const soldierIdx = (this.emitterCursor + e) % vis;
-      const sx = this.soldierWorldX[soldierIdx];
-      const sz = this.soldierWorldZ[soldierIdx] - 0.35;
+      const sx = this.soldierWorldX[soldierIdx] + 0.105;
+      const sz = this.soldierWorldZ[soldierIdx] - 0.62;
 
       if (twinStream) {
         const vxLeft = Math.sin(-spreadRad) * speed;
         const vzLeft = -Math.cos(-spreadRad) * speed;
         bulletPool.spawn(
-          sx - 0.08,
-          0.44,
+          sx - 0.07,
+          0.56,
           sz,
           vxLeft,
           vzLeft,
@@ -215,8 +237,8 @@ export class SquadController {
         const vxRight = Math.sin(spreadRad) * speed;
         const vzRight = -Math.cos(spreadRad) * speed;
         bulletPool.spawn(
-          sx + 0.08,
-          0.44,
+          sx + 0.07,
+          0.56,
           sz,
           vxRight,
           vzRight,
@@ -234,7 +256,7 @@ export class SquadController {
         const vz = -Math.cos(jitterAngle) * speed;
         bulletPool.spawn(
           sx,
-          0.44,
+          0.56,
           sz,
           vx,
           vz,

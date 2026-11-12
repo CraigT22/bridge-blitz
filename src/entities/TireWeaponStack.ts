@@ -5,7 +5,10 @@ import {
   createStaticWeaponBadgeTexture,
   EditableTirePlaqueTexture,
 } from '../rendering/CanvasLabelCache';
-import { createWeaponPickupGroup } from '../rendering/ProceduralGeometries';
+import {
+  createShowcaseWeaponGroup,
+  type ShowcaseWeaponRig,
+} from '../rendering/WeaponRigFactory';
 
 const MAX_TIRE_LAYERS = 5;
 const TIRE_HIT_RADIUS_X = 1.25;
@@ -51,10 +54,11 @@ export class TireWeaponStackSlot {
   private readonly tireMeshes: THREE.Group[] = [];
   private readonly rubberMat: THREE.MeshStandardMaterial;
   private readonly holoBeamMat: THREE.MeshBasicMaterial;
+  private readonly outerHoloRing: THREE.Mesh;
   private readonly plaqueMesh: THREE.Mesh;
   private readonly plaqueTex: EditableTirePlaqueTexture;
   private readonly pickupPivot = new THREE.Group();
-  private readonly weaponModels: Record<WeaponTierId, THREE.Group>;
+  private readonly weaponRigs: Record<WeaponTierId, ShowcaseWeaponRig>;
   private readonly badgeMeshes: Record<WeaponTierId, THREE.Mesh>;
   private flashTimer = 0;
   private spinAngle = 0;
@@ -104,17 +108,12 @@ export class TireWeaponStackSlot {
 
     for (let i = 0; i < MAX_TIRE_LAYERS; i++) {
       const layerGroup = new THREE.Group();
-      // Slight realistic offset/rotation per stacked military tire
       const offsetX = i % 2 === 0 ? 0.02 : -0.025;
       layerGroup.position.set(offsetX, 0.24 + i * 0.41, 0);
       layerGroup.rotation.y = i * 0.55;
 
       const tire = new THREE.Mesh(tireGeo, this.rubberMat);
-      tire.castShadow = true;
-      tire.receiveShadow = true;
-
       const hub = new THREE.Mesh(hubGeo, rimMat);
-      hub.castShadow = true;
       const cap = new THREE.Mesh(centerCapGeo, lugMat);
       layerGroup.add(tire, hub, cap);
 
@@ -138,40 +137,48 @@ export class TireWeaponStackSlot {
     this.plaqueMesh.position.set(0, 0.95, 1.06);
     this.root.add(this.plaqueMesh);
 
-    // Holo-Pedestal Emitter Ring & Vertical Light Cone beneath Weapon Pickup
+    // Holo-Pedestal Emitter Dual Rings & Vertical Light Cone beneath Weapon Pickup
     this.root.add(this.pickupPivot);
     this.holoBeamMat = new THREE.MeshBasicMaterial({
       color: 0xffd447,
       transparent: true,
-      opacity: 0.22,
+      opacity: 0.24,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
     const holoCone = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.68, 0.42, 0.95, 18, 1, true),
+      new THREE.CylinderGeometry(0.84, 0.48, 1.08, 18, 1, true),
       this.holoBeamMat
     );
-    holoCone.position.set(0, -0.05, 0);
+    holoCone.position.set(0, 0.02, 0);
     this.pickupPivot.add(holoCone);
 
     const emitterRing = new THREE.Mesh(
-      new THREE.TorusGeometry(0.46, 0.032, 8, 20),
+      new THREE.TorusGeometry(0.52, 0.036, 8, 22),
       this.holoBeamMat
     );
     emitterRing.rotation.x = Math.PI / 2;
-    emitterRing.position.set(0, -0.48, 0);
+    emitterRing.position.set(0, -0.50, 0);
     this.pickupPivot.add(emitterRing);
 
-    this.weaponModels = {
-      1: createWeaponPickupGroup(1),
-      2: createWeaponPickupGroup(2),
-      3: createWeaponPickupGroup(3),
-      4: createWeaponPickupGroup(4),
-      5: createWeaponPickupGroup(5),
+    this.outerHoloRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.76, 0.024, 8, 24),
+      this.holoBeamMat
+    );
+    this.outerHoloRing.rotation.x = Math.PI / 2.2;
+    this.outerHoloRing.position.set(0, -0.34, 0);
+    this.pickupPivot.add(this.outerHoloRing);
+
+    this.weaponRigs = {
+      1: createShowcaseWeaponGroup(1),
+      2: createShowcaseWeaponGroup(2),
+      3: createShowcaseWeaponGroup(3),
+      4: createShowcaseWeaponGroup(4),
+      5: createShowcaseWeaponGroup(5),
     };
 
-    const badgeGeo = new THREE.PlaneGeometry(1.96, 0.58);
+    const badgeGeo = new THREE.PlaneGeometry(2.14, 0.64);
     this.badgeMeshes = {
       1: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(1), transparent: true })),
       2: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(2), transparent: true })),
@@ -181,8 +188,11 @@ export class TireWeaponStackSlot {
     };
 
     for (const t of [1, 2, 3, 4, 5] as const) {
-      this.pickupPivot.add(this.weaponModels[t]);
-      this.badgeMeshes[t].position.set(0, 0.88, 0);
+      const rig = this.weaponRigs[t];
+      rig.root.scale.setScalar(1.26);
+      rig.root.rotation.z = 0.20;
+      this.pickupPivot.add(rig.root);
+      this.badgeMeshes[t].position.set(0, 1.02, 0);
       this.pickupPivot.add(this.badgeMeshes[t]);
     }
 
@@ -206,7 +216,7 @@ export class TireWeaponStackSlot {
 
     for (const t of [1, 2, 3, 4, 5] as const) {
       const show = t === def.weaponTier;
-      this.weaponModels[t].visible = show;
+      this.weaponRigs[t].root.visible = show;
       this.badgeMeshes[t].visible = show;
     }
 
@@ -231,7 +241,7 @@ export class TireWeaponStackSlot {
     }
 
     const topY = 0.35 + visibleLayers * 0.41;
-    this.pickupPivot.position.set(0, topY + 0.58, 0);
+    this.pickupPivot.position.set(0, topY + 0.68, 0);
     this.plaqueMesh.position.y = Math.max(0.64, topY * 0.52);
   }
 
@@ -247,10 +257,14 @@ export class TireWeaponStackSlot {
       return;
     }
     this.spinAngle += dt * 2.15;
-    for (const t of [1, 2, 3, 4, 5] as const) {
-      if (this.weaponModels[t].visible) {
-        this.weaponModels[t].rotation.y = this.spinAngle;
-        this.weaponModels[t].position.y = Math.sin(this.spinAngle * 1.6) * 0.09;
+    this.outerHoloRing.rotation.z = -this.spinAngle * 0.8;
+
+    const activeRig = this.weaponRigs[this.weaponTier];
+    if (activeRig.root.visible) {
+      activeRig.root.rotation.y = this.spinAngle;
+      activeRig.root.position.y = 0.08 + Math.sin(this.spinAngle * 1.6) * 0.09;
+      if (activeRig.spinCluster) {
+        activeRig.spinCluster.rotation.x += dt * 14.0;
       }
     }
 

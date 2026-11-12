@@ -7,6 +7,7 @@ export const WIPEOUT_TIME_SCALE = 0.28;
 
 export class GameStateMachine {
   private current: GameState = 'PRE_RUN';
+  private pausedFromState: 'RUNNING' | 'BOSS_FIGHT' = 'RUNNING';
   private wipeoutTimer = 0;
   private wipeoutModalReady = false;
   private readonly listeners: StateChangeListener[] = [];
@@ -15,11 +16,18 @@ export class GameStateMachine {
     return this.current;
   }
 
+  public get resumeTargetState(): 'RUNNING' | 'BOSS_FIGHT' {
+    return this.pausedFromState;
+  }
+
   public get isWipeoutModalReady(): boolean {
     return this.current === 'DEFEAT' && this.wipeoutModalReady;
   }
 
   public get timeScale(): number {
+    if (this.current === 'PAUSED') {
+      return 0.0;
+    }
     if (this.current === 'DEFEAT' && !this.wipeoutModalReady) {
       return WIPEOUT_TIME_SCALE;
     }
@@ -28,6 +36,23 @@ export class GameStateMachine {
 
   public onChange(listener: StateChangeListener): void {
     this.listeners.push(listener);
+  }
+
+  public pause(): boolean {
+    if (this.current !== 'RUNNING' && this.current !== 'BOSS_FIGHT') {
+      return false;
+    }
+    this.pausedFromState = this.current;
+    this.transitionTo('PAUSED');
+    return true;
+  }
+
+  public resume(): boolean {
+    if (this.current !== 'PAUSED') {
+      return false;
+    }
+    this.transitionTo(this.pausedFromState);
+    return true;
   }
 
   public transitionTo(next: GameState): void {
@@ -40,7 +65,7 @@ export class GameStateMachine {
     if (next === 'DEFEAT') {
       this.wipeoutTimer = WIPEOUT_SLOWMO_DURATION;
       this.wipeoutModalReady = false;
-    } else {
+    } else if (next !== 'PAUSED') {
       this.wipeoutTimer = 0;
       this.wipeoutModalReady = false;
     }

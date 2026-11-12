@@ -1,13 +1,20 @@
 import * as THREE from 'three';
-import type { BulletPool, ParticlePool } from '../core/ObjectPool';
+import type { BulletPool, ParticlePool, RagdollPool } from '../core/ObjectPool';
+import type { WeaponTierId } from '../core/types';
 import { MAX_VISUAL_SOLDIERS } from '../math/weaponMath';
 import {
   createEnemySoldierGeometry,
   createPlayerSoldierGeometry,
   createTracerBoltGeometry,
 } from './ProceduralGeometries';
+import {
+  createEquippedWeaponGeometry,
+  EQUIPPED_GUN_PIVOT_X,
+  EQUIPPED_GUN_PIVOT_Y,
+} from './WeaponRigFactory';
 
 const MAX_ENEMY_INSTANCES = 260;
+const MAX_RAGDOLL_INSTANCES = 64;
 const MAX_SHADOW_DISCS = MAX_VISUAL_SOLDIERS + MAX_ENEMY_INSTANCES;
 
 // Module-scoped reusable scratch primitives — strictly zero per-frame allocations!
@@ -24,7 +31,7 @@ function createContactShadowTexture(): THREE.CanvasTexture {
   canvas.height = 64;
   const ctx = canvas.getContext('2d')!;
   const grad = ctx.createRadialGradient(32, 32, 3, 32, 32, 30);
-  grad.addColorStop(0, 'rgba(6, 9, 14, 0.76)');
+  grad.addColorStop(0, 'rgba(6, 9, 14, 0.78)');
   grad.addColorStop(0.55, 'rgba(6, 9, 14, 0.38)');
   grad.addColorStop(1, 'rgba(6, 9, 14, 0.0)');
   ctx.fillStyle = grad;
@@ -32,25 +39,28 @@ function createContactShadowTexture(): THREE.CanvasTexture {
   return new THREE.CanvasTexture(canvas);
 }
 
-interface StrideUniforms {
+interface CommandoUniforms {
   uStrideTime: { value: number };
   uStrideAmp: { value: number };
+  uRecoilKick: { value: number };
 }
 
 /**
- * Injects zero-overhead GPU vertex limb animation (`aPartId` + `gl_InstanceID`)
- * so 150+ friendly operators and 260+ charging enemies sprint with articulated legs & arms
- * in a single instanced draw call with zero extra dynamic vertex buffer uploads.
+ * Injects single-pass GPU vertex animation (`aPartId` + `gl_InstanceID`):
+ * - Articulated leg swing + vertical boot lift off the asphalt (`partId` 1 & 2)
+ * - Subtle off-hand gear sway (`partId` 3)
+ * - Synchronized firing recoil kickback (`partId` 4 forward weapon-cradling arms)
  */
-function applyLimbStrideShader(
+function applyCommandoShader(
   mat: THREE.MeshStandardMaterial,
-  uniforms: StrideUniforms,
+  uniforms: CommandoUniforms,
   cacheKey: string
 ): void {
   mat.customProgramCacheKey = () => cacheKey;
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uStrideTime = uniforms.uStrideTime;
     shader.uniforms.uStrideAmp = uniforms.uStrideAmp;
+    shader.uniforms.uRecoilKick = uniforms.uRecoilKick;
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -59,6 +69,7 @@ function applyLimbStrideShader(
         attribute float aPartId;
         uniform float uStrideTime;
         uniform float uStrideAmp;
+        uniform float uRecoilKick;
         `
       )
       .replace(
@@ -66,14 +77,17 @@ function applyLimbStrideShader(
         /* glsl */ `
         #include <beginnormal_vertex>
         {
-          float strideVal = sin(uStrideTime + float(gl_InstanceID) * 0.92) * uStrideAmp;
+          float phase = uStrideTime + float(gl_InstanceID) * 0.92;
+          float strideVal = sin(phase) * uStrideAmp;
           float nAngle = 0.0;
           if (aPartId > 0.5 && aPartId < 1.5) {
             nAngle = strideVal;
           } else if (aPartId > 1.5 && aPartId < 2.5) {
             nAngle = -strideVal;
-          } else if (aPartId > 2.5) {
-            nAngle = -strideVal * 0.28;
+          } else if (aPartId > 2.5 && aPartId < 3.5) {
+            nAngle = -strideVal * 0.25;
+          } else if (aPartId > 3.5) {
+            nAngle = uRecoilKick * 0.09;
           }
           if (abs(nAngle) > 0.001) {
             float cn = cos(nAngle);
@@ -91,24 +105,86 @@ function applyLimbStrideShader(
         /* glsl */ `
         #include <begin_vertex>
         {
-          float strideVal = sin(uStrideTime + float(gl_InstanceID) * 0.92) * uStrideAmp;
+          float phase = uStrideTime + float(gl_InstanceID) * 0.92;
+          float sRaw = sin(phase);
+          float strideVal = sRaw * uStrideAmp;
           float limbAngle = 0.0;
-          float pivotY = 0.35;
+          float bootLift = 0.0;
+          float pivotY = 0.38;
           if (aPartId > 0.5 && aPartId < 1.5) {
             limbAngle = strideVal;
+            bootLift = max(0.0, sRaw) * uStrideAmp * 0.065;
           } else if (aPartId > 1.5 && aPartId < 2.5) {
             limbAngle = -strideVal;
-          } else if (aPartId > 2.5) {
-            limbAngle = -strideVal * 0.28;
-            pivotY = 0.48;
+            bootLift = max(0.0, -sRaw) * uStrideAmp * 0.065;
+          } else if (aPartId > 2.5 && aPartId < 3.5) {
+            limbAngle = -strideVal * 0.25;
+            pivotY = 0.45;
+          } else if (aPartId > 3.5) {
+            limbAngle = uRecoilKick * 0.08;
+            pivotY = 0.58;
+            transformed.z += uRecoilKick * 0.055;
+            transformed.y += uRecoilKick * 0.015;
           }
           if (abs(limbAngle) > 0.001) {
             float c = cos(limbAngle);
             float s = sin(limbAngle);
             vec3 rel = transformed - vec3(0.0, pivotY, 0.0);
-            transformed.y = pivotY + rel.y * c - rel.z * s;
+            transformed.y = pivotY + rel.y * c - rel.z * s + bootLift;
             transformed.z = rel.y * s + rel.z * c;
           }
+        }
+        `
+      );
+  };
+}
+
+interface WeaponBarrelSpinUniforms {
+  uBarrelSpin: { value: number };
+  uRecoilKick: { value: number };
+}
+
+/**
+ * Spins the 6-barrel cluster (`aSpinPart > 0.5`) on Lv4 Rotary Miniguns and applies crisp
+ * backward recoil slide + muzzle rise across all 150 equipped squad weapons on the GPU!
+ */
+function applyEquippedWeaponShader(
+  mat: THREE.MeshStandardMaterial,
+  uniforms: WeaponBarrelSpinUniforms,
+  cacheKey: string
+): void {
+  const cx = EQUIPPED_GUN_PIVOT_X.toFixed(4);
+  const cy = (EQUIPPED_GUN_PIVOT_Y - 0.02).toFixed(4);
+
+  mat.customProgramCacheKey = () => cacheKey;
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uBarrelSpin = uniforms.uBarrelSpin;
+    shader.uniforms.uRecoilKick = uniforms.uRecoilKick;
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `
+        #include <common>
+        attribute float aSpinPart;
+        uniform float uBarrelSpin;
+        uniform float uRecoilKick;
+        `
+      )
+      .replace(
+        '#include <begin_vertex>',
+        /* glsl */ `
+        #include <begin_vertex>
+        {
+          if (aSpinPart > 0.5) {
+            float ang = uBarrelSpin + float(gl_InstanceID) * 0.55;
+            float cs = cos(ang);
+            float sn = sin(ang);
+            vec2 relXY = transformed.xy - vec2(${cx}, ${cy});
+            transformed.x = ${cx} + relXY.x * cs - relXY.y * sn;
+            transformed.y = ${cy} + relXY.x * sn + relXY.y * cs;
+          }
+          transformed.z += uRecoilKick * 0.062;
+          transformed.y += uRecoilKick * 0.018;
         }
         `
       );
@@ -118,16 +194,25 @@ function applyLimbStrideShader(
 export class InstancedBatchRenderer {
   public readonly playerMesh: THREE.InstancedMesh;
   public readonly enemyMesh: THREE.InstancedMesh;
+  public readonly squadWeaponMeshes: Readonly<Record<WeaponTierId, THREE.InstancedMesh>>;
+  public readonly playerRagdollMesh: THREE.InstancedMesh;
+  public readonly enemyRagdollMesh: THREE.InstancedMesh;
   public readonly bulletMesh: THREE.InstancedMesh;
   public readonly particleMesh: THREE.InstancedMesh;
 
-  private readonly playerStrideUniforms: StrideUniforms = {
+  private readonly playerUniforms: CommandoUniforms = {
     uStrideTime: { value: 0 },
     uStrideAmp: { value: 0 },
+    uRecoilKick: { value: 0 },
   };
-  private readonly enemyStrideUniforms: StrideUniforms = {
+  private readonly enemyUniforms: CommandoUniforms = {
     uStrideTime: { value: 0 },
     uStrideAmp: { value: 0.68 },
+    uRecoilKick: { value: 0 },
+  };
+  private readonly weaponUniforms: WeaponBarrelSpinUniforms = {
+    uBarrelSpin: { value: 0 },
+    uRecoilKick: { value: 0 },
   };
 
   private readonly shadowDiscMesh: THREE.InstancedMesh;
@@ -138,14 +223,14 @@ export class InstancedBatchRenderer {
     bulletCapacity: number,
     particleCapacity: number
   ) {
-    // 1. Player Squad InstancedMesh (Tactical SpecOps Operators)
+    // 1. Player Squad InstancedMesh (Stylized-Heroic Tactical Commandos)
     const playerGeo = createPlayerSoldierGeometry();
     const playerMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.42,
-      metalness: 0.24,
+      metalness: 0.22,
     });
-    applyLimbStrideShader(playerMat, this.playerStrideUniforms, 'soldier-stride-player-v21');
+    applyCommandoShader(playerMat, this.playerUniforms, 'commando-player-v30');
 
     this.playerMesh = new THREE.InstancedMesh(playerGeo, playerMat, MAX_VISUAL_SOLDIERS);
     this.playerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -153,14 +238,35 @@ export class InstancedBatchRenderer {
     this.playerMesh.count = 0;
     scene.add(this.playerMesh);
 
-    // 2. Enemy Horde InstancedMesh (Armored Crimson-Guard Shock Troopers)
+    // 2. Live Swappable 3D Squad Weapon Batches (Tiers 1..5 — only active tier renders!)
+    const weaponMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.30,
+      metalness: 0.46,
+    });
+    applyEquippedWeaponShader(weaponMat, this.weaponUniforms, 'commando-weapon-v30');
+
+    const wMeshes = {} as Record<WeaponTierId, THREE.InstancedMesh>;
+    for (const tier of [1, 2, 3, 4, 5] as const) {
+      const wGeo = createEquippedWeaponGeometry(tier);
+      const wMesh = new THREE.InstancedMesh(wGeo, weaponMat, MAX_VISUAL_SOLDIERS);
+      wMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      wMesh.frustumCulled = false;
+      wMesh.count = 0;
+      wMesh.visible = tier === 1;
+      scene.add(wMesh);
+      wMeshes[tier] = wMesh;
+    }
+    this.squadWeaponMeshes = wMeshes;
+
+    // 3. Enemy Horde InstancedMesh (Crimson-Obsidian Breacher Commandos)
     const enemyGeo = createEnemySoldierGeometry();
     const enemyMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.4,
-      metalness: 0.28,
+      roughness: 0.40,
+      metalness: 0.26,
     });
-    applyLimbStrideShader(enemyMat, this.enemyStrideUniforms, 'soldier-stride-enemy-v21');
+    applyCommandoShader(enemyMat, this.enemyUniforms, 'commando-enemy-v30');
 
     this.enemyMesh = new THREE.InstancedMesh(enemyGeo, enemyMat, MAX_ENEMY_INSTANCES);
     this.enemyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -168,8 +274,39 @@ export class InstancedBatchRenderer {
     this.enemyMesh.count = 0;
     scene.add(this.enemyMesh);
 
-    // 3. Soft AO Contact-Shadow Discs under all active troopers
-    const discGeo = new THREE.PlaneGeometry(0.68, 0.68);
+    // 4. Pooled Flying Knockback Ragdoll InstancedMeshes (rigid tumble on elimination)
+    const ragdollPlayerMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.46,
+      metalness: 0.20,
+    });
+    this.playerRagdollMesh = new THREE.InstancedMesh(
+      playerGeo,
+      ragdollPlayerMat,
+      MAX_RAGDOLL_INSTANCES
+    );
+    this.playerRagdollMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.playerRagdollMesh.frustumCulled = false;
+    this.playerRagdollMesh.count = 0;
+    scene.add(this.playerRagdollMesh);
+
+    const ragdollEnemyMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.44,
+      metalness: 0.22,
+    });
+    this.enemyRagdollMesh = new THREE.InstancedMesh(
+      enemyGeo,
+      ragdollEnemyMat,
+      MAX_RAGDOLL_INSTANCES
+    );
+    this.enemyRagdollMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.enemyRagdollMesh.frustumCulled = false;
+    this.enemyRagdollMesh.count = 0;
+    scene.add(this.enemyRagdollMesh);
+
+    // 5. Soft AO Contact-Shadow Discs under all active troopers
+    const discGeo = new THREE.PlaneGeometry(0.72, 0.72);
     discGeo.rotateX(-Math.PI / 2);
     const discMat = new THREE.MeshBasicMaterial({
       map: createContactShadowTexture(),
@@ -182,7 +319,7 @@ export class InstancedBatchRenderer {
     this.shadowDiscMesh.count = 0;
     scene.add(this.shadowDiscMesh);
 
-    // 4. HDR Glowing Bullet Tracer InstancedMesh
+    // 6. Uniform Crisp Bullet Tracer InstancedMesh
     const bulletGeo = createTracerBoltGeometry();
     const bulletMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -201,7 +338,7 @@ export class InstancedBatchRenderer {
     }
     scene.add(this.bulletMesh);
 
-    // 5. Shrapnel, Sparks & Smoke Particle InstancedMesh
+    // 7. Shrapnel, Brass Casings & Smoke Particle InstancedMesh
     const particleGeo = new THREE.DodecahedronGeometry(0.58, 0);
     const particleMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
@@ -223,40 +360,69 @@ export class InstancedBatchRenderer {
     worldX: Float32Array,
     worldZ: Float32Array,
     marchPhase: number,
-    isMoving: boolean
+    isMoving: boolean,
+    equippedTier: WeaponTierId,
+    steerBankAngle = 0,
+    recoilKick = 0,
+    barrelSpinAngle = 0,
+    facingYaw = 0
   ): void {
     const safeCount = Math.min(count, MAX_VISUAL_SOLDIERS);
     this.playerMesh.count = safeCount;
     this.shadowDiscCursor = 0;
 
-    this.playerStrideUniforms.uStrideTime.value = marchPhase * 12.5;
-    this.playerStrideUniforms.uStrideAmp.value = isMoving ? 0.68 : 0.0;
-    this.enemyStrideUniforms.uStrideTime.value = marchPhase * 11.2;
+    this.playerUniforms.uStrideTime.value = marchPhase * 12.5;
+    this.playerUniforms.uStrideAmp.value = isMoving ? 0.68 : 0.0;
+    this.playerUniforms.uRecoilKick.value = recoilKick;
+
+    this.weaponUniforms.uBarrelSpin.value = barrelSpinAngle;
+    this.weaponUniforms.uRecoilKick.value = recoilKick;
+
+    this.enemyUniforms.uStrideTime.value = marchPhase * 11.2;
+
+    const activeWeaponMesh = this.squadWeaponMeshes[equippedTier];
+    for (const tier of [1, 2, 3, 4, 5] as const) {
+      const m = this.squadWeaponMeshes[tier];
+      if (tier === equippedTier) {
+        m.visible = safeCount > 0;
+        m.count = safeCount;
+      } else {
+        m.visible = false;
+        m.count = 0;
+      }
+    }
 
     for (let i = 0; i < safeCount; i++) {
       const bobPhase = marchPhase * 12.5 + i * 0.92;
       const bobY = isMoving
-        ? Math.abs(Math.sin(bobPhase)) * 0.068
-        : Math.sin(marchPhase * 3 + i) * 0.012;
-      const swayZ = isMoving ? Math.sin(bobPhase) * 0.048 : 0;
+        ? Math.abs(Math.sin(bobPhase)) * 0.062
+        : Math.sin(marchPhase * 2.6 + i * 0.7) * 0.014;
+      const swayZ = isMoving ? Math.sin(bobPhase) * 0.042 : 0;
 
       _pos.set(worldX[i], bobY, worldZ[i]);
-      _euler.set(isMoving ? -0.09 : 0, 0, swayZ);
+      _euler.set(
+        isMoving ? -0.08 : 0,
+        facingYaw - steerBankAngle * 0.35,
+        swayZ - steerBankAngle
+      );
       _quat.setFromEuler(_euler);
       _scale.set(1, 1, 1);
       _mat4.compose(_pos, _quat, _scale);
+
       this.playerMesh.setMatrixAt(i, _mat4);
+      activeWeaponMesh.setMatrixAt(i, _mat4);
 
       // Grounded AO contact shadow disc
       _pos.set(worldX[i], 0.022, worldZ[i]);
       _quat.identity();
-      const shadowScale = 1 - bobY * 1.4;
+      const shadowScale = 1 - bobY * 1.35;
       _scale.set(shadowScale, 1, shadowScale);
       _mat4.compose(_pos, _quat, _scale);
       this.shadowDiscMesh.setMatrixAt(this.shadowDiscCursor++, _mat4);
     }
 
     this.playerMesh.instanceMatrix.needsUpdate = true;
+    activeWeaponMesh.instanceMatrix.needsUpdate = true;
   }
 
   public beginEnemyFrame(): void {
@@ -275,11 +441,11 @@ export class InstancedBatchRenderer {
     }
     this.enemyMesh.count = idx + 1;
 
-    const bob = Math.abs(Math.sin(phase)) * 0.068;
-    const scalePop = 1 + hitFlash * 0.16;
+    const bob = Math.abs(Math.sin(phase)) * 0.062;
+    const scalePop = 1 + hitFlash * 0.14;
 
     _pos.set(x, bob, z);
-    _euler.set(0.09, 0, Math.sin(phase) * 0.05);
+    _euler.set(0.08, 0, Math.sin(phase) * 0.048);
     _quat.setFromEuler(_euler);
     _scale.set(scalePop, scalePop, scalePop);
     _mat4.compose(_pos, _quat, _scale);
@@ -288,7 +454,7 @@ export class InstancedBatchRenderer {
     if (this.shadowDiscCursor < MAX_SHADOW_DISCS) {
       _pos.set(x, 0.022, z);
       _quat.identity();
-      const shadowScale = 1.04 - bob * 1.3;
+      const shadowScale = 1.04 - bob * 1.25;
       _scale.set(shadowScale, 1, shadowScale);
       _mat4.compose(_pos, _quat, _scale);
       this.shadowDiscMesh.setMatrixAt(this.shadowDiscCursor++, _mat4);
@@ -301,6 +467,41 @@ export class InstancedBatchRenderer {
     this.shadowDiscMesh.instanceMatrix.needsUpdate = true;
   }
 
+  public syncRagdolls(pool: RagdollPool): void {
+    let pCount = 0;
+    let eCount = 0;
+    const n = pool.activeCount;
+
+    for (let i = 0; i < n; i++) {
+      const lifeLeft = 1 - pool.age[i] / pool.maxAge[i];
+      // Hold full size during airborne arc, shrink smoothly over final 30% of lifetime
+      const s = lifeLeft < 0.3 ? Math.max(0.05, lifeLeft / 0.3) : 1.0;
+
+      _pos.set(pool.x[i], pool.y[i], pool.z[i]);
+      _euler.set(pool.rx[i], pool.ry[i], pool.rz[i]);
+      _quat.setFromEuler(_euler);
+      _scale.set(s, s, s);
+      _mat4.compose(_pos, _quat, _scale);
+
+      if (pool.isEnemy[i] === 1) {
+        if (eCount < MAX_RAGDOLL_INSTANCES) {
+          this.enemyRagdollMesh.setMatrixAt(eCount++, _mat4);
+        }
+      } else if (pCount < MAX_RAGDOLL_INSTANCES) {
+        this.playerRagdollMesh.setMatrixAt(pCount++, _mat4);
+      }
+    }
+
+    this.playerRagdollMesh.count = pCount;
+    this.enemyRagdollMesh.count = eCount;
+    if (pCount > 0) {
+      this.playerRagdollMesh.instanceMatrix.needsUpdate = true;
+    }
+    if (eCount > 0) {
+      this.enemyRagdollMesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
   public syncBullets(pool: BulletPool): void {
     const n = pool.activeCount;
     this.bulletMesh.count = n;
@@ -310,11 +511,11 @@ export class InstancedBatchRenderer {
       _euler.set(0, yaw + Math.PI, 0);
       _quat.setFromEuler(_euler);
       const s = pool.scale[i];
-      _scale.set(s, s, s * (pool.weaponTier[i] === 5 ? 1.85 : 1.15));
+      // Uniform crisp tracer proportions across all tiers for maximum screen clarity
+      _scale.set(s, s, s * 1.24);
       _mat4.compose(_pos, _quat, _scale);
       this.bulletMesh.setMatrixAt(i, _mat4);
 
-      // HDR boost (> 1.0) so UnrealBloomPass renders fiery golden/cyan tracer streaks!
       _color.setRGB(
         pool.colorR[i] * 1.85,
         pool.colorG[i] * 1.85,
@@ -345,7 +546,6 @@ export class InstancedBatchRenderer {
       const r = pool.colorR[i];
       const g = pool.colorG[i];
       const b = pool.colorB[i];
-      // Boost bright sparks/embers above bloom threshold while keeping smoke/rubber matte
       const hdr = r + g + b > 1.35 ? 1.45 : 1.0;
       _color.setRGB(r * hdr, g * hdr, b * hdr);
       this.particleMesh.setColorAt(i, _color);

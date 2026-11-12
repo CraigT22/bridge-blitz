@@ -254,3 +254,141 @@ export class ParticlePool {
     this.activeCount = 0;
   }
 }
+
+/**
+ * Pre-allocated flying knockback ragdoll pool for eliminated enemy and player commandos.
+ * Uses contiguous SoA arrays with O(1) swap-remove for zero runtime heap allocations.
+ */
+export class RagdollPool {
+  public readonly capacity: number;
+  public activeCount = 0;
+
+  public readonly x: Float32Array;
+  public readonly y: Float32Array;
+  public readonly z: Float32Array;
+  public readonly vx: Float32Array;
+  public readonly vy: Float32Array;
+  public readonly vz: Float32Array;
+  public readonly rx: Float32Array;
+  public readonly ry: Float32Array;
+  public readonly rz: Float32Array;
+  public readonly spinX: Float32Array;
+  public readonly spinY: Float32Array;
+  public readonly spinZ: Float32Array;
+  public readonly age: Float32Array;
+  public readonly maxAge: Float32Array;
+  public readonly isEnemy: Uint8Array;
+
+  private seedCounter = 1;
+
+  constructor(capacity = 64) {
+    this.capacity = capacity;
+    this.x = new Float32Array(capacity);
+    this.y = new Float32Array(capacity);
+    this.z = new Float32Array(capacity);
+    this.vx = new Float32Array(capacity);
+    this.vy = new Float32Array(capacity);
+    this.vz = new Float32Array(capacity);
+    this.rx = new Float32Array(capacity);
+    this.ry = new Float32Array(capacity);
+    this.rz = new Float32Array(capacity);
+    this.spinX = new Float32Array(capacity);
+    this.spinY = new Float32Array(capacity);
+    this.spinZ = new Float32Array(capacity);
+    this.age = new Float32Array(capacity);
+    this.maxAge = new Float32Array(capacity);
+    this.isEnemy = new Uint8Array(capacity);
+  }
+
+  public spawnKnockback(
+    x: number,
+    z: number,
+    isEnemyUnit: boolean,
+    impulseScale = 1.0
+  ): void {
+    if (this.activeCount >= this.capacity) {
+      // Recycle oldest slot at index 0 if saturated during massive 150v60 wipeouts
+      this.deactivate(0);
+    }
+    const idx = this.activeCount++;
+    const s = this.seedCounter++;
+    const spreadSign = s % 2 === 0 ? 1 : -1;
+    const lateral = spreadSign * (1.1 + ((s * 7) % 11) * 0.24) * impulseScale;
+
+    this.x[idx] = x + (((s * 5) % 7) - 3) * 0.08;
+    this.y[idx] = 0.22;
+    this.z[idx] = z;
+    this.vx[idx] = lateral;
+    this.vy[idx] = (4.6 + ((s * 13) % 9) * 0.28) * impulseScale;
+    // Enemies fly backward down-bridge (-Z); wiped player commandos fly backward (+Z)
+    this.vz[idx] = (isEnemyUnit ? -1 : 1) * (6.2 + ((s * 11) % 9) * 0.42) * impulseScale;
+
+    this.rx[idx] = 0;
+    this.ry[idx] = isEnemyUnit ? 0 : Math.PI;
+    this.rz[idx] = 0;
+    this.spinX[idx] = (isEnemyUnit ? -1 : 1) * (8.5 + (s % 5) * 1.4);
+    this.spinY[idx] = spreadSign * (3.2 + (s % 4) * 1.1);
+    this.spinZ[idx] = -spreadSign * (5.4 + (s % 6) * 0.9);
+
+    this.age[idx] = 0;
+    this.maxAge[idx] = 0.62;
+    this.isEnemy[idx] = isEnemyUnit ? 1 : 0;
+  }
+
+  public update(dt: number): void {
+    let i = 0;
+    while (i < this.activeCount) {
+      const nextAge = this.age[i] + dt;
+      if (nextAge >= this.maxAge[i]) {
+        this.deactivate(i);
+        continue;
+      }
+      this.age[i] = nextAge;
+      this.vy[i] -= 21.0 * dt;
+      this.x[i] += this.vx[i] * dt;
+      this.y[i] += this.vy[i] * dt;
+      this.z[i] += this.vz[i] * dt;
+
+      this.rx[i] += this.spinX[i] * dt;
+      this.ry[i] += this.spinY[i] * dt;
+      this.rz[i] += this.spinZ[i] * dt;
+
+      if (this.y[i] < 0.16) {
+        this.y[i] = 0.16;
+        this.vy[i] = Math.abs(this.vy[i]) * 0.34;
+        this.vx[i] *= 0.72;
+        this.vz[i] *= 0.72;
+        this.spinX[i] *= 0.68;
+      }
+      i++;
+    }
+  }
+
+  public deactivate(idx: number): void {
+    if (idx < 0 || idx >= this.activeCount) {
+      return;
+    }
+    const last = --this.activeCount;
+    if (idx !== last) {
+      this.x[idx] = this.x[last];
+      this.y[idx] = this.y[last];
+      this.z[idx] = this.z[last];
+      this.vx[idx] = this.vx[last];
+      this.vy[idx] = this.vy[last];
+      this.vz[idx] = this.vz[last];
+      this.rx[idx] = this.rx[last];
+      this.ry[idx] = this.ry[last];
+      this.rz[idx] = this.rz[last];
+      this.spinX[idx] = this.spinX[last];
+      this.spinY[idx] = this.spinY[last];
+      this.spinZ[idx] = this.spinZ[last];
+      this.age[idx] = this.age[last];
+      this.maxAge[idx] = this.maxAge[last];
+      this.isEnemy[idx] = this.isEnemy[last];
+    }
+  }
+
+  public clear(): void {
+    this.activeCount = 0;
+  }
+}

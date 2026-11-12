@@ -1,4 +1,14 @@
-export type GameState = 'PRE_RUN' | 'RUNNING' | 'BOSS_FIGHT' | 'VICTORY' | 'DEFEAT';
+export type GameState = 'PRE_RUN' | 'RUNNING' | 'BOSS_FIGHT' | 'PAUSED' | 'VICTORY' | 'DEFEAT';
+
+export type MenuTabId = 'BATTLE' | 'UPGRADES' | 'ARMORY' | 'MAP';
+
+export type ArmorySubTabId = 'WEAPONS' | 'BOSSES';
+
+export type BossChassisId =
+  | 'WARDEN_MECH'
+  | 'SIEGE_TANK'
+  | 'KRAKEN_WALKER'
+  | 'SOVEREIGN_TITAN';
 
 export type GameMode = 'CAMPAIGN' | 'ENDLESS';
 
@@ -54,6 +64,10 @@ export interface EnemyWaveDefinition {
 
 export interface BossDefinition {
   readonly name: string;
+  readonly chassis: BossChassisId;
+  readonly primaryHex: number;
+  readonly accentHex: number;
+  readonly trimHex: number;
   readonly maxHp: number;
   readonly segments: number;
   readonly advanceSpeed: number;

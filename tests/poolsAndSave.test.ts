@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GameStateMachine, WIPEOUT_SLOWMO_DURATION } from '../src/core/GameStateMachine';
-import { BulletPool, ParticlePool } from '../src/core/ObjectPool';
+import { BulletPool, ParticlePool, RagdollPool } from '../src/core/ObjectPool';
 import { sanitizeSaveData } from '../src/core/SaveManager';
 import { CAMPAIGN_STAGES, generateEndlessWaveStage } from '../src/core/StageData';
 
@@ -36,6 +36,50 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(p.activeCount).toBe(0);
   });
 
+  it('simulates RagdollPool knockback tumbles, asphalt bounces, and capacity recycling', () => {
+    const ragdolls = new RagdollPool(4);
+    ragdolls.spawnKnockback(0, -25, true, 1.0);
+    ragdolls.spawnKnockback(1.2, -10, false, 1.15);
+    expect(ragdolls.activeCount).toBe(2);
+    expect(ragdolls.vz[0]).toBeLessThan(0); // Enemy flies backward (-Z)
+    expect(ragdolls.vz[1]).toBeGreaterThan(0); // Player flies backward (+Z)
+
+    // Saturate capacity (4) and verify oldest slot recycles safely without overflow
+    ragdolls.spawnKnockback(-1, -20, true, 1.0);
+    ragdolls.spawnKnockback(2, -22, true, 1.0);
+    ragdolls.spawnKnockback(0.5, -24, true, 1.0);
+    expect(ragdolls.activeCount).toBe(4);
+
+    // Advance physics and verify expiration
+    ragdolls.update(0.35);
+    expect(ragdolls.activeCount).toBe(4);
+    expect(ragdolls.y[0]).toBeGreaterThanOrEqual(Math.fround(0.16));
+
+    ragdolls.update(0.35);
+    expect(ragdolls.activeCount).toBe(0);
+  });
+
+  it('pauses and resumes both RUNNING and BOSS_FIGHT states with zeroed timeScale', () => {
+    const fsm = new GameStateMachine();
+    expect(fsm.pause()).toBe(false); // Cannot pause in PRE_RUN
+
+    fsm.transitionTo('RUNNING');
+    expect(fsm.pause()).toBe(true);
+    expect(fsm.state).toBe('PAUSED');
+    expect(fsm.timeScale).toBe(0.0);
+    expect(fsm.resumeTargetState).toBe('RUNNING');
+    expect(fsm.resume()).toBe(true);
+    expect(fsm.state).toBe('RUNNING');
+    expect(fsm.timeScale).toBe(1.0);
+
+    fsm.transitionTo('BOSS_FIGHT');
+    expect(fsm.pause()).toBe(true);
+    expect(fsm.state).toBe('PAUSED');
+    expect(fsm.resumeTargetState).toBe('BOSS_FIGHT');
+    expect(fsm.resume()).toBe(true);
+    expect(fsm.state).toBe('BOSS_FIGHT');
+  });
+
   it('runs a 0.8s slow-motion wipeout transition on DEFEAT before unlocking summary modal', () => {
     const fsm = new GameStateMachine();
     fsm.transitionTo('RUNNING');
@@ -53,17 +97,27 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(fsm.timeScale).toBe(1.0);
   });
 
-  it('defines 10 valid handcrafted campaign stages and scalable Endless waves', () => {
+  it('defines 10 valid handcrafted campaign stages with all 4 Boss war-machine archetypes', () => {
     expect(CAMPAIGN_STAGES).toHaveLength(10);
+    const seenChassis = new Set<string>();
     for (let i = 0; i < CAMPAIGN_STAGES.length; i++) {
-      expect(CAMPAIGN_STAGES[i].stageNumber).toBe(i + 1);
-      expect(CAMPAIGN_STAGES[i].gatePairs.length).toBeGreaterThanOrEqual(3);
-      expect(CAMPAIGN_STAGES[i].boss.maxHp).toBeGreaterThan(0);
+      const stage = CAMPAIGN_STAGES[i];
+      expect(stage.stageNumber).toBe(i + 1);
+      expect(stage.gatePairs.length).toBeGreaterThanOrEqual(3);
+      expect(stage.boss.maxHp).toBeGreaterThan(0);
+      expect(stage.boss.chassis).toBeTruthy();
+      expect(stage.boss.primaryHex).toBeGreaterThan(0);
+      seenChassis.add(stage.boss.chassis);
     }
+    expect(seenChassis).toEqual(
+      new Set(['WARDEN_MECH', 'SIEGE_TANK', 'KRAKEN_WALKER', 'SOVEREIGN_TITAN'])
+    );
 
     const wave1 = generateEndlessWaveStage(1);
+    const wave4 = generateEndlessWaveStage(4);
     const wave5 = generateEndlessWaveStage(5);
     expect(wave5.boss.maxHp).toBeGreaterThan(wave1.boss.maxHp);
+    expect(wave4.boss.chassis).toBe('SOVEREIGN_TITAN');
   });
 
   it('sanitizes malformed localStorage payloads safely', () => {
