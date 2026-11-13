@@ -112,7 +112,7 @@ export class SceneManager {
     this.scene.add(this.rimLight);
     this.scene.add(this.rimLight.target);
 
-    const frontalFill = new THREE.DirectionalLight(0xffe4c4, 0.72);
+    const frontalFill = new THREE.DirectionalLight(0xffe4c4, 1.02);
     frontalFill.position.set(0, 10, 22);
     this.scene.add(frontalFill);
 
@@ -344,8 +344,8 @@ export class SceneManager {
         }
       }
 
-      _desiredPos.set(0, ARMORY_STAGE_Y + 0.58, ARMORY_STAGE_Z + 4.85 + p * 1.25);
-      _desiredLook.set(0, ARMORY_STAGE_Y - 0.16 - p * 0.34, ARMORY_STAGE_Z);
+      _desiredPos.set(0, ARMORY_STAGE_Y + 0.62, ARMORY_STAGE_Z + 5.75 + p * 1.65);
+      _desiredLook.set(0, ARMORY_STAGE_Y - 0.14 - p * 0.30, ARMORY_STAGE_Z);
     } else if (framingMode === 'LIVE_BRIDGE') {
       // Comp-Authentic Elevated ~29° Start Camera:
       // Positions your commando around ~58% vertical height with visible concrete slab space below their boots

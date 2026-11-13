@@ -345,7 +345,8 @@ export class BridgeBlitzGame {
     }
 
     const bossTrackEnd = -zBase + stage.trackLength;
-    this.bridgeEnv.configureBossPlatformZ(zBase - stage.trackLength);
+    const isCampaign = this.saveManager.getData().selectedMode === 'CAMPAIGN';
+    this.bridgeEnv.configureBossPlatformZ(zBase - stage.trackLength, isCampaign);
     this.boss.configure(stage.boss, bossTrackEnd);
   }
 
@@ -377,6 +378,7 @@ export class BridgeBlitzGame {
       draft.coins += earned;
     });
     this.hud.flashLiveCoinGain(earned, updated.coins);
+    this.sound.playCoinPickup();
 
     if (spawnWorldText) {
       this.combatText.spawn(
@@ -463,6 +465,7 @@ export class BridgeBlitzGame {
 
     const newLevel = updated.upgrades[key];
     this.sound.playUpgradeBuy(newLevel);
+    this.hud.flashUpgradePurchase(key);
     this.celebrateHopTimer = 0.38;
 
     if (key === 'startingSquad') {
@@ -584,21 +587,35 @@ export class BridgeBlitzGame {
     const burstCount = Math.min(4, vis);
     const seed = Math.floor(this.elapsedTime * 60);
 
-    const mxOff = 0.42 * COMMANDO_MODEL_SCALE;
+    const muzzleLocalX = 0.255 * COMMANDO_MODEL_SCALE;
     const my = 0.548 * COMMANDO_MODEL_SCALE;
-    const mzOff = -0.52 * COMMANDO_MODEL_SCALE;
+    const muzzleLocalZ = -0.68 * COMMANDO_MODEL_SCALE;
 
     for (let k = 0; k < burstCount; k++) {
       const idx = (seed + k * 5) % vis;
-      const sx = this.squad.soldierWorldX[idx] + mxOff;
-      const sz = this.squad.soldierWorldZ[idx] + mzOff;
+      const soldierX = this.squad.soldierWorldX[idx];
+      const soldierZ = this.squad.soldierWorldZ[idx];
+      const gunYaw = Math.max(
+        -0.38,
+        Math.min(
+          0.38,
+          -Math.atan2(
+            this.focalTargetX - soldierX,
+            Math.max(5.5, soldierZ - this.focalTargetZ)
+          )
+        )
+      );
+      const cy = Math.cos(gunYaw);
+      const sy = Math.sin(gunYaw);
+      const sx = soldierX + muzzleLocalX * cy + muzzleLocalZ * sy;
+      const sz = soldierZ - muzzleLocalX * sy + muzzleLocalZ * cy;
       this.vfx.spawnMuzzleFlash(sx, my, sz, flashScale, flashColor);
 
       if (k === 0) {
         this.particlePool.spawn(
-          sx + 0.1,
+          sx + 0.08,
           my,
-          sz + 0.28,
+          sz + 0.24,
           1.9 + (seed % 3) * 0.45,
           2.6,
           0.6,
@@ -724,7 +741,7 @@ export class BridgeBlitzGame {
         marchingForward
       );
       if (fired) {
-        this.sound.playGunfire(this.squad.weaponTier);
+        this.sound.playGunfire(this.squad.weaponTier, this.squad.logicalCount);
         this.spawnVolleyMuzzleVfx();
       }
 
@@ -754,7 +771,7 @@ export class BridgeBlitzGame {
         false
       );
       if (fired) {
-        this.sound.playGunfire(this.squad.weaponTier);
+        this.sound.playGunfire(this.squad.weaponTier, this.squad.logicalCount);
         this.spawnVolleyMuzzleVfx();
       }
     }
@@ -1190,19 +1207,19 @@ export class BridgeBlitzGame {
 
           if (hit.ricochet) {
             this.sound.playRicochet();
-            this.vfx.spawnImpactSplash(hit.hitX, 1.22, hit.hitZ, 0.72, 0xffe066);
-            this.particlePool.spawnBurst(hit.hitX, 1.2, hit.hitZ, 3, 4.2, 0xffe066, 0.1, 0.25);
+            this.vfx.spawnImpactSplash(hit.hitX, 0.52, hit.hitZ, 0.55, 0xffe066);
+            this.particlePool.spawnBurst(hit.hitX, 0.52, hit.hitZ, 3, 4.0, 0xffe066, 0.09, 0.22);
           } else {
-            this.vfx.spawnImpactSplash(hit.hitX, 1.24, hit.hitZ, 0.90, weaponSplashHex);
+            this.vfx.spawnImpactSplash(hit.hitX, 0.46, hit.hitZ, 0.56, weaponSplashHex);
             this.particlePool.spawnBurst(
               hit.hitX,
-              1.2,
+              0.48,
               hit.hitZ,
               2,
-              3.5,
+              3.2,
               weaponSplashHex,
-              0.1,
-              0.22
+              0.09,
+              0.20
             );
             if (hit.flippedToPositive) {
               this.gatesFlippedThisRun++;
@@ -1675,7 +1692,7 @@ export class BridgeBlitzGame {
 
     this.batchRenderer.beginEnemyFrame();
     for (let i = 0; i < MAX_ENEMY_WAVES; i++) {
-      this.enemyWaves[i].pushInstances(this.batchRenderer);
+      this.enemyWaves[i].pushInstances(this.batchRenderer, isMoving);
     }
     this.batchRenderer.finishEnemyFrame();
 
@@ -1698,10 +1715,16 @@ export class BridgeBlitzGame {
       this.endlessWave
     );
 
+    const effectiveState =
+      state === 'PAUSED' ? this.stateMachine.resumeTargetState : state;
+    const bossApproachEngaged =
+      effectiveState === 'RUNNING' &&
+      (this.boss.currentHp < this.boss.maxHp - 0.01 ||
+        this.squad.z - this.boss.z <= 28);
     const bossHudActive =
-      (state === 'BOSS_FIGHT' ||
-        (state === 'PAUSED' && this.stateMachine.resumeTargetState === 'BOSS_FIGHT')) &&
-      this.boss.active;
+      this.boss.active &&
+      !this.boss.defeated &&
+      (effectiveState === 'BOSS_FIGHT' || bossApproachEngaged);
 
     this.hud.updateWorldOverlays(
       this.sceneManager,

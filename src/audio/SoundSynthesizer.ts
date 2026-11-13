@@ -3,13 +3,17 @@ import type { GameSettings, WeaponTierId } from '../core/types';
 
 /**
  * Zero-dependency procedural Web Audio API sound synthesizer + mobile haptics wrapper.
- * Unlocks AudioContext cleanly on the first user gesture without throwing warnings.
+ * Pre-allocates one shared 1.0s white-noise AudioBuffer on unlock (zero per-shot GC) to layer
+ * crisp ballistic transients, barrel/tire shatter crunches, maul slams, and metallic coin chimes.
  */
 export class SoundSynthesizer {
   private ctx: AudioContext | null = null;
+  private noiseBuffer: AudioBuffer | null = null;
   private settings: GameSettings;
   private lastShotSoundTime = 0;
   private lastGateTickTime = 0;
+  private lastCoinSoundTime = 0;
+  private noiseCursor = 0;
 
   constructor(settings: GameSettings) {
     this.settings = settings;
@@ -31,6 +35,17 @@ export class SoundSynthesizer {
         this.ctx = new AudioCtx();
       }
     }
+    if (this.ctx && !this.noiseBuffer) {
+      const sampleRate = this.ctx.sampleRate;
+      const buf = this.ctx.createBuffer(1, sampleRate, sampleRate);
+      const data = buf.getChannelData(0);
+      let seed = 0x9e3779b9;
+      for (let i = 0; i < sampleRate; i++) {
+        seed = (seed * 1664525 + 1013904223) | 0;
+        data[i] = ((seed >>> 0) / 0xffffffff) * 2 - 1;
+      }
+      this.noiseBuffer = buf;
+    }
     if (this.ctx && this.ctx.state === 'suspended') {
       void this.ctx.resume();
     }
@@ -50,43 +65,108 @@ export class SoundSynthesizer {
     return this.ctx;
   }
 
-  public playGunfire(tier: WeaponTierId): void {
+  private playFilteredNoise(
+    ctx: AudioContext,
+    startTime: number,
+    duration: number,
+    filterType: BiquadFilterType,
+    freq: number,
+    q: number,
+    peakGain: number
+  ): void {
+    if (!this.noiseBuffer || peakGain <= 0.0005) {
+      return;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = filterType;
+    filter.frequency.setValueAtTime(freq, startTime);
+    filter.Q.setValueAtTime(q, startTime);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(peakGain, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.0008, startTime + duration);
+
+    src.connect(filter).connect(gain).connect(ctx.destination);
+    this.noiseCursor = (this.noiseCursor + 0.13) % 0.72;
+    src.start(startTime, this.noiseCursor, duration + 0.01);
+  }
+
+  public playGunfire(tier: WeaponTierId, squadCount = 1): void {
     const ctx = this.ensureReady();
     if (!ctx) {
       return;
     }
     const now = ctx.currentTime;
-    if (now - this.lastShotSoundTime < 0.055) {
+    if (now - this.lastShotSoundTime < 0.052) {
       return;
     }
     this.lastShotSoundTime = now;
+
+    // Subtle crowd-size harmonic presence (1 -> 40 commandos) without speaker clipping
+    const crowdFactor = Math.min(1, Math.max(0, (squadCount - 1) / 39));
+    const gainScale = 1 + crowdFactor * 0.28;
 
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
     if (tier === 5) {
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(920, now);
-      osc.frequency.exponentialRampToValueAtTime(240, now + 0.065);
-      gain.gain.setValueAtTime(0.055, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
+      osc.frequency.setValueAtTime(960, now);
+      osc.frequency.exponentialRampToValueAtTime(220, now + 0.068);
+      gain.gain.setValueAtTime(0.054 * gainScale, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.068);
       osc.connect(gain).connect(ctx.destination);
       osc.start(now);
-      osc.stop(now + 0.07);
+      osc.stop(now + 0.072);
+      this.playFilteredNoise(ctx, now, 0.032, 'bandpass', 3200, 2.4, 0.022 * gainScale);
       return;
     }
 
     osc.type = tier >= 3 ? 'sawtooth' : 'triangle';
-    const startFreq = tier === 4 ? 260 : tier === 3 ? 210 : 300;
-    osc.frequency.setValueAtTime(startFreq, now);
-    osc.frequency.exponentialRampToValueAtTime(68, now + 0.045);
+    const startFreq = tier === 4 ? 275 : tier === 3 ? 220 : tier === 2 ? 320 : 295;
+    osc.frequency.setValueAtTime(startFreq * (1 - crowdFactor * 0.06), now);
+    osc.frequency.exponentialRampToValueAtTime(64, now + 0.048);
 
-    gain.gain.setValueAtTime(0.045, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+    gain.gain.setValueAtTime(0.044 * gainScale, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.048);
 
     osc.connect(gain).connect(ctx.destination);
     osc.start(now);
-    osc.stop(now + 0.05);
+    osc.stop(now + 0.052);
+
+    // Crisp ballistic snap transient
+    const snapFreq = tier >= 3 ? 1850 : 2400;
+    const snapGain = (tier === 4 ? 0.036 : 0.028) * gainScale;
+    this.playFilteredNoise(ctx, now, 0.030, 'bandpass', snapFreq, 1.4, snapGain);
+  }
+
+  public playCoinPickup(): void {
+    const ctx = this.ensureReady();
+    if (!ctx) {
+      return;
+    }
+    const now = ctx.currentTime;
+    if (now - this.lastCoinSoundTime < 0.068) {
+      return;
+    }
+    this.lastCoinSoundTime = now;
+
+    const notes = [1318.51, 1760.0];
+    for (let i = 0; i < notes.length; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      const t = now + i * 0.032;
+      osc.frequency.setValueAtTime(notes[i], t);
+      gain.gain.setValueAtTime(0.038, t);
+      gain.gain.exponentialRampToValueAtTime(0.0008, t + 0.085);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.09);
+    }
   }
 
   public playGateTick(currentValue: number): void {
@@ -195,13 +275,16 @@ export class SoundSynthesizer {
     const pop = ctx.createOscillator();
     const popGain = ctx.createGain();
     pop.type = 'triangle';
-    pop.frequency.setValueAtTime(190, base);
-    pop.frequency.exponentialRampToValueAtTime(55, base + 0.11);
+    pop.frequency.setValueAtTime(205, base);
+    pop.frequency.exponentialRampToValueAtTime(52, base + 0.12);
     popGain.gain.setValueAtTime(0.11, base);
-    popGain.gain.exponentialRampToValueAtTime(0.001, base + 0.12);
+    popGain.gain.exponentialRampToValueAtTime(0.001, base + 0.13);
     pop.connect(popGain).connect(ctx.destination);
     pop.start(base);
-    pop.stop(base + 0.13);
+    pop.stop(base + 0.14);
+
+    // Tactile crate/rubber shatter crunch
+    this.playFilteredNoise(ctx, base, 0.095, 'bandpass', 920, 0.9, 0.068);
 
     const tones = upgradedWeapon ? [587.33, 880, 1174.66] : [659.25, 987.77];
     for (let i = 0; i < tones.length; i++) {
@@ -234,6 +317,7 @@ export class SoundSynthesizer {
     osc.connect(gain).connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.07);
+    this.playFilteredNoise(ctx, now, 0.038, 'lowpass', 1100, 1.0, 0.025);
   }
 
   public playBossDefeat(): void {
@@ -242,8 +326,10 @@ export class SoundSynthesizer {
     if (!ctx) {
       return;
     }
-    const chord = [523.25, 659.25, 783.99, 1046.5, 1318.5];
     const base = ctx.currentTime;
+    this.playFilteredNoise(ctx, base, 0.26, 'lowpass', 620, 0.8, 0.095);
+
+    const chord = [523.25, 659.25, 783.99, 1046.5, 1318.5];
     for (let i = 0; i < chord.length; i++) {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -309,6 +395,7 @@ export class SoundSynthesizer {
       osc.connect(gain).connect(ctx.destination);
       osc.start(now);
       osc.stop(now + 0.25);
+      this.playFilteredNoise(ctx, now, 0.16, 'lowpass', 540, 1.1, 0.085);
     }
   }
 

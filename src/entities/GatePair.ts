@@ -31,6 +31,8 @@ interface SingleGateSlot {
   isLocked: boolean;
   ringProgress: number;
   flashTimer: number;
+  flashCooldown: number;
+  popTimer: number;
 }
 
 export interface GateBulletImpactEvent {
@@ -198,6 +200,8 @@ export class GatePairSlot {
       isLocked: false,
       ringProgress: 0,
       flashTimer: 0,
+      flashCooldown: 0,
+      popTimer: 0,
     };
   }
 
@@ -334,6 +338,10 @@ export class GatePairSlot {
     slot.isLocked = def.isLocked;
     slot.ringProgress = 0;
     slot.flashTimer = 0;
+    slot.flashCooldown = 0;
+    slot.popTimer = 0;
+    slot.panelMesh.scale.y = 1.0;
+    slot.panelMesh.position.y = 1.28;
     slot.padlockGroup.visible = def.isLocked;
     slot.labelTex.redrawIfDirty(
       def.operator,
@@ -382,8 +390,20 @@ export class GatePairSlot {
     if (!slot.active) {
       return;
     }
+    if (slot.flashCooldown > 0) {
+      slot.flashCooldown = Math.max(0, slot.flashCooldown - dt);
+    }
     if (slot.flashTimer > 0) {
-      slot.flashTimer = Math.max(0, slot.flashTimer - dt * 6.5);
+      slot.flashTimer = Math.max(0, slot.flashTimer - dt * 11.0);
+    }
+    if (slot.popTimer > 0) {
+      slot.popTimer = Math.max(0, slot.popTimer - dt * 9.5);
+      const pop = Math.sin(slot.popTimer * Math.PI) * 0.055;
+      slot.panelMesh.scale.y = 1 + pop;
+      slot.panelMesh.position.y = 1.28 + pop * (PANEL_HEIGHT * 0.5);
+    } else {
+      slot.panelMesh.scale.y = 1.0;
+      slot.panelMesh.position.y = 1.28;
     }
     slot.labelTex.redrawIfDirty(
       slot.operator,
@@ -440,7 +460,14 @@ export class GatePairSlot {
     targetSlot.value = res.value;
     targetSlot.hitAccumulator = res.hitAccumulator;
     targetSlot.ringProgress = res.ringProgress;
-    targetSlot.flashTimer = 1.0;
+    if (res.deltaIncrements > 0) {
+      targetSlot.popTimer = 1.0;
+      targetSlot.flashTimer = 1.0;
+      targetSlot.flashCooldown = 0.12;
+    } else if (targetSlot.flashCooldown <= 0) {
+      targetSlot.flashTimer = 0.55;
+      targetSlot.flashCooldown = 0.14;
+    }
     this.syncPylonColors();
     if (!this.isFullSpan && res.deltaIncrements > 0) {
       this.recomputeTargetSplitX();

@@ -118,6 +118,8 @@ export class BridgeEnvironment {
   };
   private readonly chunks: THREE.Group[] = [];
   private readonly bossPlatform: THREE.Group;
+  private readonly endBulkheadGroup = new THREE.Group();
+  private finiteTerminusZ: number | null = null;
   private readonly atmospherePoints: THREE.Points;
   private readonly motePositions: Float32Array;
   private readonly moteCount = 160;
@@ -234,7 +236,8 @@ export class BridgeEnvironment {
       curbMat,
       gunmetalMat,
       towerMat,
-      lampGlowMat
+      lampGlowMat,
+      beaconGlowMat
     );
     this.root.add(this.bossPlatform);
 
@@ -449,51 +452,133 @@ export class BridgeEnvironment {
     curbMat: THREE.Material,
     gunmetalMat: THREE.Material,
     towerMat: THREE.Material,
-    lampGlowMat: THREE.Material
+    lampGlowMat: THREE.Material,
+    beaconGlowMat: THREE.Material
   ): THREE.Group {
     const group = new THREE.Group();
 
-    const pad = new THREE.Mesh(new THREE.BoxGeometry(16.2, 0.84, 30), deckMat);
-    pad.position.set(0, -0.39, -13);
+    // Seamless 20m approach deck (localZ +22..+2 => world bossStartZ+30..bossStartZ+10)
+    // Guarantees zero roadway gap regardless of stage trackLength modulo 40m!
+    const approachDeck = new THREE.Mesh(new THREE.BoxGeometry(11.56, 0.84, 20), deckMat);
+    approachDeck.position.set(0, -0.39, 12);
+    approachDeck.receiveShadow = true;
+    group.add(approachDeck);
+
+    const approachGirder = new THREE.Mesh(new THREE.BoxGeometry(12.24, 1.05, 20), gunmetalMat);
+    approachGirder.position.set(0, -1.04, 12);
+    group.add(approachGirder);
+
+    for (const sign of [-1, 1]) {
+      const approachCurb = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.2, 20), curbMat);
+      approachCurb.position.set(sign * 5.18, 0.11, 12);
+      approachCurb.receiveShadow = true;
+      group.add(approachCurb);
+
+      const approachWall = new THREE.Mesh(
+        new THREE.BoxGeometry(0.48, 0.54, 20),
+        concreteBarrierMat
+      );
+      approachWall.position.set(sign * 5.54, 0.28, 12);
+      approachWall.castShadow = true;
+      approachWall.receiveShadow = true;
+      group.add(approachWall);
+
+      // Tapered wing transition walls linking standard K-rail (5.54) to bastion wall (7.70)
+      const wingWall = new THREE.Mesh(
+        new THREE.BoxGeometry(2.65, 0.85, 0.72),
+        concreteBarrierMat
+      );
+      wingWall.position.set(sign * 6.52, 0.42, 2.0);
+      wingWall.castShadow = true;
+      group.add(wingWall);
+    }
+
+    // Widened 28m Armored Boss Bastion Pad (localZ +2..-26 => world bossStartZ+10..bossStartZ-18)
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(16.2, 0.84, 28), deckMat);
+    pad.position.set(0, -0.39, -12);
     pad.receiveShadow = true;
     group.add(pad);
 
+    const padGirder = new THREE.Mesh(new THREE.BoxGeometry(16.6, 1.15, 28), gunmetalMat);
+    padGirder.position.set(0, -1.08, -12);
+    group.add(padGirder);
+
     for (const sign of [-1, 1]) {
       const blastWall = new THREE.Mesh(
-        new THREE.BoxGeometry(0.75, 0.85, 30),
+        new THREE.BoxGeometry(0.75, 0.85, 28),
         concreteBarrierMat
       );
-      blastWall.position.set(sign * 7.7, 0.42, -13);
+      blastWall.position.set(sign * 7.7, 0.42, -12);
       blastWall.castShadow = true;
       blastWall.receiveShadow = true;
       group.add(blastWall);
 
-      const hazardStrip = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.24, 30), curbMat);
-      hazardStrip.position.set(sign * 7.15, 0.12, -13);
+      const hazardStrip = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.24, 28), curbMat);
+      hazardStrip.position.set(sign * 7.15, 0.12, -12);
       group.add(hazardStrip);
 
       // Heavy Armored Bastion Pylons + Floodlights
       const pylon = new THREE.Mesh(new THREE.BoxGeometry(1.55, 10.5, 1.65), towerMat);
-      pylon.position.set(sign * 7.65, 5.0, -25);
+      pylon.position.set(sign * 7.65, 5.0, -24.6);
       pylon.castShadow = true;
       group.add(pylon);
 
       const floodBox = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.55, 0.45), gunmetalMat);
-      floodBox.position.set(sign * 7.3, 9.4, -24.2);
+      floodBox.position.set(sign * 7.3, 9.4, -23.8);
       floodBox.rotation.x = 0.35;
       group.add(floodBox);
 
       const floodLens = new THREE.Mesh(new THREE.PlaneGeometry(0.92, 0.38), lampGlowMat);
-      floodLens.position.set(sign * 7.3, 9.32, -23.95);
+      floodLens.position.set(sign * 7.3, 9.32, -23.55);
       floodLens.rotation.x = 0.35;
       group.add(floodLens);
     }
 
+    // Campaign Terminus Bulkhead overlooking open ocean behind the Boss!
+    const rearWall = new THREE.Mesh(
+      new THREE.BoxGeometry(16.2, 1.05, 0.85),
+      concreteBarrierMat
+    );
+    rearWall.position.set(0, 0.52, -25.6);
+    rearWall.castShadow = true;
+    rearWall.receiveShadow = true;
+    this.endBulkheadGroup.add(rearWall);
+
+    const rearHazard = new THREE.Mesh(new THREE.BoxGeometry(14.8, 0.28, 0.48), curbMat);
+    rearHazard.position.set(0, 0.14, -25.02);
+    this.endBulkheadGroup.add(rearHazard);
+
+    const rearRail = new THREE.Mesh(new THREE.BoxGeometry(15.6, 0.16, 0.22), gunmetalMat);
+    rearRail.position.set(0, 1.16, -25.6);
+    this.endBulkheadGroup.add(rearRail);
+
+    for (const bx of [-4.6, 0, 4.6]) {
+      const beaconPedestal = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.22, 0.28, 8),
+        gunmetalMat
+      );
+      beaconPedestal.position.set(bx, 1.32, -25.6);
+      this.endBulkheadGroup.add(beaconPedestal);
+
+      const beaconDome = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), beaconGlowMat);
+      beaconDome.position.set(bx, 1.5, -25.6);
+      this.endBulkheadGroup.add(beaconDome);
+    }
+
+    group.add(this.endBulkheadGroup);
+
     return group;
   }
 
-  public configureBossPlatformZ(bossStartZ: number): void {
+  public configureBossPlatformZ(bossStartZ: number, finiteCampaignTerminus = true): void {
     this.bossPlatform.position.set(0, 0.01, bossStartZ + 8);
+    this.finiteTerminusZ = finiteCampaignTerminus ? bossStartZ - 18 : null;
+    this.endBulkheadGroup.visible = finiteCampaignTerminus;
+    for (let i = 0; i < this.chunks.length; i++) {
+      const chunk = this.chunks[i];
+      chunk.visible =
+        this.finiteTerminusZ === null || chunk.position.z - CHUNK_LENGTH >= this.finiteTerminusZ;
+    }
   }
 
   /**
@@ -520,6 +605,8 @@ export class BridgeEnvironment {
       } else if (chunk.position.z < squadZ - totalSpan + 50) {
         chunk.position.z += totalSpan;
       }
+      chunk.visible =
+        this.finiteTerminusZ === null || chunk.position.z - CHUNK_LENGTH >= this.finiteTerminusZ;
     }
 
     // Drift golden embers & battlefield ash cleanly across the bridge

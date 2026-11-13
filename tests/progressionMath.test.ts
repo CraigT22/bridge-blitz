@@ -73,4 +73,17 @@ describe('progressionMath', () => {
     expect(partial.warChestMultiplier).toBeCloseTo(1.3);
     expect(partial.totalCoinsEarned).toBe(Math.round(partial.distanceCoins * 1.3));
   });
+
+  it('maintains strictly monotonic Mid-Bridge Goliath HP and Boss HP progression across all 10 Campaign sectors', async () => {
+    const { CAMPAIGN_STAGES } = await import('../src/core/StageData');
+    expect(CAMPAIGN_STAGES).toHaveLength(10);
+    for (let i = 1; i < CAMPAIGN_STAGES.length; i++) {
+      const prev = CAMPAIGN_STAGES[i - 1];
+      const curr = CAMPAIGN_STAGES[i];
+      expect(curr.boss.maxHp).toBeGreaterThan(prev.boss.maxHp);
+      expect(curr.midBrute).toBeDefined();
+      expect(prev.midBrute).toBeDefined();
+      expect(curr.midBrute!.maxHp).toBeGreaterThan(prev.midBrute!.maxHp);
+    }
+  });
 });

@@ -63,6 +63,7 @@ export class TireWeaponStackSlot {
   private readonly weaponRigs: Record<WeaponTierId, ShowcaseWeaponRig>;
   private readonly badgeMeshes: Record<WeaponTierId, THREE.Mesh>;
   private flashTimer = 0;
+  private flashCooldown = 0;
   private spinAngle = 0;
   private retiring = false;
 
@@ -200,6 +201,7 @@ export class TireWeaponStackSlot {
     this.weaponTier = def.weaponTier ?? null;
     this.coinReward = def.coinReward ?? 45;
     this.flashTimer = 0;
+    this.flashCooldown = 0;
 
     this.root.position.set(this.x, 0, this.z);
     this.root.visible = true;
@@ -277,10 +279,14 @@ export class TireWeaponStackSlot {
       this.coinPickupGroup.position.y = Math.sin(this.spinAngle * 1.8) * 0.07;
     }
 
+    if (this.flashCooldown > 0) {
+      this.flashCooldown = Math.max(0, this.flashCooldown - dt);
+    }
+
     if (this.flashTimer > 0) {
-      this.flashTimer = Math.max(0, this.flashTimer - dt * 8);
-      const g = this.flashTimer * 0.62;
-      this.rubberMat.emissive.setRGB(g, g * 0.25, 0.04);
+      this.flashTimer = Math.max(0, this.flashTimer - dt * 10.5);
+      const g = this.flashTimer * 0.18;
+      this.rubberMat.emissive.setRGB(g, g * 0.88, g * 0.78);
     } else {
       this.rubberMat.emissive.setRGB(0, 0, 0);
     }
@@ -308,7 +314,10 @@ export class TireWeaponStackSlot {
     }
 
     this.remainingBreakCount -= damage;
-    this.flashTimer = 1.0;
+    if (this.flashCooldown <= 0) {
+      this.flashTimer = 1.0;
+      this.flashCooldown = 0.14;
+    }
 
     if (this.remainingBreakCount <= 0) {
       this.remainingBreakCount = 0;
@@ -319,7 +328,7 @@ export class TireWeaponStackSlot {
     }
 
     this.syncStackHeight();
-    this.plaqueTex.redrawIfDirty(this.remainingBreakCount, 1.0);
+    this.plaqueTex.redrawIfDirty(this.remainingBreakCount, this.flashTimer);
     return 'HIT';
   }
 

@@ -21,6 +21,7 @@ export class EnemyWaveSlot {
   public x = 0;
   public z = 0;
   public marchPhase = 0;
+  public isMarching = false;
 
   // Per-unit Struct-of-Arrays for dense 30-50 unit swarms, individual white hit-flashes & damaged mini HP bars!
   public readonly unitCountCap = MAX_UNITS_PER_WAVE;
@@ -56,6 +57,7 @@ export class EnemyWaveSlot {
     this.x = def.lane === 'LEFT' ? -1.85 : def.lane === 'RIGHT' ? 1.85 : 0;
     this.z = def.z;
     this.marchPhase = 0;
+    this.isMarching = false;
     this.lastKillCount = 0;
 
     const heavyTarget =
@@ -109,6 +111,7 @@ export class EnemyWaveSlot {
     this.active = false;
     this.aliveCount = 0;
     this.totalConfigured = 0;
+    this.isMarching = false;
   }
 
   public update(dt: number, squadX: number, squadZ: number): void {
@@ -117,6 +120,7 @@ export class EnemyWaveSlot {
     }
 
     const withinEngage = squadZ - this.z < 33;
+    this.isMarching = withinEngage;
     if (withinEngage) {
       this.z += this.speed * dt;
       this.marchPhase += dt * 8.8;
@@ -167,10 +171,11 @@ export class EnemyWaveSlot {
     }
   }
 
-  public pushInstances(renderer: InstancedBatchRenderer): void {
+  public pushInstances(renderer: InstancedBatchRenderer, isCombatMoving = true): void {
     if (!this.active || this.aliveCount <= 0) {
       return;
     }
+    const marching = isCombatMoving && this.isMarching;
     for (let i = 0; i < this.totalConfigured; i++) {
       if (this.unitAlive[i] === 0) {
         continue;
@@ -180,14 +185,16 @@ export class EnemyWaveSlot {
           this.unitX[i],
           this.unitZ[i],
           this.marchPhase + i * 0.65,
-          this.unitHitFlash[i]
+          this.unitHitFlash[i],
+          marching
         );
       } else {
         renderer.pushEnemySoldier(
           this.unitX[i],
           this.unitZ[i],
           this.marchPhase + i * 0.85,
-          this.unitHitFlash[i]
+          this.unitHitFlash[i],
+          marching
         );
       }
     }

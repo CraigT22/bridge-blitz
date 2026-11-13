@@ -318,6 +318,7 @@ export class HudController {
     this.tabPanels.ARMORY.classList.toggle('is-hidden', normalized !== 'ARMORY');
     this.tabPanels.MAP.classList.toggle('is-hidden', normalized !== 'MAP');
     this.hubStageBannerEl.classList.toggle('is-hidden', normalized !== 'BATTLE');
+    this.hubLeftToolsEl.classList.toggle('is-hidden', normalized !== 'BATTLE');
 
     if (normalized === 'ARMORY') {
       this.renderArmoryPanel();
@@ -342,7 +343,7 @@ export class HudController {
     const inHub = state === 'PRE_RUN';
     const inMission = state === 'RUNNING' || state === 'BOSS_FIGHT' || state === 'PAUSED';
 
-    this.hubLeftToolsEl.classList.toggle('is-hidden', !inHub);
+    this.hubLeftToolsEl.classList.toggle('is-hidden', !inHub || this.activeTab !== 'BATTLE');
     this.hubStageBannerEl.classList.toggle('is-hidden', !inHub || this.activeTab !== 'BATTLE');
     this.runProgressCard.classList.toggle('is-hidden', inHub);
     this.topWeaponPill.classList.toggle('is-hidden', inHub);
@@ -389,6 +390,19 @@ export class HudController {
     this.liveTickerAccum += addedAmount;
     this.liveCoinTickerEl.textContent = `+${formatCoinAmount(this.liveTickerAccum)}`;
     this.liveCoinTickerEl.classList.remove('is-hidden');
+  }
+
+  public flashUpgradePurchase(key: UpgradeKey): void {
+    const el =
+      key === 'startingSquad'
+        ? this.btnAddSoldier
+        : document.querySelector<HTMLElement>(`.tactical-upg-card[data-upgrade="${key}"]`);
+    if (!el) {
+      return;
+    }
+    el.classList.remove('is-just-bought');
+    void el.offsetWidth;
+    el.classList.add('is-just-bought');
   }
 
   private resetLiveCoinTicker(): void {
@@ -506,14 +520,17 @@ export class HudController {
       this.btnArmoryPreviewEquip.classList.toggle('is-equipped', isHeld);
       this.btnArmoryPreviewEquip.textContent = isHeld ? 'HELD ON BRIDGE ✓' : 'HOLD ON BRIDGE';
 
-      const ratePct = Math.min(100, Math.round((spec.fireRate / 8.0) * 100));
-      const dmgPct = Math.min(100, Math.round((spec.damageMultiplier / 2.75) * 100));
-      const velPct = Math.min(100, Math.round((spec.projectileSpeed / 40) * 100));
-      const armorPct = spec.bossArmorFactor > 1 ? 100 : 65;
+      const shotsPerVolley =
+        spec.pattern === 'BURST_2' || spec.pattern === 'TWIN_CONVERGE' ? 2 : 1;
+      const effRate = spec.fireRate * shotsPerVolley;
+      const ratePct = Math.min(100, Math.round((effRate / 15.2) * 100));
+      const dmgPct = Math.min(100, Math.round((spec.damageMultiplier / 3.25) * 100));
+      const velPct = Math.min(100, Math.round((spec.projectileSpeed / 44) * 100));
+      const armorPct = Math.min(100, Math.round((spec.bossArmorFactor / 1.35) * 100));
 
       this.armoryStatBars.innerHTML = `
         <div class="stat-meter">
-          <div class="stat-meter__top"><span>FIRE RATE</span><strong>${spec.fireRate.toFixed(1)}/s</strong></div>
+          <div class="stat-meter__top"><span>FIRE RATE</span><strong>${effRate.toFixed(1)}/s</strong></div>
           <div class="stat-meter__track"><div class="stat-meter__fill" style="width:${ratePct}%"></div></div>
         </div>
         <div class="stat-meter">
@@ -687,40 +704,46 @@ export class HudController {
     // All 1..40 commandos are rendered 1:1 on the bridge — keep floating #squad-pill hidden for unobstructed action!
     this.squadPillEl.classList.add('is-hidden');
 
-    // Project compact mini HP bars ONLY on damaged swarm troopers & brawlers (unitHp < unitMaxHp)!
+    // Project compact mini HP bars ONLY on damaged swarm units, prioritizing Heavy Juggernauts first!
     let usedBars = 0;
     if (inCombat) {
-      for (let w = 0; w < enemyWaves.length && usedBars < MAX_HEAVY_HP_BARS; w++) {
-        const wave = enemyWaves[w];
-        if (!wave || !wave.active || wave.aliveCount <= 0) {
-          continue;
-        }
-        const totalUnits = wave.getConfiguredCount();
-        for (let u = 0; u < totalUnits && usedBars < MAX_HEAVY_HP_BARS; u++) {
-          if (
-            wave.unitAlive[u] === 0 ||
-            wave.unitHp[u] >= wave.unitMaxHp[u] - 0.01
-          ) {
+      for (let pass = 0; pass < 2 && usedBars < MAX_HEAVY_HP_BARS; pass++) {
+        const wantHeavy = pass === 0 ? 1 : 0;
+        for (let w = 0; w < enemyWaves.length && usedBars < MAX_HEAVY_HP_BARS; w++) {
+          const wave = enemyWaves[w];
+          if (!wave || !wave.active || wave.aliveCount <= 0) {
             continue;
           }
-          const uz = wave.unitZ[u];
-          const distAhead = squadZ - uz;
-          if (distAhead > 34 || distAhead < -3) {
-            continue;
-          }
-          const headY = wave.unitIsHeavy[u] ? 1.98 : 1.56;
-          sceneManager.projectToScreen(wave.unitX[u], headY, uz, _projScratch);
-          if (!_projScratch.visible) {
-            continue;
-          }
+          const totalUnits = wave.getConfiguredCount();
+          for (let u = 0; u < totalUnits && usedBars < MAX_HEAVY_HP_BARS; u++) {
+            if (
+              wave.unitAlive[u] === 0 ||
+              wave.unitIsHeavy[u] !== wantHeavy ||
+              wave.unitHp[u] >= wave.unitMaxHp[u] - 0.01
+            ) {
+              continue;
+            }
+            const uz = wave.unitZ[u];
+            const distAhead = squadZ - uz;
+            if (distAhead > 34 || distAhead < -3) {
+              continue;
+            }
+            const isElite = wantHeavy === 1;
+            const headY = isElite ? 1.98 : 1.56;
+            sceneManager.projectToScreen(wave.unitX[u], headY, uz, _projScratch);
+            if (!_projScratch.visible) {
+              continue;
+            }
 
-          const bar = this.heavyHpBars[usedBars];
-          const fill = this.heavyHpFills[usedBars];
-          const ratio = Math.max(0, Math.min(1, wave.unitHp[u] / Math.max(1, wave.unitMaxHp[u])));
-          bar.classList.remove('is-hidden');
-          bar.style.transform = `translate3d(${_projScratch.x.toFixed(1)}px, ${_projScratch.y.toFixed(1)}px, 0) translate(-50%, -100%)`;
-          fill.style.width = `${(ratio * 100).toFixed(1)}%`;
-          usedBars++;
+            const bar = this.heavyHpBars[usedBars];
+            const fill = this.heavyHpFills[usedBars];
+            const ratio = Math.max(0, Math.min(1, wave.unitHp[u] / Math.max(1, wave.unitMaxHp[u])));
+            bar.classList.remove('is-hidden');
+            bar.classList.toggle('heavy-hp-bar--elite', isElite);
+            bar.style.transform = `translate3d(${_projScratch.x.toFixed(1)}px, ${_projScratch.y.toFixed(1)}px, 0) translate(-50%, -100%)`;
+            fill.style.width = `${(ratio * 100).toFixed(1)}%`;
+            usedBars++;
+          }
         }
       }
     }

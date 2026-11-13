@@ -295,7 +295,7 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     midBrute: {
       z: -180,
       name: 'Crimson Goliath',
-      maxHp: 11200,
+      maxHp: 14800,
       speed: 1.86,
       clubDamage: 7,
       coinReward: 360,
@@ -366,7 +366,7 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     midBrute: {
       z: -186,
       name: 'Ironclad Goliath',
-      maxHp: 14200,
+      maxHp: 16200,
       speed: 1.9,
       clubDamage: 8,
       coinReward: 440,

@@ -28,7 +28,7 @@ function createBossOutlineMaterial(): THREE.MeshBasicMaterial {
     color: 0x080c12,
     side: THREE.BackSide,
   });
-  mat.customProgramCacheKey = () => 'boss-cel-outline-v41';
+  mat.customProgramCacheKey = () => 'boss-cel-outline-v53';
   mat.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -39,13 +39,63 @@ function createBossOutlineMaterial(): THREE.MeshBasicMaterial {
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
-        transformed += aOutlineNormal * 0.032;`
+        {
+          vec3 safeBossNorm = aOutlineNormal / max(0.0001, length(aOutlineNormal));
+          transformed += safeBossNorm * 0.032;
+        }`
       );
   };
   return mat;
 }
 
 const _sharedBossOutlineMat = createBossOutlineMaterial();
+
+function applyBossCelShader(mat: THREE.MeshStandardMaterial, cacheKey: string): void {
+  mat.customProgramCacheKey = () => cacheKey;
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `
+        #include <common>
+        varying vec3 vBossWorldNormal;
+        `
+      )
+      .replace(
+        '#include <begin_vertex>',
+        /* glsl */ `
+        #include <begin_vertex>
+        {
+          vec3 bwn = mat3(modelMatrix) * objectNormal;
+          vBossWorldNormal = bwn / max(0.0001, length(bwn));
+        }
+        `
+      );
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        /* glsl */ `
+        #include <common>
+        varying vec3 vBossWorldNormal;
+        `
+      )
+      .replace(
+        '#include <dithering_fragment>',
+        /* glsl */ `
+        #include <dithering_fragment>
+        {
+          // 2-band frontal + top cel-saturation lift so camera-facing Boss armor never goes dark in backlight!
+          vec3 wn = vBossWorldNormal / max(0.0001, length(vBossWorldNormal));
+          float celBand = smoothstep(-0.26, 0.36, wn.y * 0.58 + wn.z * 0.62 - wn.x * 0.18);
+          gl_FragColor.rgb *= mix(1.06, 1.38, celBand);
+          float keyRim = smoothstep(0.32, 0.88, max(wn.y, wn.z * 0.82));
+          gl_FragColor.rgb += vec3(0.055, 0.065, 0.085) * keyRim;
+        }
+        `
+      );
+  };
+}
 
 function attachBossRigCelOutlines(root: THREE.Group): void {
   const targetMeshes: THREE.Mesh[] = [];
@@ -89,27 +139,32 @@ function createChassisMaterials(
   const primaryMat = new THREE.MeshStandardMaterial({
     color: primaryHex,
     roughness: 0.34,
-    metalness: 0.36,
+    metalness: 0.28,
     emissive: 0x000000,
   });
   const accentMat = new THREE.MeshStandardMaterial({
     color: accentHex,
     roughness: 0.30,
-    metalness: 0.32,
+    metalness: 0.26,
     emissive: 0x000000,
   });
   const trimMat = new THREE.MeshStandardMaterial({
     color: trimHex,
     roughness: 0.26,
-    metalness: 0.42,
+    metalness: 0.34,
     emissive: 0x000000,
   });
   const darkSteelMat = new THREE.MeshStandardMaterial({
-    color: 0x26303d,
-    roughness: 0.42,
-    metalness: 0.38,
+    color: 0x2f3b4a,
+    roughness: 0.40,
+    metalness: 0.30,
     emissive: 0x000000,
   });
+  applyBossCelShader(primaryMat, 'boss-cel-std-v53');
+  applyBossCelShader(accentMat, 'boss-cel-std-v53');
+  applyBossCelShader(trimMat, 'boss-cel-std-v53');
+  applyBossCelShader(darkSteelMat, 'boss-cel-std-v53');
+
   const glowMat = new THREE.MeshBasicMaterial({
     color: trimHex,
   });

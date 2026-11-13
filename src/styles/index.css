@@ -143,6 +143,12 @@ button {
   will-change: transform;
 }
 
+.heavy-hp-bar--elite {
+  width: 40px;
+  height: 7px;
+  border-color: #ffd042;
+}
+
 .heavy-hp-bar__fill {
   height: 100%;
   width: 100%;
@@ -308,6 +314,7 @@ button {
   align-items: center;
   justify-content: flex-start;
   gap: 4px;
+  padding: 0 4px;
   min-width: 0;
 }
 
@@ -355,9 +362,9 @@ button {
 .sky-stage-banner__title {
   margin: 3px 0 1px;
   font-family: var(--font-display);
-  font-size: clamp(18px, 4.8vw, 24px);
+  font-size: clamp(15.5px, 3.95vw, 22px);
   font-weight: 900;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   line-height: 1.05;
   color: #ffffff;
   text-shadow:
@@ -746,6 +753,17 @@ button {
 
 .tactical-upg-card.is-affordable {
   border-color: #7effb9;
+}
+
+@keyframes upgCardPop {
+  0% { transform: scale(1); filter: brightness(1); }
+  35% { transform: scale(1.06) translateY(-2px); filter: brightness(1.24); }
+  100% { transform: scale(1) translateY(0); filter: brightness(1); }
+}
+
+.tactical-upg-card.is-just-bought,
+.recruit-float-btn.is-just-bought {
+  animation: upgCardPop 240ms cubic-bezier(0.22, 1.35, 0.36, 1);
 }
 
 .tactical-upg-card:active {

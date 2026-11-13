@@ -130,11 +130,13 @@ jobs:
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.1.0
-          name: Bridge Blitz v2.1.0 — Pixel 10 XL GPU Fix & Tactical Overhaul APK
+          tag_name: v5.3.0
+          name: Bridge Blitz v5.3.0 — Comprehensive Visual, Audio & Gameplay Polish APK
           body: |
-            ### Bridge Blitz v2.1.0 — Pixel 10 XL Forward-WebGL Fix & Tactical Visual Overhaul
-            - **Direct Chrome Download (installs directly over v2.0!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=3)
-            - **What's Fixed in v2.1**:
-              - Replaced offscreen `HalfFloatType` multisampled `EffectComposer` / `UnrealBloomPass` & `PMREMGenerator` FBOs (which crashed Android WebView's Vulkan ANGLE GPU process on the Pixel 10 XL) with a **100% single-pass hardware forward WebGL pipeline**, native additive tracer/muzzle glow sheaths, grounded AO contact shadows, and mobile-hardened GLSL ES shaders.
+            ### Bridge Blitz v5.3.0 — Pixel 10 XL Comprehensive Polish Release (`versionCode 12`)
+            - **Direct Chrome Download (installs cleanly over v5.2 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=12)
+            - **What's Upgraded in v5.3**:
+              - **Visual & Cel Readability**: Throttled hit-flashes so Tire Walls stay deep black rubber and Goliaths retain rich crimson armor under 40-gun fire; Boss cel-saturation & GLSL ES normal hardening; unobscured gate numerals with vertical micro scale-pops; aimed muzzle flashes; Campaign bridge terminus overlooking open ocean water; stationary ready stance on `PRE_RUN` & un-aggroed sentry enemies.
+              - **Gameplay & HUD**: Early Boss HP bar reveal on approach; Goliath aimed smash + inner timing disc; Juggernaut-priority mini HP bars; Armory framing & `Lv5` stat meters; tactile upgrade purchase card pop; monotonic 10-stage Goliath HP curve.
+              - **Audio**: Cached white-noise impact transients, crowd-scaled gunfire (`1→40`), and throttled coin pickup chime.
           files: BridgeBlitz-Pixel10XL.apk

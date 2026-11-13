@@ -51,20 +51,23 @@ interface CommandoUniforms {
   uRecoilKick: { value: number };
 }
 
-const COMMANDO_STRIDE_SNIPPET = /* glsl */ `
+function buildCommandoStrideSnippet(enablePerInstanceStride: boolean): string {
+  const ampExpr = enablePerInstanceStride ? '(uStrideAmp * aStrideScale)' : 'uStrideAmp';
+  return /* glsl */ `
   {
     float phase = uStrideTime + float(gl_InstanceID) * 0.92;
     float sRaw = sin(phase);
-    float strideVal = sRaw * uStrideAmp;
+    float effStrideAmp = ${ampExpr};
+    float strideVal = sRaw * effStrideAmp;
     float limbAngle = 0.0;
     float bootLift = 0.0;
     float pivotY = 0.38;
     if (aPartId > 0.5 && aPartId < 1.5) {
       limbAngle = strideVal;
-      bootLift = max(0.0, sRaw) * uStrideAmp * 0.065;
+      bootLift = max(0.0, sRaw) * effStrideAmp * 0.065;
     } else if (aPartId > 1.5 && aPartId < 2.5) {
       limbAngle = -strideVal;
-      bootLift = max(0.0, -sRaw) * uStrideAmp * 0.065;
+      bootLift = max(0.0, -sRaw) * effStrideAmp * 0.065;
     } else if (aPartId > 2.5 && aPartId < 3.5) {
       limbAngle = -strideVal * 0.25;
       pivotY = 0.45;
@@ -82,18 +85,22 @@ const COMMANDO_STRIDE_SNIPPET = /* glsl */ `
       transformed.z = rel.y * s + rel.z * c;
     }
   }
-`;
+  `;
+}
 
 /**
  * Injects single-pass GPU vertex animation (`aPartId`) plus optional per-instance solid-white
- * hit-flash (`aHitFlash` attribute) for zero-FBO cartoon impact feedback!
+ * hit-flash (`aHitFlash` attribute) and per-instance stride gating (`aStrideScale`)!
  */
 function applyCommandoShader(
   mat: THREE.MeshStandardMaterial,
   uniforms: CommandoUniforms,
   cacheKey: string,
-  enableHitFlash = false
+  enableHitFlash = false,
+  enablePerInstanceStride = false
 ): void {
+  const ampExpr = enablePerInstanceStride ? '(uStrideAmp * aStrideScale)' : 'uStrideAmp';
+  const strideSnippet = buildCommandoStrideSnippet(enablePerInstanceStride);
   mat.customProgramCacheKey = () => cacheKey;
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uStrideTime = uniforms.uStrideTime;
@@ -106,6 +113,7 @@ function applyCommandoShader(
         #include <common>
         attribute float aPartId;
         ${enableHitFlash ? 'attribute float aHitFlash;\nvarying float vHitFlash;' : ''}
+        ${enablePerInstanceStride ? 'attribute float aStrideScale;' : ''}
         varying vec3 vToonWorldNormal;
         uniform float uStrideTime;
         uniform float uStrideAmp;
@@ -118,7 +126,7 @@ function applyCommandoShader(
         #include <beginnormal_vertex>
         {
           float phase = uStrideTime + float(gl_InstanceID) * 0.92;
-          float strideVal = sin(phase) * uStrideAmp;
+          float strideVal = sin(phase) * ${ampExpr};
           float nAngle = 0.0;
           if (aPartId > 0.5 && aPartId < 1.5) {
             nAngle = strideVal;
@@ -145,7 +153,7 @@ function applyCommandoShader(
         /* glsl */ `
         #include <begin_vertex>
         ${enableHitFlash ? 'vHitFlash = aHitFlash;' : ''}
-        ${COMMANDO_STRIDE_SNIPPET}
+        ${strideSnippet}
         {
           vec3 wn = mat3(modelMatrix) * objectNormal;
           #ifdef USE_INSTANCING
@@ -198,13 +206,15 @@ function applyCommandoShader(
 function createCommandoCelOutlineMaterial(
   uniforms: CommandoUniforms,
   outlineThickness: number,
-  cacheKey: string
+  cacheKey: string,
+  enablePerInstanceStride = false
 ): THREE.MeshBasicMaterial {
   const mat = new THREE.MeshBasicMaterial({
     color: 0x0b1018,
     side: THREE.BackSide,
   });
   const thickStr = outlineThickness.toFixed(4);
+  const strideSnippet = buildCommandoStrideSnippet(enablePerInstanceStride);
   mat.customProgramCacheKey = () => cacheKey;
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uStrideTime = uniforms.uStrideTime;
@@ -217,6 +227,7 @@ function createCommandoCelOutlineMaterial(
         #include <common>
         attribute float aPartId;
         attribute vec3 aOutlineNormal;
+        ${enablePerInstanceStride ? 'attribute float aStrideScale;' : ''}
         uniform float uStrideTime;
         uniform float uStrideAmp;
         uniform float uRecoilKick;
@@ -230,7 +241,7 @@ function createCommandoCelOutlineMaterial(
           vec3 safeNorm = aOutlineNormal / max(0.0001, length(aOutlineNormal));
           transformed += safeNorm * ${thickStr};
         }
-        ${COMMANDO_STRIDE_SNIPPET}
+        ${strideSnippet}
         `
       );
   };
@@ -403,6 +414,8 @@ export class InstancedBatchRenderer {
 
   private readonly enemyHitFlashAttr: THREE.InstancedBufferAttribute;
   private readonly heavyHitFlashAttr: THREE.InstancedBufferAttribute;
+  private readonly enemyStrideScaleAttr: THREE.InstancedBufferAttribute;
+  private readonly heavyStrideScaleAttr: THREE.InstancedBufferAttribute;
 
   private readonly playerUniforms: CommandoUniforms = {
     uStrideTime: { value: 0 },
@@ -434,7 +447,7 @@ export class InstancedBatchRenderer {
       roughness: 0.40,
       metalness: 0.14,
     });
-    applyCommandoShader(playerMat, this.playerUniforms, 'commando-player-v50', false);
+    applyCommandoShader(playerMat, this.playerUniforms, 'commando-player-v53', false, false);
 
     this.playerMesh = new THREE.InstancedMesh(playerGeo, playerMat, MAX_VISUAL_SOLDIERS);
     this.playerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -445,7 +458,8 @@ export class InstancedBatchRenderer {
     const playerOutlineMat = createCommandoCelOutlineMaterial(
       this.playerUniforms,
       0.023,
-      'commando-player-outline-v50'
+      'commando-player-outline-v53',
+      false
     );
     this.playerOutlineMesh = new THREE.InstancedMesh(
       playerGeo,
@@ -493,7 +507,7 @@ export class InstancedBatchRenderer {
     this.squadWeaponMeshes = wMeshes;
     this.squadWeaponOutlineMeshes = wOutlines;
 
-    // 3. Standard Enemy Shock Troopers + Per-Instance White Hit-Flash + Welded Cel-Outline
+    // 3. Standard Enemy Shock Troopers + Per-Instance White Hit-Flash + Stride Gating + Welded Cel-Outline
     const enemyGeo = createEnemySoldierGeometry();
     this.enemyHitFlashAttr = new THREE.InstancedBufferAttribute(
       new Float32Array(MAX_ENEMY_INSTANCES),
@@ -502,12 +516,18 @@ export class InstancedBatchRenderer {
     this.enemyHitFlashAttr.setUsage(THREE.DynamicDrawUsage);
     enemyGeo.setAttribute('aHitFlash', this.enemyHitFlashAttr);
 
+    const enemyStrideInitial = new Float32Array(MAX_ENEMY_INSTANCES);
+    enemyStrideInitial.fill(1);
+    this.enemyStrideScaleAttr = new THREE.InstancedBufferAttribute(enemyStrideInitial, 1);
+    this.enemyStrideScaleAttr.setUsage(THREE.DynamicDrawUsage);
+    enemyGeo.setAttribute('aStrideScale', this.enemyStrideScaleAttr);
+
     const enemyMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.40,
       metalness: 0.14,
     });
-    applyCommandoShader(enemyMat, this.enemyUniforms, 'commando-enemy-v50', true);
+    applyCommandoShader(enemyMat, this.enemyUniforms, 'commando-enemy-v53', true, true);
 
     this.enemyMesh = new THREE.InstancedMesh(enemyGeo, enemyMat, MAX_ENEMY_INSTANCES);
     this.enemyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -518,7 +538,8 @@ export class InstancedBatchRenderer {
     const enemyOutlineMat = createCommandoCelOutlineMaterial(
       this.enemyUniforms,
       0.023,
-      'commando-enemy-outline-v50'
+      'commando-enemy-outline-v53',
+      true
     );
     this.enemyOutlineMesh = new THREE.InstancedMesh(
       enemyGeo,
@@ -530,7 +551,7 @@ export class InstancedBatchRenderer {
     this.enemyOutlineMesh.count = 0;
     scene.add(this.enemyOutlineMesh);
 
-    // 4. Heavy Armored Juggernaut Elites + Per-Instance White Hit-Flash + Welded Cel-Outline
+    // 4. Heavy Armored Juggernaut Elites + Per-Instance White Hit-Flash + Stride Gating + Welded Cel-Outline
     const heavyGeo = createHeavyEnemyGeometry();
     this.heavyHitFlashAttr = new THREE.InstancedBufferAttribute(
       new Float32Array(MAX_HEAVY_ENEMY_INSTANCES),
@@ -539,12 +560,18 @@ export class InstancedBatchRenderer {
     this.heavyHitFlashAttr.setUsage(THREE.DynamicDrawUsage);
     heavyGeo.setAttribute('aHitFlash', this.heavyHitFlashAttr);
 
+    const heavyStrideInitial = new Float32Array(MAX_HEAVY_ENEMY_INSTANCES);
+    heavyStrideInitial.fill(1);
+    this.heavyStrideScaleAttr = new THREE.InstancedBufferAttribute(heavyStrideInitial, 1);
+    this.heavyStrideScaleAttr.setUsage(THREE.DynamicDrawUsage);
+    heavyGeo.setAttribute('aStrideScale', this.heavyStrideScaleAttr);
+
     const heavyMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.38,
       metalness: 0.20,
     });
-    applyCommandoShader(heavyMat, this.enemyUniforms, 'commando-heavy-v50', true);
+    applyCommandoShader(heavyMat, this.enemyUniforms, 'commando-heavy-v53', true, true);
 
     this.heavyEnemyMesh = new THREE.InstancedMesh(
       heavyGeo,
@@ -559,7 +586,8 @@ export class InstancedBatchRenderer {
     const heavyOutlineMat = createCommandoCelOutlineMaterial(
       this.enemyUniforms,
       0.026,
-      'commando-heavy-outline-v50'
+      'commando-heavy-outline-v53',
+      true
     );
     this.heavyEnemyOutlineMesh = new THREE.InstancedMesh(
       heavyGeo,
@@ -691,7 +719,7 @@ export class InstancedBatchRenderer {
     this.shadowDiscCursor = 0;
 
     this.playerUniforms.uStrideTime.value = marchPhase * 11.8;
-    this.playerUniforms.uStrideAmp.value = isMoving ? 0.66 : 0.28;
+    this.playerUniforms.uStrideAmp.value = isMoving ? 0.66 : 0.035;
     this.playerUniforms.uRecoilKick.value = recoilKick;
 
     this.weaponUniforms.uBarrelSpin.value = barrelSpinAngle;
@@ -791,7 +819,8 @@ export class InstancedBatchRenderer {
     x: number,
     z: number,
     phase: number,
-    hitFlash: number
+    hitFlash: number,
+    isMarching = true
   ): void {
     const idx = this.enemyMesh.count;
     if (idx >= MAX_ENEMY_INSTANCES) {
@@ -800,16 +829,18 @@ export class InstancedBatchRenderer {
     this.enemyMesh.count = idx + 1;
     this.enemyOutlineMesh.count = idx + 1;
 
-    const bob = Math.abs(Math.sin(phase)) * 0.068;
+    const bob = isMarching ? Math.abs(Math.sin(phase)) * 0.068 : 0;
+    const roll = isMarching ? Math.sin(phase) * 0.048 : 0;
     const scalePop = ENEMY_MODEL_SCALE * (1 + hitFlash * 0.11);
 
     _pos.set(x, bob, z);
-    _euler.set(0.08, 0, Math.sin(phase) * 0.048);
+    _euler.set(isMarching ? 0.08 : 0.03, 0, roll);
     _quat.setFromEuler(_euler);
     _scale.set(scalePop, scalePop, scalePop);
     _mat4.compose(_pos, _quat, _scale);
     this.enemyMesh.setMatrixAt(idx, _mat4);
     this.enemyHitFlashAttr.setX(idx, hitFlash);
+    this.enemyStrideScaleAttr.setX(idx, isMarching ? 1.0 : 0.04);
 
     if (this.shadowDiscCursor < MAX_SHADOW_DISCS) {
       _pos.set(x, 0.022, z);
@@ -825,7 +856,8 @@ export class InstancedBatchRenderer {
     x: number,
     z: number,
     phase: number,
-    hitFlash: number
+    hitFlash: number,
+    isMarching = true
   ): void {
     const idx = this.heavyEnemyMesh.count;
     if (idx >= MAX_HEAVY_ENEMY_INSTANCES) {
@@ -834,16 +866,18 @@ export class InstancedBatchRenderer {
     this.heavyEnemyMesh.count = idx + 1;
     this.heavyEnemyOutlineMesh.count = idx + 1;
 
-    const bob = Math.abs(Math.sin(phase * 0.85)) * 0.058;
+    const bob = isMarching ? Math.abs(Math.sin(phase * 0.85)) * 0.058 : 0;
+    const roll = isMarching ? Math.sin(phase * 0.85) * 0.042 : 0;
     const scalePop = HEAVY_ENEMY_SCALE * (1 + hitFlash * 0.10);
 
     _pos.set(x, bob, z);
-    _euler.set(0.09, 0, Math.sin(phase * 0.85) * 0.042);
+    _euler.set(isMarching ? 0.09 : 0.03, 0, roll);
     _quat.setFromEuler(_euler);
     _scale.set(scalePop, scalePop, scalePop);
     _mat4.compose(_pos, _quat, _scale);
     this.heavyEnemyMesh.setMatrixAt(idx, _mat4);
     this.heavyHitFlashAttr.setX(idx, hitFlash);
+    this.heavyStrideScaleAttr.setX(idx, isMarching ? 1.0 : 0.04);
 
     if (this.shadowDiscCursor < MAX_SHADOW_DISCS) {
       _pos.set(x, 0.022, z);
@@ -858,8 +892,10 @@ export class InstancedBatchRenderer {
   public finishEnemyFrame(): void {
     this.enemyMesh.instanceMatrix.needsUpdate = true;
     this.enemyHitFlashAttr.needsUpdate = true;
+    this.enemyStrideScaleAttr.needsUpdate = true;
     this.heavyEnemyMesh.instanceMatrix.needsUpdate = true;
     this.heavyHitFlashAttr.needsUpdate = true;
+    this.heavyStrideScaleAttr.needsUpdate = true;
     this.shadowDiscMesh.count = this.shadowDiscCursor;
     this.shadowDiscMesh.instanceMatrix.needsUpdate = true;
   }

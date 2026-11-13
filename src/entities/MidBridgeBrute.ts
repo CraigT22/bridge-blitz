@@ -189,6 +189,8 @@ export class MidBridgeBrute {
   private readonly leftArmPivot = new THREE.Group();
   private readonly dangerZoneGroup = new THREE.Group();
   private readonly dangerFillMat: THREE.MeshBasicMaterial;
+  private readonly dangerTimingDisc: THREE.Mesh;
+  private readonly dangerTimingMat: THREE.MeshBasicMaterial;
   private readonly dangerRingMat: THREE.MeshBasicMaterial;
   private readonly chestBarMesh: THREE.Mesh;
   private readonly chestBarTex = new EditableBruteChestBarTexture();
@@ -196,6 +198,7 @@ export class MidBridgeBrute {
 
   private stridePhase = 0;
   private hitFlash = 0;
+  private hitFlashCooldown = 0;
   private attackState: 'COOLDOWN' | 'WINDUP' | 'RECOVER' = 'COOLDOWN';
   private stateTimer = 1.0;
   private lockedSmashX = 0;
@@ -216,9 +219,10 @@ export class MidBridgeBrute {
     this.root.add(shadow);
 
     const crimsonMat = new THREE.MeshStandardMaterial({
-      color: 0xe6293f,
-      roughness: 0.32,
-      metalness: 0.18,
+      color: 0xe8263d,
+      roughness: 0.30,
+      metalness: 0.16,
+      emissive: 0x260308,
     });
     const armorSlateMat = new THREE.MeshStandardMaterial({
       color: 0x3b4754,
@@ -247,8 +251,8 @@ export class MidBridgeBrute {
     });
     const visorGlowMat = new THREE.MeshBasicMaterial({ color: 0xffd04d });
 
+    // Keep crimsonMat helmet/pauldrons rich crimson under sustained crowd fire (comp parity!)
     this.flashMaterials.push(
-      crimsonMat,
       armorSlateMat,
       olivePlateMat,
       skinBrawnMat,
@@ -490,7 +494,7 @@ export class MidBridgeBrute {
     this.dangerFillMat = new THREE.MeshBasicMaterial({
       color: 0xff2942,
       transparent: true,
-      opacity: 0.28,
+      opacity: 0.20,
       depthWrite: false,
     });
     const dangerDisc = new THREE.Mesh(
@@ -500,10 +504,23 @@ export class MidBridgeBrute {
     dangerDisc.rotation.x = -Math.PI / 2;
     dangerDisc.position.y = 0.034;
 
-    this.dangerRingMat = new THREE.MeshBasicMaterial({
-      color: 0xff8533,
+    this.dangerTimingMat = new THREE.MeshBasicMaterial({
+      color: 0xff5a36,
       transparent: true,
-      opacity: 0.92,
+      opacity: 0.42,
+      depthWrite: false,
+    });
+    this.dangerTimingDisc = new THREE.Mesh(
+      new THREE.CircleGeometry(CLUB_SMASH_RADIUS_X - 0.12, 28),
+      this.dangerTimingMat
+    );
+    this.dangerTimingDisc.rotation.x = -Math.PI / 2;
+    this.dangerTimingDisc.position.y = 0.036;
+
+    this.dangerRingMat = new THREE.MeshBasicMaterial({
+      color: 0xff9438,
+      transparent: true,
+      opacity: 0.94,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
@@ -512,9 +529,9 @@ export class MidBridgeBrute {
       this.dangerRingMat
     );
     dangerRing.rotation.x = -Math.PI / 2;
-    dangerRing.position.y = 0.038;
+    dangerRing.position.y = 0.039;
 
-    this.dangerZoneGroup.add(dangerDisc, dangerRing);
+    this.dangerZoneGroup.add(dangerDisc, this.dangerTimingDisc, dangerRing);
     this.dangerZoneGroup.visible = false;
     this.root.add(this.dangerZoneGroup);
 
@@ -538,6 +555,7 @@ export class MidBridgeBrute {
     this.coinReward = def.coinReward;
     this.stridePhase = 0;
     this.hitFlash = 0;
+    this.hitFlashCooldown = 0;
     this.attackState = 'COOLDOWN';
     this.stateTimer = 0.45;
     this.lockedSmashX = 0;
@@ -545,6 +563,7 @@ export class MidBridgeBrute {
     this.root.position.set(this.x, 0, this.z);
     this.root.visible = true;
     this.dangerZoneGroup.visible = false;
+    this.bodyRig.rotation.set(0, 0, 0);
     this.clubArmPivot.rotation.set(0, 0, 0);
     this.chestBarTex.redrawIfDirty(this.hp, this.maxHp, 0);
   }
@@ -574,11 +593,15 @@ export class MidBridgeBrute {
       return null;
     }
 
+    if (this.hitFlashCooldown > 0) {
+      this.hitFlashCooldown = Math.max(0, this.hitFlashCooldown - dt);
+    }
+
     if (this.hitFlash > 0) {
-      this.hitFlash = Math.max(0, this.hitFlash - dt * 7.5);
-      const em = this.hitFlash * 0.55;
+      this.hitFlash = Math.max(0, this.hitFlash - dt * 10.0);
+      const em = this.hitFlash * 0.22;
       for (let i = 0; i < this.flashMaterials.length; i++) {
-        this.flashMaterials[i].emissive.setRGB(em, em * 0.35, em * 0.12);
+        this.flashMaterials[i].emissive.setRGB(em, em * 0.86, em * 0.74);
       }
     } else {
       for (let i = 0; i < this.flashMaterials.length; i++) {
@@ -590,6 +613,7 @@ export class MidBridgeBrute {
     const engaged = distZ < ENGAGE_WAKE_DIST_Z;
     const inDuelRange = distZ <= DUEL_HALT_DIST_Z + 0.35 && distZ > -2.5;
     let smashEvent: BruteClubSmashEvent | null = null;
+    let targetBodyYaw = 0;
 
     if (engaged && !inDuelRange && distZ > DUEL_HALT_DIST_Z) {
       // Heavy stomping advance toward the squad until close-quarters duel range
@@ -597,6 +621,7 @@ export class MidBridgeBrute {
       this.stridePhase += dt * 5.8;
       const dx = squadX - this.x;
       this.x = Math.max(-2.95, Math.min(2.95, this.x + Math.sign(dx) * Math.min(Math.abs(dx), 1.35 * dt)));
+      targetBodyYaw = Math.max(-0.28, Math.min(0.28, Math.atan2(dx, Math.max(3.5, distZ))));
     } else if (inDuelRange) {
       this.stridePhase += dt * 3.4;
 
@@ -607,6 +632,7 @@ export class MidBridgeBrute {
           -3.05,
           Math.min(3.05, this.x + Math.sign(dx) * Math.min(Math.abs(dx), 2.15 * dt))
         );
+        targetBodyYaw = Math.max(-0.34, Math.min(0.34, Math.atan2(dx, Math.max(2.4, distZ))));
         this.clubArmPivot.rotation.x += (0 - this.clubArmPivot.rotation.x) * Math.min(1, dt * 8);
         this.stateTimer -= dt;
         if (this.stateTimer <= 0) {
@@ -626,19 +652,25 @@ export class MidBridgeBrute {
           this.lockedSmashX = Math.max(-3.35, Math.min(3.35, this.x + (squadX - this.x) * 0.5));
         }
 
-        // Raise massive spiked club high overhead (`rotation.x` -> +1.15 rad)
+        const aimDx = this.lockedSmashX - this.x;
+        targetBodyYaw = Math.max(-0.52, Math.min(0.52, Math.atan2(aimDx, Math.max(2.2, distZ))));
+
+        // Raise massive spiked club high overhead (`rotation.x` -> +1.18 rad)
         this.clubArmPivot.rotation.x = progress * 1.18;
         this.clubArmPivot.rotation.z = -progress * 0.18;
 
         this.dangerZoneGroup.visible = true;
         this.dangerZoneGroup.position.set(
-          this.lockedSmashX - this.x,
+          aimDx,
           0,
           Math.max(2.2, distZ - 0.35)
         );
         const pulse = 0.65 + 0.35 * Math.sin(progress * Math.PI * 6);
-        this.dangerFillMat.opacity = 0.18 + progress * 0.28;
-        this.dangerRingMat.opacity = 0.65 + pulse * 0.32;
+        const timingScale = 0.14 + Math.max(0, Math.min(1, progress)) * 0.86;
+        this.dangerTimingDisc.scale.set(timingScale, timingScale, 1);
+        this.dangerTimingMat.opacity = 0.24 + progress * 0.36;
+        this.dangerFillMat.opacity = 0.14 + progress * 0.16;
+        this.dangerRingMat.opacity = 0.68 + pulse * 0.30;
 
         this.stateTimer -= dt;
         if (this.stateTimer <= 0) {
@@ -664,6 +696,8 @@ export class MidBridgeBrute {
         }
       } else {
         // RECOVER
+        const aimDx = this.lockedSmashX - this.x;
+        targetBodyYaw = Math.max(-0.52, Math.min(0.52, Math.atan2(aimDx, Math.max(2.2, distZ))));
         this.stateTimer -= dt;
         const recT = 1 - Math.max(0, this.stateTimer / CLUB_RECOVER_DURATION);
         this.clubArmPivot.rotation.x = -1.32 * (1 - recT * 0.85);
@@ -675,12 +709,13 @@ export class MidBridgeBrute {
       }
     }
 
-    // Heavy stomping leg & torso animation
+    // Heavy stomping leg & torso animation + smooth aim yaw toward smash lane
     const legSwing = engaged ? Math.sin(this.stridePhase) * 0.34 : 0;
     this.leftLegPivot.rotation.x = legSwing;
     this.rightLegPivot.rotation.x = -legSwing;
     this.leftArmPivot.rotation.x = -legSwing * 0.45;
     this.bodyRig.position.y = Math.abs(Math.sin(this.stridePhase)) * 0.09;
+    this.bodyRig.rotation.y += (targetBodyYaw - this.bodyRig.rotation.y) * Math.min(1, dt * 10);
     this.bodyRig.rotation.z = Math.sin(this.stridePhase) * 0.035;
 
     this.root.position.set(this.x, 0, this.z);
@@ -713,7 +748,10 @@ export class MidBridgeBrute {
     }
 
     this.hp = Math.max(0, this.hp - damage);
-    this.hitFlash = 1.0;
+    if (this.hitFlashCooldown <= 0) {
+      this.hitFlash = 1.0;
+      this.hitFlashCooldown = 0.14;
+    }
 
     if (this.hp <= 0) {
       this.defeated = true;
@@ -723,7 +761,7 @@ export class MidBridgeBrute {
       return 'DEFEATED';
     }
 
-    this.chestBarTex.redrawIfDirty(this.hp, this.maxHp, 1.0);
+    this.chestBarTex.redrawIfDirty(this.hp, this.maxHp, this.hitFlash);
     return 'HIT';
   }
 }
