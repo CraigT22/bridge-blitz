@@ -350,10 +350,10 @@ export class SupplyDrumSlot {
     if (!this.active || this.broken) {
       return;
     }
-    // Keep unbroken sibling barrels physically standing on the bridge until well behind the camera!
-    if (squadZ < this.z - 8.5) {
+    // Keep unbroken sibling barrels physically standing on the bridge until well behind the elevated camera!
+    if (squadZ < this.z - 12.5) {
       this.root.position.y -= dt * 16.0;
-      if (this.root.position.y <= -3.5 || squadZ < this.z - 11.0) {
+      if (this.root.position.y <= -3.5 || squadZ < this.z - 15.2) {
         this.hide();
       }
       return;

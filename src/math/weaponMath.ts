@@ -6,7 +6,7 @@ export const MAX_SQUAD_COUNT = 40;
 export const MAX_VISUAL_SOLDIERS = 40;
 export const MAX_ACTIVE_VOLLEY_EMITTERS = 26;
 export const OVERFLOW_SQUAD_COIN_BONUS = 10;
-export const COMMANDO_MODEL_SCALE = 1.24;
+export const COMMANDO_MODEL_SCALE = 1.02;
 export const BASE_SOLDIER_BULLET_DAMAGE = 5.2;
 
 const DEG_TO_RAD = Math.PI / 180;

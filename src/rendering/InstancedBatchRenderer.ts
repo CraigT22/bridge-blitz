@@ -20,8 +20,8 @@ const MAX_RAGDOLL_INSTANCES = 96;
 const MAX_SHADOW_DISCS =
   MAX_VISUAL_SOLDIERS + MAX_ENEMY_INSTANCES + MAX_HEAVY_ENEMY_INSTANCES;
 
-const ENEMY_MODEL_SCALE = 1.26;
-const HEAVY_ENEMY_SCALE = 1.46;
+const ENEMY_MODEL_SCALE = 1.04;
+const HEAVY_ENEMY_SCALE = 1.26;
 
 // Module-scoped reusable scratch primitives — strictly zero per-frame allocations!
 const _pos = new THREE.Vector3();
@@ -763,7 +763,7 @@ export class InstancedBatchRenderer {
 
       _pos.set(worldX[i], 0.022, worldZ[i]);
       _quat.identity();
-      const shadowScale = Math.max(0.7, 1.12 - bobY * 0.95);
+      const shadowScale = Math.max(0.58, 0.92 - bobY * 0.85);
       _scale.set(shadowScale, 1, shadowScale);
       _mat4.compose(_pos, _quat, _scale);
       this.shadowDiscMesh.setMatrixAt(this.shadowDiscCursor++, _mat4);
@@ -807,7 +807,7 @@ export class InstancedBatchRenderer {
     if (this.shadowDiscCursor < MAX_SHADOW_DISCS) {
       _pos.set(x, 0.022, z);
       _quat.identity();
-      const shadowScale = 1.05 - bob * 1.1;
+      const shadowScale = 0.88 - bob * 0.9;
       _scale.set(shadowScale, 1, shadowScale);
       _mat4.compose(_pos, _quat, _scale);
       this.shadowDiscMesh.setMatrixAt(this.shadowDiscCursor++, _mat4);
@@ -841,7 +841,7 @@ export class InstancedBatchRenderer {
     if (this.shadowDiscCursor < MAX_SHADOW_DISCS) {
       _pos.set(x, 0.022, z);
       _quat.identity();
-      const shadowScale = 1.42 - bob * 1.1;
+      const shadowScale = 1.18 - bob * 0.9;
       _scale.set(shadowScale, 1, shadowScale);
       _mat4.compose(_pos, _quat, _scale);
       this.shadowDiscMesh.setMatrixAt(this.shadowDiscCursor++, _mat4);

@@ -58,19 +58,19 @@ export class SceneManager {
   private elapsedSkyTime = 0;
   private portraitFactor = 0;
 
-  private readonly currentCamPos = new THREE.Vector3(0, 4.9, 6.9);
-  private readonly currentLookAt = new THREE.Vector3(0, 0.25, -11.5);
+  private readonly currentCamPos = new THREE.Vector3(0, 8.35, 10.8);
+  private readonly currentLookAt = new THREE.Vector3(0, -1.55, -14.8);
   private lastFramingMode: CameraFramingMode = 'LIVE_BRIDGE';
 
   constructor(canvasContainer: HTMLElement) {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x181924);
-    this.scene.fog = new THREE.FogExp2(0x6d4236, 0.0052);
+    this.scene.fog = new THREE.FogExp2(0x6d4236, 0.0038);
 
     const initW = Math.max(1, window.innerWidth);
     const initH = Math.max(1, window.innerHeight);
 
-    this.camera = new THREE.PerspectiveCamera(47, initW / initH, 0.3, 320);
+    this.camera = new THREE.PerspectiveCamera(45, initW / initH, 0.3, 420);
     this.camera.position.copy(this.currentCamPos);
     this.camera.lookAt(this.currentLookAt);
 
@@ -244,9 +244,9 @@ export class SceneManager {
 
     this.camera.aspect = aspect;
 
-    // Tuned close over-the-shoulder vertical FOV for tall ~20:9 Pixel 10 XL portrait (412x915)
+    // Flatter ~52.5° portrait vertical FOV eliminates foreground fisheye bloat while showing wide ocean curbs
     this.portraitFactor = Math.max(0, Math.min(1, (0.95 - aspect) / 0.5));
-    this.camera.fov = 46 + this.portraitFactor * 21;
+    this.camera.fov = 44 + this.portraitFactor * 8.5;
     this.camera.updateProjectionMatrix();
 
     this.renderer.setPixelRatio(dpr);
@@ -344,38 +344,38 @@ export class SceneManager {
         }
       }
 
-      _desiredPos.set(0, ARMORY_STAGE_Y + 0.52, ARMORY_STAGE_Z + 4.05 + p * 0.90);
-      _desiredLook.set(0, ARMORY_STAGE_Y - 0.16 - p * 0.38, ARMORY_STAGE_Z);
+      _desiredPos.set(0, ARMORY_STAGE_Y + 0.58, ARMORY_STAGE_Z + 4.85 + p * 1.25);
+      _desiredLook.set(0, ARMORY_STAGE_Y - 0.16 - p * 0.34, ARMORY_STAGE_Z);
     } else if (framingMode === 'LIVE_BRIDGE') {
-      // Seamless Live-Bridge Start Screen Camera:
-      // Close over-the-shoulder angle framing your chunky elite commando above the 3 bottom Upgrade cards
-      // while looking straight down the Golden Gate roadway at upcoming Supply Drums, Coins, Enemies & Gates!
-      const targetCamX = squadX * 0.38;
+      // Comp-Authentic Elevated ~29° Start Camera:
+      // Positions your commando around ~58% vertical height with visible concrete slab space below their boots
+      // above the Upgrade cards while exposing both bridge curbs + ocean water and the upcoming gauntlet!
+      const targetCamX = squadX * 0.28;
       this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 9.0);
 
       _desiredPos.set(
         this.smoothCamX,
-        4.65 + p * 0.55,
-        squadZ + 5.75 + p * 1.35
+        6.80 + p * 1.55,
+        squadZ + 10.6 + p * 4.2
       );
       _desiredLook.set(
-        this.smoothCamX * 0.55,
-        0.18 - p * 0.62,
-        squadZ - 11.4
+        this.smoothCamX * 0.45,
+        -0.42 - p * 1.15,
+        squadZ - 10.8
       );
     } else {
       const inBossFight = framingMode === 'BOSS_TACTICAL';
-      const targetCamX = squadX * (inBossFight ? 0.30 : 0.44 - p * 0.10);
+      const targetCamX = squadX * (inBossFight ? 0.24 : 0.30 - p * 0.06);
       this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 9.5);
 
-      const camHeight = inBossFight ? 6.45 + p * 0.45 : 4.55 + p * 0.50;
-      const camBack = inBossFight ? 8.6 + p * 2.1 : 5.85 + p * 1.45;
+      const camHeight = inBossFight ? 7.65 + p * 1.75 : 6.95 + p * 1.65;
+      const camBack = inBossFight ? 11.8 + p * 4.6 : 10.8 + p * 4.4;
 
       _desiredPos.set(this.smoothCamX, camHeight, squadZ + camBack);
       _desiredLook.set(
-        this.smoothCamX * 0.58,
-        (inBossFight ? 1.15 : 0.72) - p * 0.25,
-        squadZ - (inBossFight ? 12.2 : 11.6)
+        this.smoothCamX * 0.48,
+        (inBossFight ? 0.35 : -0.22) - p * (inBossFight ? 0.60 : 0.95),
+        squadZ - (inBossFight ? 12.2 : 11.4)
       );
     }
 

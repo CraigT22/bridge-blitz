@@ -250,11 +250,11 @@ export class TireWeaponStackSlot {
     if (!this.active || this.broken) {
       return;
     }
-    // Keep unbroken sibling Tire Stacks physically standing on the bridge until behind camera!
-    if (this.retiring || squadZ < this.z - 8.5) {
+    // Keep unbroken sibling Tire Stacks physically standing on the bridge until well behind the elevated camera!
+    if (this.retiring || squadZ < this.z - 12.5) {
       this.retiring = true;
       this.root.position.y -= dt * 16.0;
-      if (this.root.position.y <= -3.8 || squadZ < this.z - 11.2) {
+      if (this.root.position.y <= -3.8 || squadZ < this.z - 15.2) {
         this.hide();
       }
       return;

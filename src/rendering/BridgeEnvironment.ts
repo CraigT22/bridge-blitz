@@ -94,7 +94,7 @@ const CHUNK_COUNT = 10; // 5 seamless 80m suspension catenary spans!
 function sampleCatenaryY(spanPhase: 0 | 1, localZ: number): number {
   const u = Math.max(0, Math.min(1, -localZ / CHUNK_LENGTH));
   const sag = spanPhase === 0 ? 1 - u : u;
-  return 3.65 + 13.75 * sag * sag;
+  return 3.85 + 17.95 * sag * sag;
 }
 
 function createCatenaryCableGeometry(spanPhase: 0 | 1, sideX: number): THREE.TubeGeometry {
@@ -400,37 +400,37 @@ export class BridgeEnvironment {
       group.add(pier);
 
       for (const sign of [-1, 1]) {
-        // Stepped Industrial Tower Legs
-        const lowerLeg = new THREE.Mesh(new THREE.BoxGeometry(1.55, 13.0, 1.75), towerMat);
-        lowerLeg.position.set(sign * 6.05, 4.95, 0);
+        // Stepped Industrial Tower Legs (raised portal height for elevated tactical camera!)
+        const lowerLeg = new THREE.Mesh(new THREE.BoxGeometry(1.55, 17.2, 1.75), towerMat);
+        lowerLeg.position.set(sign * 6.05, 7.05, 0);
         lowerLeg.castShadow = true;
         lowerLeg.receiveShadow = true;
         group.add(lowerLeg);
 
-        const upperLeg = new THREE.Mesh(new THREE.BoxGeometry(1.22, 8.6, 1.4), towerMat);
-        upperLeg.position.set(sign * 6.05, 14.8, 0);
+        const upperLeg = new THREE.Mesh(new THREE.BoxGeometry(1.22, 9.2, 1.4), towerMat);
+        upperLeg.position.set(sign * 6.05, 19.3, 0);
         upperLeg.castShadow = true;
         group.add(upperLeg);
 
         // Steel Cable Saddle & Aviation Warning Beacon on Peak
         const saddle = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.55, 1.65), gunmetalMat);
-        saddle.position.set(sign * 6.05, 19.25, 0);
+        saddle.position.set(sign * 6.05, 24.05, 0);
         group.add(saddle);
 
         const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), beaconGlowMat);
-        beacon.position.set(sign * 6.05, 19.72, 0);
+        beacon.position.set(sign * 6.05, 24.52, 0);
         group.add(beacon);
       }
 
-      // Portal Crossbeams + Diagonal Steel X-Bracing Trusses (raised >= 11.6m to keep sightline clear!)
-      for (const beamY of [11.6, 15.0, 18.1]) {
+      // Portal Crossbeams + Diagonal Steel X-Bracing Trusses (raised >= 16.2m so elevated camera never clips!)
+      for (const beamY of [16.2, 19.5, 22.8]) {
         const beam = new THREE.Mesh(new THREE.BoxGeometry(13.4, 0.90, 1.12), towerMat);
         beam.position.set(0, beamY, 0);
         beam.castShadow = true;
         group.add(beam);
       }
 
-      for (const bayMidY of [13.3, 16.55]) {
+      for (const bayMidY of [17.85, 21.15]) {
         for (const diagSign of [-1, 1]) {
           const strut = new THREE.Mesh(new THREE.BoxGeometry(11.6, 0.26, 0.34), gunmetalMat);
           strut.position.set(0, bayMidY, 0);

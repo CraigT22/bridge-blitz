@@ -1095,8 +1095,8 @@ export class BridgeBlitzGame {
       const bx = pool.x[i] + pool.vx[i] * dt;
       const bz = prevZ + pool.vz[i] * dt;
 
-      // 29m tactical engagement range keeps fire focused on the visible forward gauntlet
-      if (bz < this.squad.z - 29) {
+      // 33m tactical engagement range keeps fire focused down the visible elevated bridge view
+      if (bz < this.squad.z - 33) {
         pool.deactivate(i);
         continue;
       }

@@ -6,10 +6,10 @@ export interface FormationSlot {
   readonly radius: number;
 }
 
-export const ELITE_SLOT_SPACING_X = 0.60;
-export const ELITE_ROW_SPACING_Z = 0.62;
+export const ELITE_SLOT_SPACING_X = 0.50;
+export const ELITE_ROW_SPACING_Z = 0.52;
 export const MAX_FRONT_RANK_WIDTH = 7;
-export const SOLDIER_BODY_RADIUS = 0.28;
+export const SOLDIER_BODY_RADIUS = 0.24;
 export const BRIDGE_PLAYABLE_HALF_WIDTH = 4.9;
 export const GUARDRAIL_MARGIN = 0.20;
 
@@ -30,7 +30,7 @@ export function buildHoneycombSlots(
     const stagger = (Math.abs(row) % 2) * 0.5;
     for (let col = -4; col <= 4; col++) {
       const baseX = (col + stagger - (stagger > 0 ? 0.5 : 0)) * spacingX;
-      if (Math.abs(baseX) > 2.02) {
+      if (Math.abs(baseX) > 1.78) {
         continue;
       }
       const baseZ = row * spacingZ;
