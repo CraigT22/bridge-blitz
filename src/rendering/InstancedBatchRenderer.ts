@@ -14,8 +14,8 @@ import {
   EQUIPPED_GUN_PIVOT_Y,
 } from './WeaponRigFactory';
 
-const MAX_ENEMY_INSTANCES = 220;
-const MAX_HEAVY_ENEMY_INSTANCES = 96;
+const MAX_ENEMY_INSTANCES = 340;
+const MAX_HEAVY_ENEMY_INSTANCES = 136;
 const MAX_RAGDOLL_INSTANCES = 96;
 const MAX_SHADOW_DISCS =
   MAX_VISUAL_SOLDIERS + MAX_ENEMY_INSTANCES + MAX_HEAVY_ENEMY_INSTANCES;
@@ -90,14 +90,15 @@ function buildCommandoStrideSnippet(enablePerInstanceStride: boolean): string {
 
 /**
  * Injects single-pass GPU vertex animation (`aPartId`) plus optional per-instance solid-white
- * hit-flash (`aHitFlash` attribute) and per-instance stride gating (`aStrideScale`)!
+ * hit-flash (`aHitFlash` attribute), per-instance stride gating (`aStrideScale`), and echelon rank tint!
  */
 function applyCommandoShader(
   mat: THREE.MeshStandardMaterial,
   uniforms: CommandoUniforms,
   cacheKey: string,
   enableHitFlash = false,
-  enablePerInstanceStride = false
+  enablePerInstanceStride = false,
+  enableRankTint = false
 ): void {
   const ampExpr = enablePerInstanceStride ? '(uStrideAmp * aStrideScale)' : 'uStrideAmp';
   const strideSnippet = buildCommandoStrideSnippet(enablePerInstanceStride);
@@ -114,6 +115,7 @@ function applyCommandoShader(
         attribute float aPartId;
         ${enableHitFlash ? 'attribute float aHitFlash;\nvarying float vHitFlash;' : ''}
         ${enablePerInstanceStride ? 'attribute float aStrideScale;' : ''}
+        ${enableRankTint ? 'attribute float aRankTint;\nvarying float vRankTint;\nvarying float vLocalY;' : ''}
         varying vec3 vToonWorldNormal;
         uniform float uStrideTime;
         uniform float uStrideAmp;
@@ -153,6 +155,7 @@ function applyCommandoShader(
         /* glsl */ `
         #include <begin_vertex>
         ${enableHitFlash ? 'vHitFlash = aHitFlash;' : ''}
+        ${enableRankTint ? 'vRankTint = aRankTint;\nvLocalY = position.y;' : ''}
         ${strideSnippet}
         {
           vec3 wn = mat3(modelMatrix) * objectNormal;
@@ -170,6 +173,7 @@ function applyCommandoShader(
         /* glsl */ `
         #include <common>
         ${enableHitFlash ? 'varying float vHitFlash;' : ''}
+        ${enableRankTint ? 'varying float vRankTint;\nvarying float vLocalY;' : ''}
         varying vec3 vToonWorldNormal;
         `
       )
@@ -177,6 +181,16 @@ function applyCommandoShader(
         '#include <dithering_fragment>',
         /* glsl */ `
         #include <dithering_fragment>
+        ${
+          enableRankTint
+            ? `
+        if (vRankTint < 0.5 && vLocalY < 0.78 && vLocalY > 0.09) {
+          vec3 oliveFatigue = gl_FragColor.rgb * vec3(0.42, 0.92, 0.34) + vec3(0.03, 0.14, 0.02);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, oliveFatigue, 0.84);
+        }
+        `
+            : ''
+        }
         {
           // Crisp stylized 2-band cel-saturation lift + sky rim so characters stay vivid in shadow!
           vec3 wn = vToonWorldNormal / max(0.0001, length(vToonWorldNormal));
@@ -416,6 +430,7 @@ export class InstancedBatchRenderer {
   private readonly heavyHitFlashAttr: THREE.InstancedBufferAttribute;
   private readonly enemyStrideScaleAttr: THREE.InstancedBufferAttribute;
   private readonly heavyStrideScaleAttr: THREE.InstancedBufferAttribute;
+  private readonly enemyRankTintAttr: THREE.InstancedBufferAttribute;
 
   private readonly playerUniforms: CommandoUniforms = {
     uStrideTime: { value: 0 },
@@ -522,12 +537,18 @@ export class InstancedBatchRenderer {
     this.enemyStrideScaleAttr.setUsage(THREE.DynamicDrawUsage);
     enemyGeo.setAttribute('aStrideScale', this.enemyStrideScaleAttr);
 
+    const enemyRankInitial = new Float32Array(MAX_ENEMY_INSTANCES);
+    enemyRankInitial.fill(1);
+    this.enemyRankTintAttr = new THREE.InstancedBufferAttribute(enemyRankInitial, 1);
+    this.enemyRankTintAttr.setUsage(THREE.DynamicDrawUsage);
+    enemyGeo.setAttribute('aRankTint', this.enemyRankTintAttr);
+
     const enemyMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.40,
       metalness: 0.14,
     });
-    applyCommandoShader(enemyMat, this.enemyUniforms, 'commando-enemy-v53', true, true);
+    applyCommandoShader(enemyMat, this.enemyUniforms, 'commando-enemy-v60', true, true, true);
 
     this.enemyMesh = new THREE.InstancedMesh(enemyGeo, enemyMat, MAX_ENEMY_INSTANCES);
     this.enemyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -711,7 +732,8 @@ export class InstancedBatchRenderer {
     facingYaw = 0,
     celebrateHop = 0,
     focalX = 0,
-    focalZ = -23.5
+    focalZ = -23.5,
+    aimAtFocal = isMoving
   ): void {
     const safeCount = Math.min(count, MAX_VISUAL_SOLDIERS);
     this.playerMesh.count = safeCount;
@@ -719,7 +741,7 @@ export class InstancedBatchRenderer {
     this.shadowDiscCursor = 0;
 
     this.playerUniforms.uStrideTime.value = marchPhase * 11.8;
-    this.playerUniforms.uStrideAmp.value = isMoving ? 0.66 : 0.035;
+    this.playerUniforms.uStrideAmp.value = isMoving ? 0.66 : Math.min(0.32, 0.035 + Math.abs(steerBankAngle) * 1.6);
     this.playerUniforms.uRecoilKick.value = recoilKick;
 
     this.weaponUniforms.uBarrelSpin.value = barrelSpinAngle;
@@ -760,12 +782,12 @@ export class InstancedBatchRenderer {
       const swayZ = isMoving ? Math.sin(bobPhase) * 0.036 : 0;
 
       // Per-commando inward gun aim toward (focalX, focalZ) so left & right flank guns point into the cone!
-      const inwardGunYaw = isMoving
+      const inwardGunYaw = aimAtFocal
         ? Math.max(-0.38, Math.min(0.38, -Math.atan2(focalX - wx, Math.max(5.5, wz - focalZ))))
         : facingYaw - 0.14;
       const yawGun = inwardGunYaw - steerBankAngle * 0.35;
       const yawBody =
-        (isMoving ? -0.45 + inwardGunYaw * 0.72 : facingYaw - 0.52) -
+        (aimAtFocal ? -0.45 + inwardGunYaw * 0.72 : facingYaw - 0.52) -
         steerBankAngle * 0.35;
 
       const bodyGripX = gripLocalX * Math.cos(yawBody) + gripLocalZ * Math.sin(yawBody);
@@ -820,7 +842,8 @@ export class InstancedBatchRenderer {
     z: number,
     phase: number,
     hitFlash: number,
-    isMarching = true
+    isMarching = true,
+    isVanguard = false
   ): void {
     const idx = this.enemyMesh.count;
     if (idx >= MAX_ENEMY_INSTANCES) {
@@ -831,7 +854,7 @@ export class InstancedBatchRenderer {
 
     const bob = isMarching ? Math.abs(Math.sin(phase)) * 0.068 : 0;
     const roll = isMarching ? Math.sin(phase) * 0.048 : 0;
-    const scalePop = ENEMY_MODEL_SCALE * (1 + hitFlash * 0.11);
+    const scalePop = ENEMY_MODEL_SCALE * (isVanguard ? 0.96 : 1.0) * (1 + hitFlash * 0.11);
 
     _pos.set(x, bob, z);
     _euler.set(isMarching ? 0.08 : 0.03, 0, roll);
@@ -841,6 +864,7 @@ export class InstancedBatchRenderer {
     this.enemyMesh.setMatrixAt(idx, _mat4);
     this.enemyHitFlashAttr.setX(idx, hitFlash);
     this.enemyStrideScaleAttr.setX(idx, isMarching ? 1.0 : 0.04);
+    this.enemyRankTintAttr.setX(idx, isVanguard ? 0.0 : 1.0);
 
     if (this.shadowDiscCursor < MAX_SHADOW_DISCS) {
       _pos.set(x, 0.022, z);
@@ -893,6 +917,7 @@ export class InstancedBatchRenderer {
     this.enemyMesh.instanceMatrix.needsUpdate = true;
     this.enemyHitFlashAttr.needsUpdate = true;
     this.enemyStrideScaleAttr.needsUpdate = true;
+    this.enemyRankTintAttr.needsUpdate = true;
     this.heavyEnemyMesh.instanceMatrix.needsUpdate = true;
     this.heavyHitFlashAttr.needsUpdate = true;
     this.heavyStrideScaleAttr.needsUpdate = true;

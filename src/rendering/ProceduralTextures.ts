@@ -7,6 +7,8 @@ export interface RoadwayTextures {
   readonly hazardCurb: THREE.CanvasTexture;
   readonly steelPlate: THREE.CanvasTexture;
   readonly tireTread: THREE.CanvasTexture;
+  readonly causewayAlbedo: THREE.CanvasTexture;
+  readonly causewayBump: THREE.CanvasTexture;
 }
 
 /**
@@ -230,10 +232,89 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
   }
   const tireTread = configureRepeat(new THREE.CanvasTexture(tireCanvas), 4, 1, true);
 
+  // 5. Fortified Split-Causeway Cut-Stone Paver Deck (Crisp 6x6 Ashlar Grid + Beveled Mortar Seams)
+  const cwCanvas = document.createElement('canvas');
+  cwCanvas.width = 512;
+  cwCanvas.height = 512;
+  const cwCtx = cwCanvas.getContext('2d')!;
+
+  const cwbCanvas = document.createElement('canvas');
+  cwbCanvas.width = 512;
+  cwbCanvas.height = 512;
+  const cwbCtx = cwbCanvas.getContext('2d')!;
+
+  cwCtx.fillStyle = '#aea392';
+  cwCtx.fillRect(0, 0, 512, 512);
+  cwbCtx.fillStyle = '#888888';
+  cwbCtx.fillRect(0, 0, 512, 512);
+
+  const cells = 6;
+  const cellW = 512 / cells;
+  for (let row = 0; row < cells; row++) {
+    for (let col = 0; col < cells; col++) {
+      const px = col * cellW;
+      const py = row * cellW;
+      const tone = ((col * 11 + row * 17) % 7 - 3) * 4.5;
+      const r = Math.round(178 + tone);
+      const g = Math.round(166 + tone * 0.95);
+      const b = Math.round(147 + tone * 0.85);
+      cwCtx.fillStyle = `rgb(${r},${g},${b})`;
+      cwCtx.fillRect(px + 3, py + 3, cellW - 5, cellW - 5);
+
+      // Sunlit top/left stone bevel highlight
+      cwCtx.fillStyle = 'rgba(244, 234, 214, 0.42)';
+      cwCtx.fillRect(px + 3, py + 3, cellW - 5, 2.5);
+      cwCtx.fillRect(px + 3, py + 3, 2.5, cellW - 5);
+
+      // Deep recessed mortar joint
+      cwCtx.fillStyle = 'rgba(64, 57, 49, 0.78)';
+      cwCtx.fillRect(px, py, cellW, 3.5);
+      cwCtx.fillRect(px, py, 3.5, cellW);
+
+      cwbCtx.fillStyle = '#2c2c2c';
+      cwbCtx.fillRect(px, py, cellW, 4);
+      cwbCtx.fillRect(px, py, 4, cellW);
+    }
+  }
+
+  // Subtle surface stone speckle & weathered battle cracks across pavers
+  for (let i = 0; i < 900; i++) {
+    const sx = rand() * 512;
+    const sy = rand() * 512;
+    const dark = rand() > 0.5;
+    cwCtx.fillStyle = dark ? 'rgba(58, 50, 42, 0.14)' : 'rgba(245, 236, 220, 0.14)';
+    cwCtx.fillRect(sx, sy, 2 + rand() * 4, 2 + rand() * 4);
+  }
+  for (let c = 0; c < 16; c++) {
+    let cx = rand() * 512;
+    let cy = rand() * 512;
+    cwCtx.strokeStyle = 'rgba(62, 54, 46, 0.52)';
+    cwbCtx.strokeStyle = 'rgba(34, 34, 34, 0.72)';
+    cwCtx.lineWidth = 1.6;
+    cwbCtx.lineWidth = 2.2;
+    cwCtx.beginPath();
+    cwbCtx.beginPath();
+    cwCtx.moveTo(cx, cy);
+    cwbCtx.moveTo(cx, cy);
+    for (let s = 0; s < 4; s++) {
+      cx += (rand() - 0.5) * 28;
+      cy += (rand() - 0.3) * 24;
+      cwCtx.lineTo(cx, cy);
+      cwbCtx.lineTo(cx, cy);
+    }
+    cwCtx.stroke();
+    cwbCtx.stroke();
+  }
+
+  const causewayAlbedo = configureRepeat(new THREE.CanvasTexture(cwCanvas), 1, 4, true);
+  const causewayBump = configureRepeat(new THREE.CanvasTexture(cwbCanvas), 1, 4, false);
+
   return {
     albedo,
     bump,
     roughness,
+    causewayAlbedo,
+    causewayBump,
     hazardCurb,
     steelPlate,
     tireTread,

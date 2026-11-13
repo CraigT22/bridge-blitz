@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { BoardLayout } from '../core/types';
 import {
   createProceduralSurfaceTextures,
   type RoadwayTextures,
@@ -111,6 +112,7 @@ function createCatenaryCableGeometry(spanPhase: 0 | 1, sideX: number): THREE.Tub
 export class BridgeEnvironment {
   public readonly root = new THREE.Group();
   public readonly textures: RoadwayTextures;
+  private readonly deckMat: THREE.MeshStandardMaterial;
   private readonly waterMesh: THREE.Mesh;
   private readonly waterUniforms: {
     uTime: { value: number };
@@ -119,6 +121,9 @@ export class BridgeEnvironment {
   private readonly chunks: THREE.Group[] = [];
   private readonly bossPlatform: THREE.Group;
   private readonly endBulkheadGroup = new THREE.Group();
+  private readonly splitDividerGroup: THREE.Group;
+  private dividerRetracted = false;
+  private dividerCurrentY = 0;
   private finiteTerminusZ: number | null = null;
   private readonly atmospherePoints: THREE.Points;
   private readonly motePositions: Float32Array;
@@ -152,6 +157,7 @@ export class BridgeEnvironment {
       roughness: 0.86,
       metalness: 0.12,
     });
+    this.deckMat = deckMat;
 
     const concreteBarrierMat = new THREE.MeshStandardMaterial({
       color: 0x656c76,
@@ -240,6 +246,16 @@ export class BridgeEnvironment {
       beaconGlowMat
     );
     this.root.add(this.bossPlatform);
+
+    // 3.5 Sculpted Split-Causeway Armored Ballistic Center Divider Wall
+    this.splitDividerGroup = this.createSplitDividerWall(
+      concreteBarrierMat,
+      curbMat,
+      gunmetalMat,
+      beaconGlowMat
+    );
+    this.splitDividerGroup.visible = false;
+    this.root.add(this.splitDividerGroup);
 
     // 4. Drifting Golden-Hour Battle Embers & Ash Motes
     this.motePositions = new Float32Array(this.moteCount * 3);
@@ -570,6 +586,142 @@ export class BridgeEnvironment {
     return group;
   }
 
+  private createSplitDividerWall(
+    concreteBarrierMat: THREE.Material,
+    curbMat: THREE.Material,
+    gunmetalMat: THREE.Material,
+    beaconGlowMat: THREE.Material
+  ): THREE.Group {
+    const group = new THREE.Group();
+    const len = 96;
+
+    const armorWallMat = new THREE.MeshStandardMaterial({
+      color: 0x222933,
+      bumpMap: this.textures.steelPlate,
+      bumpScale: 0.03,
+      roughness: 0.42,
+      metalness: 0.38,
+    });
+    const outlineMat = new THREE.MeshBasicMaterial({
+      color: 0x090d14,
+      side: THREE.BackSide,
+    });
+
+    // Grounded contact shadow along center seam
+    const shadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.96, len + 0.6),
+      new THREE.MeshBasicMaterial({
+        color: 0x05080d,
+        transparent: true,
+        opacity: 0.46,
+        depthWrite: false,
+      })
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.set(0, 0.022, -len / 2);
+    group.add(shadow);
+
+    // Flared concrete K-rail base + hazard trim
+    const baseFoot = new THREE.Mesh(
+      new THREE.BoxGeometry(0.50, 0.42, len),
+      concreteBarrierMat
+    );
+    baseFoot.position.set(0, 0.21, -len / 2);
+    group.add(baseFoot);
+
+    for (const sign of [-1, 1]) {
+      const hazardEdge = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.16, len),
+        curbMat
+      );
+      hazardEdge.position.set(sign * 0.27, 0.09, -len / 2);
+      group.add(hazardEdge);
+    }
+
+    // Tall dark ballistic steel armor divider wall + watertight BackSide cel-outline
+    const wallPanel = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 2.58, len),
+      armorWallMat
+    );
+    wallPanel.position.set(0, 1.38, -len / 2);
+    group.add(wallPanel);
+
+    const wallOutline = new THREE.Mesh(
+      new THREE.BoxGeometry(0.30, 2.66, len + 0.08),
+      outlineMat
+    );
+    wallOutline.position.set(0, 1.38, -len / 2);
+    group.add(wallOutline);
+
+    // Top gunmetal coping rail + repeating vertical steel H-beam ribs
+    const topCap = new THREE.Mesh(
+      new THREE.BoxGeometry(0.32, 0.12, len + 0.1),
+      gunmetalMat
+    );
+    topCap.position.set(0, 2.71, -len / 2);
+    group.add(topCap);
+
+    const ribGeo = new THREE.BoxGeometry(0.36, 2.48, 0.18);
+    for (let zOff = -1.2; zOff >= -len + 2; zOff -= 6.5) {
+      const rib = new THREE.Mesh(ribGeo, gunmetalMat);
+      rib.position.set(0, 1.38, zOff);
+      group.add(rib);
+    }
+
+    // Front Armored Breach-Line Nose Prow + Warning Beacon at localZ = 0
+    const noseProw = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.28, 2.72, 8),
+      gunmetalMat
+    );
+    noseProw.position.set(0, 1.36, 0.05);
+    group.add(noseProw);
+
+    const noseOutline = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.23, 0.33, 2.78, 8),
+      outlineMat
+    );
+    noseOutline.position.set(0, 1.36, 0.05);
+    group.add(noseOutline);
+
+    const noseHazard = new THREE.Mesh(
+      new THREE.BoxGeometry(0.42, 0.62, 0.12),
+      curbMat
+    );
+    noseHazard.position.set(0, 0.95, 0.24);
+    group.add(noseHazard);
+
+    const prowBeacon = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15, 10, 8),
+      beaconGlowMat
+    );
+    prowBeacon.position.set(0, 2.86, 0.05);
+    group.add(prowBeacon);
+
+    return group;
+  }
+
+  public configureBoardLayout(
+    layout: BoardLayout,
+    dividerTipWorldZ = -8.2
+  ): void {
+    const isSplit = layout === 'SPLIT_CAUSEWAY';
+    const nextAlbedo = isSplit ? this.textures.causewayAlbedo : this.textures.albedo;
+    const nextBump = isSplit ? this.textures.causewayBump : this.textures.bump;
+    if (this.deckMat.map !== nextAlbedo) {
+      this.deckMat.map = nextAlbedo;
+      this.deckMat.bumpMap = nextBump;
+      this.deckMat.needsUpdate = true;
+    }
+    this.splitDividerGroup.visible = isSplit;
+    this.dividerRetracted = false;
+    this.dividerCurrentY = 0;
+    this.splitDividerGroup.position.set(0, 0, dividerTipWorldZ);
+  }
+
+  public setDividerRetracted(retracted: boolean): void {
+    this.dividerRetracted = retracted;
+  }
+
   public configureBossPlatformZ(bossStartZ: number, finiteCampaignTerminus = true): void {
     this.bossPlatform.position.set(0, 0.01, bossStartZ + 8);
     this.finiteTerminusZ = finiteCampaignTerminus ? bossStartZ - 18 : null;
@@ -595,6 +747,15 @@ export class BridgeEnvironment {
       this.waterUniforms.uCamPos.value.copy(camPos);
     }
     this.waterMesh.position.z = squadZ - 130;
+
+    if (this.splitDividerGroup.visible || this.dividerCurrentY > -3.1) {
+      const targetY = this.dividerRetracted ? -3.2 : 0;
+      this.dividerCurrentY += (targetY - this.dividerCurrentY) * Math.min(1, dt * 6.5);
+      this.splitDividerGroup.position.y = this.dividerCurrentY;
+      if (this.dividerRetracted && this.dividerCurrentY < -3.05) {
+        this.splitDividerGroup.visible = false;
+      }
+    }
 
     // Recycle chunks by totalSpan (400m = 5 * 80m) so catenary phase 0/1 pairs stay 100% seamless!
     const totalSpan = CHUNK_COUNT * CHUNK_LENGTH;

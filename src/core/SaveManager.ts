@@ -9,6 +9,8 @@ export function createDefaultSaveData(): SaveDataV1 {
     unlockedStage: 1,
     selectedStage: 1,
     selectedMode: 'CAMPAIGN',
+    splitCausewayStage: 1,
+    bestSplitStage: 1,
     upgrades: {
       fireRate: 0,
       bulletPower: 0,
@@ -51,13 +53,26 @@ export function sanitizeSaveData(raw: unknown): SaveDataV1 {
     unlockedStage,
     Math.max(1, clampNonNegativeInt(obj.selectedStage, unlockedStage))
   );
+  const splitCausewayStage = Math.max(1, clampNonNegativeInt(obj.splitCausewayStage, 1));
+  const bestSplitStage = Math.max(
+    splitCausewayStage,
+    clampNonNegativeInt(obj.bestSplitStage, 1)
+  );
+  const selectedMode =
+    obj.selectedMode === 'ENDLESS'
+      ? 'ENDLESS'
+      : obj.selectedMode === 'SPLIT_CAUSEWAY'
+        ? 'SPLIT_CAUSEWAY'
+        : 'CAMPAIGN';
 
   return {
     version: 1,
     coins: clampNonNegativeInt(obj.coins, defaults.coins),
     unlockedStage,
     selectedStage,
-    selectedMode: obj.selectedMode === 'ENDLESS' ? 'ENDLESS' : 'CAMPAIGN',
+    selectedMode,
+    splitCausewayStage,
+    bestSplitStage,
     upgrades: {
       fireRate: clampNonNegativeInt(rawUpgrades.fireRate, 0),
       bulletPower: clampNonNegativeInt(rawUpgrades.bulletPower, 0),

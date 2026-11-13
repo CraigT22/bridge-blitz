@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { GameStateMachine, WIPEOUT_SLOWMO_DURATION } from '../src/core/GameStateMachine';
 import { BulletPool, ParticlePool, RagdollPool } from '../src/core/ObjectPool';
 import { sanitizeSaveData } from '../src/core/SaveManager';
-import { CAMPAIGN_STAGES, generateEndlessWaveStage } from '../src/core/StageData';
+import {
+  CAMPAIGN_STAGES,
+  generateEndlessWaveStage,
+  generateSplitCausewayStage,
+} from '../src/core/StageData';
 import { selectBossSalvoLaneMask } from '../src/entities/BossEntity';
 
 describe('ObjectPool & Core State Integrity', () => {
@@ -112,36 +116,60 @@ describe('ObjectPool & Core State Integrity', () => {
     }
   });
 
-  it('defines 10 valid handcrafted v5.0 campaign stages with V-trio supply drums, 3-lane tire walls, Mid-Bridge Brutes, and Boss salvos', () => {
+  it('defines 10 valid v6.0 400%-longer (+50% harder) campaign stages alternating Standard Bridge and Split Causeway boards', () => {
     expect(CAMPAIGN_STAGES).toHaveLength(10);
     const seenChassis = new Set<string>();
     for (let i = 0; i < CAMPAIGN_STAGES.length; i++) {
       const stage = CAMPAIGN_STAGES[i];
       expect(stage.stageNumber).toBe(i + 1);
-      expect(stage.trackLength).toBeGreaterThanOrEqual(280);
-      expect(stage.supplyDrums.length).toBeGreaterThanOrEqual(9);
-      expect(stage.supplyDrums[0].z).toBeGreaterThanOrEqual(-20);
-      expect(stage.gatePairs.length).toBeGreaterThanOrEqual(3);
-      expect(stage.tireStacks.length).toBe(6);
-      expect(stage.enemyWaves.length).toBeGreaterThanOrEqual(4);
+      expect(stage.trackLength).toBeGreaterThanOrEqual(1120);
+      expect(stage.supplyDrums.length).toBe(36);
+      expect(stage.supplyDrums[0].z).toBeGreaterThanOrEqual(-22);
+      expect(stage.gatePairs.length).toBe(12);
+      expect(stage.tireStacks.length).toBe(24);
+      expect(stage.enemyWaves.length).toBe(16);
       expect(stage.enemyWaves[1].count).toBeGreaterThanOrEqual(30);
       expect(stage.midBrute).toBeDefined();
-      expect(stage.midBrute!.maxHp).toBeGreaterThanOrEqual(6500);
-      expect(stage.boss.maxHp).toBeGreaterThanOrEqual(12500);
+      expect(stage.midBrutes?.length).toBe(3);
+      expect(stage.midBrute!.maxHp).toBeGreaterThanOrEqual(10000);
+      expect(stage.boss.maxHp).toBeGreaterThanOrEqual(18750);
       expect(stage.boss.salvoLanes === 1 || stage.boss.salvoLanes === 2).toBe(true);
-      expect(stage.boss.salvoDamage).toBeGreaterThanOrEqual(5);
-      expect(stage.boss.salvoDamage).toBeLessThanOrEqual(12);
+      expect(stage.boss.salvoDamage).toBeGreaterThanOrEqual(6);
+      expect(stage.boss.salvoDamage).toBeLessThanOrEqual(16);
+
+      const expectedLayout = stage.stageNumber % 2 === 0 ? 'SPLIT_CAUSEWAY' : 'STANDARD_BRIDGE';
+      expect(stage.boardLayout).toBe(expectedLayout);
+      if (expectedLayout === 'SPLIT_CAUSEWAY') {
+        expect(stage.splitCauseway).toBeDefined();
+        expect(stage.splitCauseway!.leftQueue.length).toBe(28);
+        expect(stage.splitCauseway!.rightEchelons.length).toBe(22);
+        expect(stage.splitCauseway!.goliathSpawns.length).toBe(3);
+      }
+
       seenChassis.add(stage.boss.chassis);
     }
     expect(seenChassis).toEqual(
       new Set(['WARDEN_MECH', 'SIEGE_TANK', 'KRAKEN_WALKER', 'SOVEREIGN_TITAN'])
     );
 
+    const split1 = generateSplitCausewayStage(1);
+    const split6 = generateSplitCausewayStage(6);
+    expect(split1.boardLayout).toBe('SPLIT_CAUSEWAY');
+    expect(split1.splitCauseway?.leftQueue[0].reward).toEqual({
+      kind: 'GATE',
+      operator: 'MUL',
+      value: 2,
+    });
+    expect(split6.boss.maxHp).toBeGreaterThan(split1.boss.maxHp);
+
     const wave1 = generateEndlessWaveStage(1);
+    const wave2 = generateEndlessWaveStage(2);
     const wave4 = generateEndlessWaveStage(4);
     const wave5 = generateEndlessWaveStage(5);
-    expect(wave1.supplyDrums.length).toBeGreaterThanOrEqual(9);
-    expect(wave1.tireStacks.length).toBe(6);
+    expect(wave1.boardLayout).toBe('STANDARD_BRIDGE');
+    expect(wave2.boardLayout).toBe('SPLIT_CAUSEWAY');
+    expect(wave1.supplyDrums.length).toBe(36);
+    expect(wave1.tireStacks.length).toBe(24);
     expect(wave1.midBrute).toBeDefined();
     expect(wave5.boss.maxHp).toBeGreaterThan(wave1.boss.maxHp);
     expect(wave1.boss.salvoLanes).toBe(1);
@@ -149,18 +177,22 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(wave4.boss.chassis).toBe('SOVEREIGN_TITAN');
   });
 
-  it('sanitizes malformed localStorage payloads safely', () => {
+  it('sanitizes malformed localStorage payloads including SPLIT_CAUSEWAY mode and split stages safely', () => {
     const clean = sanitizeSaveData({
       coins: 150.9,
       unlockedStage: 99,
       selectedStage: -4,
-      selectedMode: 'ENDLESS',
+      selectedMode: 'SPLIT_CAUSEWAY',
+      splitCausewayStage: 7.8,
+      bestSplitStage: -2,
       upgrades: { fireRate: 3, bulletPower: 'bad' },
     });
     expect(clean.coins).toBe(150);
     expect(clean.unlockedStage).toBe(10);
     expect(clean.selectedStage).toBe(1);
-    expect(clean.selectedMode).toBe('ENDLESS');
+    expect(clean.selectedMode).toBe('SPLIT_CAUSEWAY');
+    expect(clean.splitCausewayStage).toBe(7);
+    expect(clean.bestSplitStage).toBe(7);
     expect(clean.upgrades.fireRate).toBe(3);
     expect(clean.upgrades.bulletPower).toBe(0);
   });

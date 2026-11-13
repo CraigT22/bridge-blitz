@@ -252,6 +252,11 @@ export class TireWeaponStackSlot {
     if (!this.active || this.broken) {
       return;
     }
+    if (!this.retiring && squadZ - this.z > 128) {
+      this.root.visible = false;
+      return;
+    }
+    this.root.visible = true;
     // Keep unbroken sibling Tire Stacks physically standing on the bridge until well behind the elevated camera!
     if (this.retiring || squadZ < this.z - 12.5) {
       this.retiring = true;

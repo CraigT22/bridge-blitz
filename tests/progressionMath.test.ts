@@ -74,9 +74,11 @@ describe('progressionMath', () => {
     expect(partial.totalCoinsEarned).toBe(Math.round(partial.distanceCoins * 1.3));
   });
 
-  it('maintains strictly monotonic Mid-Bridge Goliath HP and Boss HP progression across all 10 Campaign sectors', async () => {
+  it('maintains strictly monotonic +50% v6.0 Mid-Bridge Goliath HP and Boss HP progression across all 10 Campaign sectors', async () => {
     const { CAMPAIGN_STAGES } = await import('../src/core/StageData');
     expect(CAMPAIGN_STAGES).toHaveLength(10);
+    expect(CAMPAIGN_STAGES[0].boss.maxHp).toBe(18750);
+    expect(CAMPAIGN_STAGES[9].boss.maxHp).toBe(114000);
     for (let i = 1; i < CAMPAIGN_STAGES.length; i++) {
       const prev = CAMPAIGN_STAGES[i - 1];
       const curr = CAMPAIGN_STAGES[i];

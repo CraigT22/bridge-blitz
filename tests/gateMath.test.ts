@@ -159,5 +159,7 @@ describe('gateMath', () => {
     expect(formatGateLabel('MUL', 1.0, false)).toBe('X1.0');
     expect(formatGateLabel('MUL', 1.7, false)).toBe('X1.7');
     expect(formatGateLabel('MUL', 2.0, false)).toBe('X2.0');
+    expect(formatGateLabel('MUL', 2, true)).toBe('X2');
+    expect(formatGateLabel('MUL', 1.5, true)).toBe('X1.5');
   });
 });

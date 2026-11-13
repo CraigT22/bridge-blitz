@@ -132,10 +132,10 @@ function createSunburstGlowTexture(): THREE.CanvasTexture {
   return new THREE.CanvasTexture(canvas);
 }
 
-const _sharedDrumTex = createMilitaryDrumTexture();
-const _sharedBarrelGeos = createBulgedBarrelGeometries();
-const _sharedGlowTex = createSunburstGlowTexture();
-const _sharedHoopGeo = (() => {
+export const SHARED_DRUM_TEX = createMilitaryDrumTexture();
+export const SHARED_BARREL_GEOS = createBulgedBarrelGeometries();
+export const SHARED_GLOW_TEX = createSunburstGlowTexture();
+export const SHARED_HOOP_GEO = (() => {
   const g = new THREE.CylinderGeometry(0.955, 0.955, 0.19, 22, 1, true);
   g.rotateZ(Math.PI / 2);
   g.scale(1.0, 1.045, 1.025);
@@ -167,6 +167,7 @@ export class SupplyDrumSlot {
   private readonly weaponBadges: Record<WeaponTierId, THREE.Mesh>;
 
   private flashTimer = 0;
+  private flashCooldown = 0;
   private spinAngle = 0;
 
   constructor(slotIndex: number) {
@@ -188,7 +189,7 @@ export class SupplyDrumSlot {
 
     this.drumMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
-      map: _sharedDrumTex,
+      map: SHARED_DRUM_TEX,
       roughness: 0.56,
       metalness: 0.14,
       emissive: 0x000000,
@@ -201,18 +202,18 @@ export class SupplyDrumSlot {
     });
 
     // Sculpted bulged stave barrel + raised 3D gunmetal steel hoops + watertight BackSide cel-outline!
-    const barrelMesh = new THREE.Mesh(_sharedBarrelGeos.bodyGeo, this.drumMat);
+    const barrelMesh = new THREE.Mesh(SHARED_BARREL_GEOS.bodyGeo, this.drumMat);
     barrelMesh.position.y = 1.04;
     this.drumBodyGroup.add(barrelMesh);
 
     for (const hoopX of [-0.66, 0.66]) {
-      const hoop = new THREE.Mesh(_sharedHoopGeo, this.hoopMat);
+      const hoop = new THREE.Mesh(SHARED_HOOP_GEO, this.hoopMat);
       hoop.position.set(hoopX, 1.04, 0);
       this.drumBodyGroup.add(hoop);
     }
 
     const outlineMesh = new THREE.Mesh(
-      _sharedBarrelGeos.outlineGeo,
+      SHARED_BARREL_GEOS.outlineGeo,
       new THREE.MeshBasicMaterial({ color: 0x140d07, side: THREE.BackSide })
     );
     outlineMesh.position.y = 1.04;
@@ -240,7 +241,7 @@ export class SupplyDrumSlot {
     this.glowHaloMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(1.95, 1.95),
       new THREE.MeshBasicMaterial({
-        map: _sharedGlowTex,
+        map: SHARED_GLOW_TEX,
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
@@ -292,6 +293,7 @@ export class SupplyDrumSlot {
     this.rewardType = def.rewardType;
     this.rewardValue = def.rewardValue;
     this.flashTimer = 0;
+    this.flashCooldown = 0;
     this.spinAngle = Math.abs(this.x * 0.45 + this.z * 0.08);
 
     this.root.position.set(this.x, 0, this.z);
@@ -350,6 +352,11 @@ export class SupplyDrumSlot {
     if (!this.active || this.broken) {
       return;
     }
+    if (squadZ - this.z > 128 && squadZ >= this.z) {
+      this.root.visible = false;
+      return;
+    }
+    this.root.visible = true;
     // Keep unbroken sibling barrels physically standing on the bridge until well behind the elevated camera!
     if (squadZ < this.z - 12.5) {
       this.root.position.y -= dt * 16.0;
@@ -378,12 +385,16 @@ export class SupplyDrumSlot {
       }
     }
 
+    if (this.flashCooldown > 0) {
+      this.flashCooldown = Math.max(0, this.flashCooldown - dt);
+    }
+
     if (this.flashTimer > 0) {
-      this.flashTimer = Math.max(0, this.flashTimer - dt * 7.5);
-      this.drumMat.emissive.setRGB(this.flashTimer * 0.85, this.flashTimer * 0.18, 0.02);
-      this.hoopMat.emissive.setRGB(this.flashTimer * 0.45, this.flashTimer * 0.12, 0.01);
-      const pop = 1 + this.flashTimer * 0.06;
-      this.drumBodyGroup.scale.set(pop, 1 - this.flashTimer * 0.035, pop);
+      this.flashTimer = Math.max(0, this.flashTimer - dt * 9.5);
+      this.drumMat.emissive.setRGB(this.flashTimer * 0.52, this.flashTimer * 0.14, 0.02);
+      this.hoopMat.emissive.setRGB(this.flashTimer * 0.32, this.flashTimer * 0.10, 0.01);
+      const pop = 1 + this.flashTimer * 0.05;
+      this.drumBodyGroup.scale.set(pop, 1 - this.flashTimer * 0.03, pop);
     } else {
       this.drumMat.emissive.setRGB(0, 0, 0);
       this.hoopMat.emissive.setRGB(0, 0, 0);
@@ -413,7 +424,10 @@ export class SupplyDrumSlot {
     }
 
     this.remainingHp -= damage;
-    this.flashTimer = 1.0;
+    if (this.flashCooldown <= 0) {
+      this.flashTimer = 1.0;
+      this.flashCooldown = 0.14;
+    }
 
     if (this.remainingHp <= 0) {
       this.remainingHp = 0;
@@ -423,7 +437,7 @@ export class SupplyDrumSlot {
       return 'SHATTERED';
     }
 
-    this.hpLabelTex.redrawIfDirty(this.remainingHp, 1.0);
+    this.hpLabelTex.redrawIfDirty(this.remainingHp, this.flashTimer);
     return 'HIT';
   }
 

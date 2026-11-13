@@ -363,6 +363,11 @@ export class GatePairSlot {
     if (!this.active) {
       return;
     }
+    if (!this.triggered && squadZ - this.z > 128) {
+      this.root.visible = false;
+      return;
+    }
+    this.root.visible = true;
     if (this.triggered || squadZ < this.z - 2.0) {
       this.triggered = true;
       this.root.position.y -= dt * 18.0;

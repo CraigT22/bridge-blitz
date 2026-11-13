@@ -1,19 +1,32 @@
 import type {
+  BoardLayout,
   BossChassisId,
+  BossDefinition,
+  EnemyVisualRank,
+  EnemyWaveDefinition,
   GateDefinition,
   GatePairDefinition,
   MidBridgeBruteDefinition,
+  SplitBarrelNodeDefinition,
+  SplitCausewayDefinition,
+  SplitHordeEchelonDefinition,
+  SplitNodeReward,
   StageDefinition,
   SupplyDrumDefinition,
   TireStackDefinition,
   WeaponTierId,
 } from './types';
 
+/** Global v6.0 difficulty multiplier (+50% harder across obstacles, gates, hordes, Goliaths & Bosses). */
+export const DIFFICULTY_MULTIPLIER_V6 = 1.5;
+/** Global v6.0 marathon span multiplier (400% longer sectors & sieges). */
+export const BOARD_LENGTH_MULTIPLIER_V6 = 4.0;
+
 function addGate(initialValue: number, damagePerIncrement: number): GateDefinition {
   return {
     operator: 'ADD',
     initialValue,
-    damagePerIncrement,
+    damagePerIncrement: Math.max(4, Math.round(damagePerIncrement)),
     isLocked: false,
   };
 }
@@ -22,7 +35,7 @@ function shootMulGate(initialValue: number, damagePerIncrement: number): GateDef
   return {
     operator: 'MUL',
     initialValue,
-    damagePerIncrement,
+    damagePerIncrement: Math.max(6, Math.round(damagePerIncrement)),
     isLocked: false,
   };
 }
@@ -40,21 +53,21 @@ function drumV3(
     {
       z: zCenter,
       lane: 'CENTER',
-      hp: centerHp,
+      hp: Math.max(12, Math.round(centerHp)),
       rewardType: centerReward.type,
       rewardValue: centerReward.val,
     },
     {
       z: zCenter - 2.6,
       lane: 'LEFT',
-      hp: leftHp,
+      hp: Math.max(18, Math.round(leftHp)),
       rewardType: leftReward.type,
       rewardValue: leftReward.val,
     },
     {
       z: zCenter - 2.6,
       lane: 'RIGHT',
-      hp: rightHp,
+      hp: Math.max(18, Math.round(rightHp)),
       rewardType: rightReward.type,
       rewardValue: rightReward.val,
     },
@@ -74,744 +87,738 @@ function tireWall3(
     {
       z,
       lane: 'LEFT',
-      breakCount: leftHp,
+      breakCount: Math.max(120, Math.round(leftHp)),
       weaponTier: weaponLane === 'LEFT' ? weaponTier : undefined,
       coinReward: weaponLane === 'LEFT' ? undefined : sideCoins,
     },
     {
       z,
       lane: 'CENTER',
-      breakCount: centerHp,
+      breakCount: Math.max(120, Math.round(centerHp)),
       weaponTier: weaponLane === 'CENTER' ? weaponTier : undefined,
       coinReward: weaponLane === 'CENTER' ? undefined : sideCoins,
     },
     {
       z,
       lane: 'RIGHT',
-      breakCount: rightHp,
+      breakCount: Math.max(120, Math.round(rightHp)),
       weaponTier: weaponLane === 'RIGHT' ? weaponTier : undefined,
       coinReward: weaponLane === 'RIGHT' ? undefined : sideCoins,
     },
   ];
 }
 
+interface MarathonSectorSeed {
+  readonly stageNumber: number;
+  readonly title: string;
+  readonly boardLayout: BoardLayout;
+  readonly baseSpan: number;
+  readonly hpScale: number;
+  readonly gateK: number;
+  readonly negGateBase: number;
+  readonly posGateBase: number;
+  readonly enemyBaseHp: number;
+  readonly enemyBaseSpeed: number;
+  readonly coinBase: number;
+  readonly bruteName: string;
+  readonly bruteMaxHp: number;
+  readonly bruteSpeed: number;
+  readonly bruteDamage: number;
+  readonly bruteCoins: number;
+  readonly boss: BossDefinition;
+}
+
 /**
- * 10 Handcrafted Tactical Bridge Sectors tuned for Bridge Blitz v5.0:
- * - Calibrated for 1..40 commando crowds, shootable < X1.00 red fractional multiplier gates,
- *   ~3x positive-weighted split gates, standing barrel/tire lane obstacles, 30-48 unit mixed swarms,
- *   Mid-Bridge Riot Goliath Brutes (halting march 14m ahead of Tire Wall 2), and Sector-End War Machines.
+ * Builds a 28-node Left-Lane `[Barrel + Gate/Weapon]` conveyor queue and 22-echelon Right-Lane
+ * siege battalion (`~375` ranked troopers + `3` Breacher Riot Goliaths) for Split Causeway boards.
+ */
+function buildSplitCausewayDefinition(
+  stageIdx: number,
+  hpScale: number,
+  enemyBaseHp: number,
+  enemyBaseSpeed: number,
+  coinBase: number,
+  bruteName: string,
+  bruteMaxHp: number,
+  bruteSpeed: number,
+  bruteDamage: number,
+  bruteCoins: number
+): SplitCausewayDefinition {
+  const d = DIFFICULTY_MULTIPLIER_V6;
+  const siegeColumnSpan = Math.round(340 + (stageIdx - 1) * 9);
+  const marchSpeed = Math.min(2.92, Math.max(2.26, enemyBaseSpeed * 0.56 + stageIdx * 0.032));
+
+  const rewardPattern: ReadonlyArray<SplitNodeReward> = [
+    { kind: 'GATE', operator: 'MUL', value: 2 },
+    { kind: 'WEAPON', weaponTier: 2 },
+    { kind: 'GATE', operator: 'ADD', value: 3 },
+    { kind: 'GATE', operator: 'MUL', value: 1.5 },
+    { kind: 'WEAPON', weaponTier: 3 },
+    { kind: 'GATE', operator: 'ADD', value: 4 },
+    { kind: 'COINS', coins: Math.round(75 * hpScale) },
+    { kind: 'GATE', operator: 'MUL', value: 2 },
+    { kind: 'GATE', operator: 'ADD', value: 5 },
+    { kind: 'WEAPON', weaponTier: 4 },
+    { kind: 'GATE', operator: 'MUL', value: 1.5 },
+    { kind: 'GATE', operator: 'ADD', value: 5 },
+    { kind: 'COINS', coins: Math.round(135 * hpScale) },
+    { kind: 'GATE', operator: 'MUL', value: 2 },
+    { kind: 'WEAPON', weaponTier: stageIdx >= 3 ? 5 : 4 },
+    { kind: 'GATE', operator: 'ADD', value: 6 },
+    { kind: 'GATE', operator: 'MUL', value: 1.5 },
+    { kind: 'COINS', coins: Math.round(195 * hpScale) },
+    { kind: 'GATE', operator: 'ADD', value: 6 },
+    { kind: 'WEAPON', weaponTier: 5 },
+    { kind: 'GATE', operator: 'MUL', value: 2 },
+    { kind: 'GATE', operator: 'ADD', value: 7 },
+    { kind: 'COINS', coins: Math.round(260 * hpScale) },
+    { kind: 'GATE', operator: 'MUL', value: 1.5 },
+    { kind: 'GATE', operator: 'ADD', value: 8 },
+    { kind: 'GATE', operator: 'MUL', value: 2 },
+    { kind: 'COINS', coins: Math.round(340 * hpScale) },
+    { kind: 'GATE', operator: 'MUL', value: 2 },
+  ];
+
+  const baseQueueHps = [
+    18, 44, 72, 115, 165, 215, 260, 340, 420, 540, 660, 790, 920, 1120,
+    1340, 1520, 1740, 1950, 2200, 2550, 2850, 3150, 3450, 3800, 4150, 4550, 4950, 5400,
+  ];
+
+  const leftQueue: SplitBarrelNodeDefinition[] = [];
+  for (let i = 0; i < rewardPattern.length; i++) {
+    // Keep opening barrel crisp & responsive while scaling full queue by +50% difficulty * stage hpScale
+    const stageFactor = i === 0 ? Math.pow(hpScale, 0.58) : Math.pow(hpScale, 0.85);
+    const barrelHp = Math.max(16, Math.round(baseQueueHps[i] * d * stageFactor));
+    leftQueue.push({
+      barrelHp,
+      reward: rewardPattern[i],
+    });
+  }
+
+  // 22 escalating Right-Lane Battalion Echelons: opening spearhead stacks Olive Raiders -> Crimson Troopers -> Dark Ironclad Juggernauts shoulder-to-shoulder!
+  const rightEchelons: SplitHordeEchelonDefinition[] = [];
+  let cursorZ = 13.0;
+  const totalEchelons = 22;
+  for (let e = 0; e < totalEchelons; e++) {
+    const progress = e / (totalEchelons - 1);
+    let rank: EnemyVisualRank = 1;
+    if (e === 0 || (e >= 3 && e % 4 === 3)) {
+      rank = 0; // Olive-Moss Vanguard Raiders spearheading each battalion wave
+    } else if (e === 2 || (e >= 6 && e % 4 === 2) || e >= 20) {
+      rank = 2; // Towering 1.65x Dark Ironclad Heavy Juggernauts backing each battalion
+    }
+
+    const cols = rank === 2 ? 4 : e === 0 ? 5 : 6;
+    const rows = rank === 2 ? 3 : e === 0 ? 2 : 3;
+    const echelonGrowth = 1 + progress * 2.85;
+    const rankHpMul = rank === 2 ? 3.5 : rank === 0 ? 0.88 : 1.15;
+    const hpPerUnit = Math.max(
+      6,
+      Math.round(enemyBaseHp * d * echelonGrowth * rankHpMul)
+    );
+    const unitSpeed =
+      rank === 2 ? marchSpeed * 0.96 : rank === 0 ? marchSpeed * 1.02 : marchSpeed;
+    const coinPerKill =
+      rank === 2 ? Math.round((coinBase + 2) * 3.0) : Math.max(3, coinBase + Math.floor(progress * 4));
+
+    rightEchelons.push({
+      startZ: Number(cursorZ.toFixed(1)),
+      rows,
+      cols,
+      rank,
+      hpPerUnit,
+      speed: Number(unitSpeed.toFixed(2)),
+      coinPerKill,
+    });
+
+    const depthSpan = rows * (rank === 2 ? 1.48 : 1.08);
+    // Tight continuous column in opening 4 echelons, then sustained assault waves across the 340m-420m causeway
+    const gapZ = e < 3 ? 2.4 : 12.6 + (stageIdx - 1) * 0.42;
+    cursorZ += depthSpan + gapZ;
+  }
+
+  const goliathSpawns: MidBridgeBruteDefinition[] = [
+    {
+      z: -Math.round(siegeColumnSpan * 0.30),
+      name: `${bruteName} Alpha`,
+      maxHp: Math.round(bruteMaxHp * 0.72),
+      speed: bruteSpeed,
+      clubDamage: Math.max(6, bruteDamage - 1),
+      coinReward: Math.round(bruteCoins * 0.8),
+    },
+    {
+      z: -Math.round(siegeColumnSpan * 0.62),
+      name: bruteName,
+      maxHp: bruteMaxHp,
+      speed: Math.min(2.3, bruteSpeed + 0.06),
+      clubDamage: bruteDamage,
+      coinReward: bruteCoins,
+    },
+    {
+      z: -Math.round(siegeColumnSpan * 0.88),
+      name: `${bruteName} Prime`,
+      maxHp: Math.round(bruteMaxHp * 1.18),
+      speed: Math.min(2.35, bruteSpeed + 0.10),
+      clubDamage: bruteDamage + 2,
+      coinReward: Math.round(bruteCoins * 1.25),
+    },
+  ];
+
+  return {
+    siegeColumnSpan,
+    marchSpeed: Number(marchSpeed.toFixed(2)),
+    dividerStartZ: 8.2,
+    dividerLength: 108,
+    leftQueue,
+    rightEchelons,
+    goliathSpawns,
+  };
+}
+
+/**
+ * Builds a 400%-longer (`1,120m..1,368m`), +50%-harder 4-Act Bridge Sector (and populates
+ * `splitCauseway` as well when `seed.boardLayout === 'SPLIT_CAUSEWAY'`).
+ */
+function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
+  const d = DIFFICULTY_MULTIPLIER_V6;
+  const actSpan = seed.baseSpan;
+  const trackLength = Math.round(actSpan * BOARD_LENGTH_MULTIPLIER_V6);
+
+  const supplyDrums: SupplyDrumDefinition[] = [];
+  const gatePairs: GatePairDefinition[] = [];
+  const tireStacks: TireStackDefinition[] = [];
+  const enemyWaves: EnemyWaveDefinition[] = [];
+
+  const laneCycle: ReadonlyArray<'LEFT' | 'CENTER' | 'RIGHT'> = ['CENTER', 'LEFT', 'RIGHT', 'CENTER'];
+
+  for (let act = 0; act < 4; act++) {
+    const actBaseZ = -act * actSpan;
+    const actMul = 1 + act * 0.52;
+    const s = seed.hpScale * d * actMul;
+    const k = seed.gateK * d * (1 + act * 0.38);
+
+    const earlyWeapon = Math.min(5, 2 + Math.floor((seed.stageNumber - 1) / 3) + Math.floor(act / 2)) as WeaponTierId;
+    const midWeapon = Math.min(5, earlyWeapon + 1) as WeaponTierId;
+    const lateWeapon = Math.min(5, midWeapon + (act >= 1 ? 1 : 0)) as WeaponTierId;
+
+    // 3 V-Trio Supply Drum Formations per Act (12 formations = 36 drums total across 400% bridge!)
+    const centerFirstHp = act === 0 && seed.stageNumber === 1 ? 48 : Math.round(78 * s);
+    supplyDrums.push(
+      ...drumV3(
+        actBaseZ - 17.5,
+        155 * s,
+        centerFirstHp,
+        175 * s,
+        { type: 'WEAPON', val: earlyWeapon },
+        { type: 'COINS', val: Math.round((28 + seed.stageNumber * 12) * (1 + act * 0.3)) },
+        { type: 'RECRUIT', val: 2 + Math.floor(act / 2) }
+      ),
+      ...drumV3(
+        actBaseZ - Math.round(actSpan * 0.20),
+        95 * s,
+        255 * s,
+        115 * s,
+        { type: 'RECRUIT', val: 3 },
+        { type: 'COINS', val: Math.round((48 + seed.stageNumber * 18) * (1 + act * 0.35)) },
+        { type: 'WEAPON', val: midWeapon }
+      ),
+      ...drumV3(
+        actBaseZ - Math.round(actSpan * 0.73),
+        310 * s,
+        205 * s,
+        355 * s,
+        { type: 'COINS', val: Math.round((85 + seed.stageNumber * 28) * (1 + act * 0.4)) },
+        { type: 'RECRUIT', val: 4 },
+        { type: 'WEAPON', val: lateWeapon }
+      )
+    );
+
+    // 3 Gate Pairs per Act (12 Gate Pairs total across 400% bridge!)
+    const startFrac = Math.max(0.05, Number((0.35 - seed.stageNumber * 0.025 - act * 0.05).toFixed(2)));
+    const negVal = seed.negGateBase - act * 4;
+    const posVal = seed.posGateBase + Math.floor(act / 2);
+    const swapSides = (seed.stageNumber + act) % 2 === 0;
+
+    gatePairs.push(
+      {
+        z: actBaseZ - Math.round(actSpan * 0.26),
+        left: null,
+        right: null,
+        full: shootMulGate(startFrac, 9 * k),
+      },
+      {
+        z: actBaseZ - Math.round(actSpan * 0.52),
+        left: swapSides ? addGate(negVal, 18 * k) : addGate(posVal, 21 * k),
+        right: swapSides ? addGate(posVal, 21 * k) : addGate(negVal, 18 * k),
+      },
+      {
+        z: actBaseZ - Math.round(actSpan * 0.88),
+        left: swapSides ? shootMulGate(1.1, 34 * k) : shootMulGate(0.1, 26 * k),
+        right: swapSides ? shootMulGate(0.1, 26 * k) : shootMulGate(1.1, 34 * k),
+      }
+    );
+
+    // 2 Three-Lane Tire Barricade Walls per Act (8 Walls = 24 Tire Stacks total!)
+    const wLaneA = laneCycle[(seed.stageNumber + act) % 4];
+    const wLaneB = laneCycle[(seed.stageNumber + act + 1) % 4];
+    const wallHpA = 1050 * s;
+    const wallHpB = 1780 * s;
+
+    tireStacks.push(
+      ...tireWall3(
+        actBaseZ - Math.round(actSpan * 0.44),
+        wLaneA === 'LEFT' ? wallHpA : wallHpA * 1.38,
+        wLaneA === 'CENTER' ? wallHpA : wallHpA * 1.34,
+        wLaneA === 'RIGHT' ? wallHpA : wallHpA * 1.42,
+        wLaneA,
+        midWeapon,
+        Math.round((95 + seed.stageNumber * 28) * (1 + act * 0.3))
+      ),
+      ...tireWall3(
+        actBaseZ - Math.round(actSpan * 0.65),
+        wLaneB === 'LEFT' ? wallHpB : wallHpB * 1.18,
+        wLaneB === 'CENTER' ? wallHpB : wallHpB * 1.15,
+        wLaneB === 'RIGHT' ? wallHpB : wallHpB * 1.22,
+        wLaneB,
+        lateWeapon,
+        Math.round((135 + seed.stageNumber * 38) * (1 + act * 0.35))
+      )
+    );
+
+    // 4 Mixed 3-Rank Enemy Waves per Act (16 Waves total across 400% bridge!)
+    const waveSpeed = Math.min(2.65, seed.enemyBaseSpeed + act * 0.10);
+    const waveHp = seed.enemyBaseHp * d * actMul;
+    enemyWaves.push(
+      {
+        z: actBaseZ - Math.round(actSpan * 0.13),
+        lane: 'CENTER',
+        count: Math.min(48, 28 + seed.stageNumber + act * 3),
+        hpPerEnemy: Math.max(6, Math.round(waveHp * 0.72)),
+        heavyCount: Math.min(12, 3 + Math.floor(seed.stageNumber / 2) + act),
+        vanguardRatio: 0.40,
+        speed: Number(waveSpeed.toFixed(2)),
+        coinPerKill: seed.coinBase + act,
+      },
+      {
+        z: actBaseZ - Math.round(actSpan * 0.35),
+        lane: 'CENTER',
+        count: Math.min(50, 35 + seed.stageNumber + act * 3),
+        hpPerEnemy: Math.max(9, Math.round(waveHp * 1.15)),
+        heavyCount: Math.min(13, 5 + Math.floor(seed.stageNumber / 2) + act),
+        vanguardRatio: 0.34,
+        speed: Number((waveSpeed + 0.10).toFixed(2)),
+        coinPerKill: seed.coinBase + act + 1,
+      },
+      {
+        z: actBaseZ - Math.round(actSpan * 0.81),
+        lane: 'CENTER',
+        count: Math.min(52, 41 + Math.floor(seed.stageNumber / 2) + act * 2),
+        hpPerEnemy: Math.max(14, Math.round(waveHp * 1.75)),
+        heavyCount: Math.min(14, 7 + Math.floor(seed.stageNumber / 2) + act),
+        vanguardRatio: 0.28,
+        speed: Number((waveSpeed + 0.18).toFixed(2)),
+        coinPerKill: seed.coinBase + act + 2,
+      },
+      {
+        z: actBaseZ - Math.round(actSpan * 0.94),
+        lane: 'CENTER',
+        count: Math.min(52, 45 + Math.floor(seed.stageNumber / 2) + act * 2),
+        hpPerEnemy: Math.max(18, Math.round(waveHp * 2.05)),
+        heavyCount: Math.min(15, 8 + Math.floor(seed.stageNumber / 2) + act),
+        vanguardRatio: 0.25,
+        speed: Number((waveSpeed + 0.24).toFixed(2)),
+        coinPerKill: seed.coinBase + act + 2,
+      }
+    );
+  }
+
+  const primaryBrute: MidBridgeBruteDefinition = {
+    z: -Math.round(actSpan * 1.60),
+    name: seed.bruteName,
+    maxHp: seed.bruteMaxHp,
+    speed: seed.bruteSpeed,
+    clubDamage: seed.bruteDamage,
+    coinReward: seed.bruteCoins,
+  };
+
+  const midBrutes: MidBridgeBruteDefinition[] = [
+    {
+      z: -Math.round(actSpan * 0.60),
+      name: `${seed.bruteName} Vanguard`,
+      maxHp: Math.round(seed.bruteMaxHp * 0.68),
+      speed: Math.max(1.75, seed.bruteSpeed - 0.05),
+      clubDamage: Math.max(6, seed.bruteDamage - 1),
+      coinReward: Math.round(seed.bruteCoins * 0.75),
+    },
+    primaryBrute,
+    {
+      z: -Math.round(actSpan * 3.60),
+      name: `${seed.bruteName} Warden`,
+      maxHp: Math.round(seed.bruteMaxHp * 1.24),
+      speed: Math.min(2.35, seed.bruteSpeed + 0.08),
+      clubDamage: seed.bruteDamage + 2,
+      coinReward: Math.round(seed.bruteCoins * 1.3),
+    },
+  ];
+
+  const splitCauseway =
+    seed.boardLayout === 'SPLIT_CAUSEWAY'
+      ? buildSplitCausewayDefinition(
+          seed.stageNumber,
+          seed.hpScale,
+          seed.enemyBaseHp,
+          seed.enemyBaseSpeed,
+          seed.coinBase,
+          seed.bruteName,
+          seed.bruteMaxHp,
+          seed.bruteSpeed,
+          seed.bruteDamage,
+          seed.bruteCoins
+        )
+      : undefined;
+
+  return {
+    stageNumber: seed.stageNumber,
+    title: seed.title,
+    boardLayout: seed.boardLayout,
+    trackLength,
+    supplyDrums,
+    gatePairs,
+    tireStacks,
+    enemyWaves,
+    midBrute: primaryBrute,
+    midBrutes,
+    splitCauseway,
+    boss: seed.boss,
+  };
+}
+
+/**
+ * 10 Escalating Bridge Blitz v6.0 Sectors (400% Longer & +50% Harder):
+ * - Odd Sectors (1, 3, 5, 7, 9): 1,120m..1,344m Marathon Bridge Assaults
+ * - Even Sectors (2, 4, 6, 8, 10): Split Causeway Tactical Sieges (Left Barrel+Gate Queue | Right 3-Rank Army)
  */
 export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
-  {
+  buildMarathonSector({
     stageNumber: 1,
     title: 'Golden Span Outpost',
-    trackLength: 280,
-    supplyDrums: [
-      ...drumV3(
-        -17.5,
-        145,
-        36,
-        165,
-        { type: 'WEAPON', val: 2 },
-        { type: 'COINS', val: 28 },
-        { type: 'RECRUIT', val: 2 }
-      ),
-      ...drumV3(
-        -53,
-        42,
-        240,
-        78,
-        { type: 'WEAPON', val: 2 },
-        { type: 'COINS', val: 48 },
-        { type: 'RECRUIT', val: 3 }
-      ),
-      ...drumV3(
-        -204,
-        290,
-        180,
-        360,
-        { type: 'COINS', val: 85 },
-        { type: 'RECRUIT', val: 4 },
-        { type: 'WEAPON', val: 4 }
-      ),
-    ],
-    gatePairs: [
-      { z: -72, left: null, right: null, full: shootMulGate(0.35, 7.5) },
-      { z: -146, left: addGate(4, 22), right: addGate(-18, 18) },
-      { z: -246, left: shootMulGate(0.15, 26), right: shootMulGate(1.05, 34) },
-    ],
-    tireStacks: [
-      ...tireWall3(-124, 1450, 980, 1650, 'CENTER', 3, 95),
-      ...tireWall3(-182, 1750, 1900, 2000, 'LEFT', 4, 135),
-    ],
-    enemyWaves: [
-      { z: -37, lane: 'CENTER', count: 26, hpPerEnemy: 5.0, heavyCount: 2, speed: 1.75, coinPerKill: 3 },
-      { z: -98, lane: 'CENTER', count: 34, hpPerEnemy: 11.5, heavyCount: 5, speed: 1.92, coinPerKill: 3 },
-      { z: -226, lane: 'CENTER', count: 40, hpPerEnemy: 22, heavyCount: 7, speed: 2.08, coinPerKill: 4 },
-      { z: -264, lane: 'CENTER', count: 44, hpPerEnemy: 25, heavyCount: 8, speed: 2.15, coinPerKill: 4 },
-    ],
-    midBrute: {
-      z: -168,
-      name: 'Riot Goliath',
-      maxHp: 11200,
-      speed: 1.78,
-      clubDamage: 6,
-      coinReward: 220,
-    },
+    boardLayout: 'STANDARD_BRIDGE',
+    baseSpan: 280,
+    hpScale: 1.0,
+    gateK: 1.0,
+    negGateBase: -18,
+    posGateBase: 4,
+    enemyBaseHp: 7.5,
+    enemyBaseSpeed: 1.82,
+    coinBase: 3,
+    bruteName: 'Riot Goliath',
+    bruteMaxHp: 16800,
+    bruteSpeed: 1.85,
+    bruteDamage: 8,
+    bruteCoins: 280,
     boss: {
       name: 'Iron Warden Mk-I',
       chassis: 'WARDEN_MECH',
       primaryHex: 0x485669,
       accentHex: 0xd93046,
       trimHex: 0xf5b42e,
-      maxHp: 12500,
+      maxHp: 18750,
       segments: 5,
-      advanceSpeed: 1.18,
+      advanceSpeed: 1.24,
       salvoLanes: 1,
-      salvoInterval: 2.45,
-      salvoDamage: 5,
-      rewardCoins: 260,
+      salvoInterval: 2.30,
+      salvoDamage: 7,
+      rewardCoins: 360,
     },
-  },
-  {
+  }),
+  buildMarathonSector({
     stageNumber: 2,
-    title: 'Crosswind Viaduct',
-    trackLength: 288,
-    supplyDrums: [
-      ...drumV3(
-        -18,
-        260,
-        85,
-        290,
-        { type: 'COINS', val: 45 },
-        { type: 'RECRUIT', val: 2 },
-        { type: 'WEAPON', val: 2 }
-      ),
-      ...drumV3(
-        -56,
-        130,
-        310,
-        115,
-        { type: 'RECRUIT', val: 3 },
-        { type: 'COINS', val: 65 },
-        { type: 'WEAPON', val: 2 }
-      ),
-      ...drumV3(
-        -210,
-        380,
-        240,
-        420,
-        { type: 'WEAPON', val: 4 },
-        { type: 'COINS', val: 110 },
-        { type: 'RECRUIT', val: 4 }
-      ),
-    ],
-    gatePairs: [
-      { z: -74, left: addGate(-16, 12), right: addGate(3, 14) },
-      { z: -150, left: null, right: null, full: shootMulGate(0.25, 16) },
-      { z: -252, left: shootMulGate(1.1, 38), right: shootMulGate(0.1, 28) },
-    ],
-    tireStacks: [
-      ...tireWall3(-128, 1750, 1550, 1280, 'RIGHT', 3, 125),
-      ...tireWall3(-188, 2150, 2450, 2600, 'LEFT', 4, 175),
-    ],
-    enemyWaves: [
-      { z: -38, lane: 'CENTER', count: 30, hpPerEnemy: 8.5, heavyCount: 3, speed: 1.85, coinPerKill: 4 },
-      { z: -102, lane: 'CENTER', count: 36, hpPerEnemy: 16, heavyCount: 6, speed: 2.0, coinPerKill: 4 },
-      { z: -232, lane: 'CENTER', count: 42, hpPerEnemy: 28, heavyCount: 8, speed: 2.14, coinPerKill: 5 },
-      { z: -270, lane: 'CENTER', count: 45, hpPerEnemy: 32, heavyCount: 9, speed: 2.2, coinPerKill: 5 },
-    ],
-    midBrute: {
-      z: -174,
-      name: 'Breaker Goliath',
-      maxHp: 13500,
-      speed: 1.82,
-      clubDamage: 7,
-      coinReward: 290,
-    },
+    title: 'Bastion Split Causeway',
+    boardLayout: 'SPLIT_CAUSEWAY',
+    baseSpan: 288,
+    hpScale: 1.32,
+    gateK: 1.25,
+    negGateBase: -20,
+    posGateBase: 4,
+    enemyBaseHp: 10.5,
+    enemyBaseSpeed: 1.90,
+    coinBase: 4,
+    bruteName: 'Breaker Goliath',
+    bruteMaxHp: 20250,
+    bruteSpeed: 1.90,
+    bruteDamage: 9,
+    bruteCoins: 360,
     boss: {
       name: 'Bastion Enforcer',
       chassis: 'SIEGE_TANK',
       primaryHex: 0x434d3e,
       accentHex: 0xd9822b,
       trimHex: 0xf7d154,
-      maxHp: 17000,
+      maxHp: 25500,
       segments: 5,
-      advanceSpeed: 1.22,
+      advanceSpeed: 1.28,
       salvoLanes: 1,
-      salvoInterval: 2.38,
-      salvoDamage: 6,
-      rewardCoins: 340,
+      salvoInterval: 2.22,
+      salvoDamage: 8,
+      rewardCoins: 460,
     },
-  },
-  {
+  }),
+  buildMarathonSector({
     stageNumber: 3,
-    title: 'Crimson Causeway',
-    trackLength: 296,
-    supplyDrums: [
-      ...drumV3(
-        -18,
-        320,
-        115,
-        350,
-        { type: 'WEAPON', val: 2 },
-        { type: 'COINS', val: 58 },
-        { type: 'RECRUIT', val: 2 }
-      ),
-      ...drumV3(
-        -58,
-        165,
-        390,
-        180,
-        { type: 'WEAPON', val: 2 },
-        { type: 'COINS', val: 85 },
-        { type: 'RECRUIT', val: 3 }
-      ),
-      ...drumV3(
-        -216,
-        480,
-        320,
-        520,
-        { type: 'COINS', val: 135 },
-        { type: 'RECRUIT', val: 4 },
-        { type: 'WEAPON', val: 4 }
-      ),
-    ],
-    gatePairs: [
-      { z: -76, left: null, right: null, full: shootMulGate(0.2, 18) },
-      { z: -154, left: addGate(-21, 22), right: addGate(5, 25) },
-      { z: -258, left: shootMulGate(0.05, 32), right: shootMulGate(1.15, 44) },
-    ],
-    tireStacks: [
-      ...tireWall3(-132, 1650, 2050, 1950, 'LEFT', 3, 155),
-      ...tireWall3(-194, 2850, 2450, 2980, 'CENTER', 4, 215),
-    ],
-    enemyWaves: [
-      { z: -39, lane: 'CENTER', count: 32, hpPerEnemy: 12, heavyCount: 4, speed: 1.92, coinPerKill: 5 },
-      { z: -106, lane: 'CENTER', count: 38, hpPerEnemy: 21, heavyCount: 6, speed: 2.06, coinPerKill: 5 },
-      { z: -238, lane: 'CENTER', count: 44, hpPerEnemy: 35, heavyCount: 8, speed: 2.2, coinPerKill: 6 },
-      { z: -278, lane: 'CENTER', count: 46, hpPerEnemy: 40, heavyCount: 9, speed: 2.24, coinPerKill: 6 },
-    ],
-    midBrute: {
-      z: -180,
-      name: 'Crimson Goliath',
-      maxHp: 14800,
-      speed: 1.86,
-      clubDamage: 7,
-      coinReward: 360,
-    },
+    title: 'Crimson Viaduct Marathon',
+    boardLayout: 'STANDARD_BRIDGE',
+    baseSpan: 296,
+    hpScale: 1.68,
+    gateK: 1.55,
+    negGateBase: -22,
+    posGateBase: 5,
+    enemyBaseHp: 14,
+    enemyBaseSpeed: 1.96,
+    coinBase: 5,
+    bruteName: 'Crimson Goliath',
+    bruteMaxHp: 22200,
+    bruteSpeed: 1.94,
+    bruteDamage: 9,
+    bruteCoins: 440,
     boss: {
       name: 'Crimson Juggernaut',
       chassis: 'SIEGE_TANK',
       primaryHex: 0x7a1c28,
       accentHex: 0x242b35,
       trimHex: 0xffb627,
-      maxHp: 22500,
+      maxHp: 33750,
       segments: 6,
-      advanceSpeed: 1.25,
+      advanceSpeed: 1.32,
       salvoLanes: 1,
-      salvoInterval: 2.30,
-      salvoDamage: 6,
-      rewardCoins: 430,
+      salvoInterval: 2.16,
+      salvoDamage: 8,
+      rewardCoins: 580,
     },
-  },
-  {
+  }),
+  buildMarathonSector({
     stageNumber: 4,
-    title: 'Steel Truss Gauntlet',
-    trackLength: 304,
-    supplyDrums: [
-      ...drumV3(
-        -18,
-        390,
-        150,
-        420,
-        { type: 'COINS', val: 72 },
-        { type: 'RECRUIT', val: 2 },
-        { type: 'COINS', val: 75 }
-      ),
-      ...drumV3(
-        -60,
-        220,
-        470,
-        235,
-        { type: 'WEAPON', val: 3 },
-        { type: 'COINS', val: 105 },
-        { type: 'RECRUIT', val: 3 }
-      ),
-      ...drumV3(
-        -222,
-        610,
-        410,
-        650,
-        { type: 'COINS', val: 165 },
-        { type: 'WEAPON', val: 4 },
-        { type: 'RECRUIT', val: 4 }
-      ),
-    ],
-    gatePairs: [
-      { z: -78, left: addGate(4, 24), right: addGate(-22, 20) },
-      { z: -158, left: null, right: null, full: shootMulGate(0.15, 24) },
-      { z: -264, left: shootMulGate(1.1, 52), right: shootMulGate(0.1, 38) },
-    ],
-    tireStacks: [
-      ...tireWall3(-136, 2450, 1980, 2580, 'CENTER', 3, 190),
-      ...tireWall3(-200, 3450, 3300, 2950, 'RIGHT', 4, 260),
-    ],
-    enemyWaves: [
-      { z: -40, lane: 'CENTER', count: 34, hpPerEnemy: 16, heavyCount: 4, speed: 1.98, coinPerKill: 6 },
-      { z: -110, lane: 'CENTER', count: 40, hpPerEnemy: 27, heavyCount: 7, speed: 2.12, coinPerKill: 6 },
-      { z: -244, lane: 'CENTER', count: 45, hpPerEnemy: 44, heavyCount: 9, speed: 2.24, coinPerKill: 7 },
-      { z: -286, lane: 'CENTER', count: 47, hpPerEnemy: 50, heavyCount: 10, speed: 2.28, coinPerKill: 7 },
-    ],
-    midBrute: {
-      z: -186,
-      name: 'Ironclad Goliath',
-      maxHp: 16200,
-      speed: 1.9,
-      clubDamage: 8,
-      coinReward: 440,
-    },
+    title: 'Iron Divide Causeway',
+    boardLayout: 'SPLIT_CAUSEWAY',
+    baseSpan: 304,
+    hpScale: 2.12,
+    gateK: 1.88,
+    negGateBase: -24,
+    posGateBase: 5,
+    enemyBaseHp: 18.5,
+    enemyBaseSpeed: 2.02,
+    coinBase: 6,
+    bruteName: 'Ironclad Goliath',
+    bruteMaxHp: 24300,
+    bruteSpeed: 1.98,
+    bruteDamage: 10,
+    bruteCoins: 540,
     boss: {
       name: 'Vulcan Siege Mech',
       chassis: 'WARDEN_MECH',
       primaryHex: 0x2b3440,
       accentHex: 0xe66c1f,
       trimHex: 0xffd15c,
-      maxHp: 28500,
+      maxHp: 42750,
       segments: 6,
-      advanceSpeed: 1.28,
+      advanceSpeed: 1.35,
       salvoLanes: 1,
-      salvoInterval: 2.22,
-      salvoDamage: 7,
-      rewardCoins: 540,
+      salvoInterval: 2.10,
+      salvoDamage: 9,
+      rewardCoins: 720,
     },
-  },
-  {
+  }),
+  buildMarathonSector({
     stageNumber: 5,
     title: 'Stormsurge Suspension',
-    trackLength: 312,
-    supplyDrums: [
-      ...drumV3(
-        -18,
-        470,
-        190,
-        510,
-        { type: 'COINS', val: 90 },
-        { type: 'WEAPON', val: 3 },
-        { type: 'RECRUIT', val: 2 }
-      ),
-      ...drumV3(
-        -62,
-        280,
-        560,
-        295,
-        { type: 'RECRUIT', val: 3 },
-        { type: 'COINS', val: 130 },
-        { type: 'WEAPON', val: 3 }
-      ),
-      ...drumV3(
-        -228,
-        740,
-        520,
-        790,
-        { type: 'RECRUIT', val: 4 },
-        { type: 'WEAPON', val: 5 },
-        { type: 'COINS', val: 210 }
-      ),
-    ],
-    gatePairs: [
-      { z: -80, left: null, right: null, full: shootMulGate(0.15, 28) },
-      { z: -162, left: addGate(-24, 28), right: addGate(5, 32) },
-      { z: -270, left: addGate(-28, 36), right: shootMulGate(1.15, 58) },
-    ],
-    tireStacks: [
-      ...tireWall3(-140, 2450, 2950, 2850, 'LEFT', 4, 235),
-      ...tireWall3(-206, 4150, 3650, 4280, 'CENTER', 5, 320),
-    ],
-    enemyWaves: [
-      { z: -41, lane: 'CENTER', count: 35, hpPerEnemy: 21, heavyCount: 5, speed: 2.02, coinPerKill: 7 },
-      { z: -114, lane: 'CENTER', count: 41, hpPerEnemy: 34, heavyCount: 7, speed: 2.16, coinPerKill: 7 },
-      { z: -250, lane: 'CENTER', count: 46, hpPerEnemy: 54, heavyCount: 9, speed: 2.28, coinPerKill: 8 },
-      { z: -294, lane: 'CENTER', count: 48, hpPerEnemy: 62, heavyCount: 10, speed: 2.32, coinPerKill: 9 },
-    ],
-    midBrute: {
-      z: -192,
-      name: 'Storm Goliath',
-      maxHp: 17500,
-      speed: 1.94,
-      clubDamage: 8,
-      coinReward: 530,
-    },
+    boardLayout: 'STANDARD_BRIDGE',
+    baseSpan: 312,
+    hpScale: 2.65,
+    gateK: 2.25,
+    negGateBase: -26,
+    posGateBase: 5,
+    enemyBaseHp: 24,
+    enemyBaseSpeed: 2.08,
+    coinBase: 7,
+    bruteName: 'Storm Goliath',
+    bruteMaxHp: 26250,
+    bruteSpeed: 2.02,
+    bruteDamage: 10,
+    bruteCoins: 660,
     boss: {
       name: 'Tempest Goliath',
       chassis: 'KRAKEN_WALKER',
       primaryHex: 0x26384a,
       accentHex: 0x2dc7ff,
       trimHex: 0xf5b82e,
-      maxHp: 35500,
+      maxHp: 53250,
       segments: 7,
-      advanceSpeed: 1.30,
+      advanceSpeed: 1.38,
       salvoLanes: 2,
-      salvoInterval: 2.40,
-      salvoDamage: 7,
-      rewardCoins: 680,
+      salvoInterval: 2.22,
+      salvoDamage: 9,
+      rewardCoins: 900,
     },
-  },
-  {
+  }),
+  buildMarathonSector({
     stageNumber: 6,
-    title: 'Twin-Tower Overwatch',
-    trackLength: 318,
-    supplyDrums: [
-      ...drumV3(
-        -18,
-        560,
-        240,
-        590,
-        { type: 'COINS', val: 115 },
-        { type: 'RECRUIT', val: 3 },
-        { type: 'WEAPON', val: 3 }
-      ),
-      ...drumV3(
-        -64,
-        350,
-        680,
-        370,
-        { type: 'WEAPON', val: 3 },
-        { type: 'COINS', val: 160 },
-        { type: 'RECRUIT', val: 3 }
-      ),
-      ...drumV3(
-        -234,
-        880,
-        640,
-        920,
-        { type: 'COINS', val: 250 },
-        { type: 'RECRUIT', val: 4 },
-        { type: 'WEAPON', val: 5 }
-      ),
-    ],
-    gatePairs: [
-      { z: -82, left: addGate(5, 32), right: addGate(-26, 28) },
-      { z: -166, left: null, right: null, full: shootMulGate(0.1, 34) },
-      { z: -276, left: shootMulGate(1.15, 66), right: shootMulGate(0.05, 48) },
-    ],
-    tireStacks: [
-      ...tireWall3(-144, 3450, 2950, 3580, 'CENTER', 4, 285),
-      ...tireWall3(-212, 4850, 5100, 4350, 'RIGHT', 5, 390),
-    ],
-    enemyWaves: [
-      { z: -42, lane: 'CENTER', count: 36, hpPerEnemy: 27, heavyCount: 5, speed: 2.06, coinPerKill: 8 },
-      { z: -118, lane: 'CENTER', count: 42, hpPerEnemy: 42, heavyCount: 8, speed: 2.2, coinPerKill: 9 },
-      { z: -256, lane: 'CENTER', count: 46, hpPerEnemy: 66, heavyCount: 10, speed: 2.32, coinPerKill: 10 },
-      { z: -300, lane: 'CENTER', count: 48, hpPerEnemy: 75, heavyCount: 11, speed: 2.36, coinPerKill: 11 },
-    ],
-    midBrute: {
-      z: -198,
-      name: 'Overwatch Goliath',
-      maxHp: 21000,
-      speed: 1.96,
-      clubDamage: 9,
-      coinReward: 640,
-    },
+    title: 'Twin-Wall Overwatch',
+    boardLayout: 'SPLIT_CAUSEWAY',
+    baseSpan: 318,
+    hpScale: 3.25,
+    gateK: 2.68,
+    negGateBase: -28,
+    posGateBase: 6,
+    enemyBaseHp: 31,
+    enemyBaseSpeed: 2.12,
+    coinBase: 8,
+    bruteName: 'Overwatch Goliath',
+    bruteMaxHp: 31500,
+    bruteSpeed: 2.05,
+    bruteDamage: 11,
+    bruteCoins: 800,
     boss: {
       name: 'Aegis Dreadnought',
       chassis: 'SIEGE_TANK',
       primaryHex: 0x2c394b,
       accentHex: 0xd9384a,
       trimHex: 0x48e5ff,
-      maxHp: 43000,
+      maxHp: 64500,
       segments: 7,
-      advanceSpeed: 1.32,
+      advanceSpeed: 1.40,
       salvoLanes: 2,
-      salvoInterval: 2.32,
-      salvoDamage: 8,
-      rewardCoins: 840,
+      salvoInterval: 2.16,
+      salvoDamage: 10,
+      rewardCoins: 1120,
     },
-  },
-  {
+  }),
+  buildMarathonSector({
     stageNumber: 7,
     title: 'Cobalt Strait Crossing',
-    trackLength: 324,
-    supplyDrums: [
-      ...drumV3(
-        -18,
-        660,
-        290,
-        700,
-        { type: 'COINS', val: 140 },
-        { type: 'WEAPON', val: 3 },
-        { type: 'RECRUIT', val: 3 }
-      ),
-      ...drumV3(
-        -65,
-        430,
-        810,
-        450,
-        { type: 'RECRUIT', val: 3 },
-        { type: 'COINS', val: 195 },
-        { type: 'WEAPON', val: 4 }
-      ),
-      ...drumV3(
-        -238,
-        1020,
-        760,
-        1080,
-        { type: 'WEAPON', val: 5 },
-        { type: 'RECRUIT', val: 5 },
-        { type: 'COINS', val: 310 }
-      ),
-    ],
-    gatePairs: [
-      { z: -84, left: null, right: null, full: shootMulGate(0.1, 38) },
-      { z: -170, left: addGate(-28, 36), right: addGate(6, 40) },
-      { z: -282, left: shootMulGate(0.05, 54), right: shootMulGate(1.2, 74) },
-    ],
-    tireStacks: [
-      ...tireWall3(-148, 3650, 4250, 4100, 'LEFT', 4, 345),
-      ...tireWall3(-216, 5650, 4950, 5850, 'CENTER', 5, 470),
-    ],
-    enemyWaves: [
-      { z: -43, lane: 'CENTER', count: 38, hpPerEnemy: 34, heavyCount: 6, speed: 2.1, coinPerKill: 10 },
-      { z: -122, lane: 'CENTER', count: 43, hpPerEnemy: 52, heavyCount: 8, speed: 2.24, coinPerKill: 11 },
-      { z: -260, lane: 'CENTER', count: 47, hpPerEnemy: 80, heavyCount: 10, speed: 2.36, coinPerKill: 12 },
-      { z: -306, lane: 'CENTER', count: 48, hpPerEnemy: 90, heavyCount: 11, speed: 2.4, coinPerKill: 13 },
-    ],
-    midBrute: {
-      z: -202,
-      name: 'Cobalt Goliath',
-      maxHp: 24500,
-      speed: 1.98,
-      clubDamage: 9,
-      coinReward: 760,
-    },
+    boardLayout: 'STANDARD_BRIDGE',
+    baseSpan: 324,
+    hpScale: 3.95,
+    gateK: 3.15,
+    negGateBase: -30,
+    posGateBase: 6,
+    enemyBaseHp: 39,
+    enemyBaseSpeed: 2.16,
+    coinBase: 10,
+    bruteName: 'Cobalt Goliath',
+    bruteMaxHp: 36750,
+    bruteSpeed: 2.08,
+    bruteDamage: 11,
+    bruteCoins: 960,
     boss: {
       name: 'Kraken Command Rig',
       chassis: 'KRAKEN_WALKER',
       primaryHex: 0x1d2636,
       accentHex: 0xe82c4f,
       trimHex: 0x38f6ff,
-      maxHp: 51000,
+      maxHp: 76500,
       segments: 8,
-      advanceSpeed: 1.35,
+      advanceSpeed: 1.42,
       salvoLanes: 2,
-      salvoInterval: 2.25,
-      salvoDamage: 8,
-      rewardCoins: 1050,
+      salvoInterval: 2.10,
+      salvoDamage: 10,
+      rewardCoins: 1380,
     },
-  },
-  {
+  }),
+  buildMarathonSector({
     stageNumber: 8,
-    title: 'Ironclad Skyway',
-    trackLength: 330,
-    supplyDrums: [
-      ...drumV3(
-        -18,
-        780,
-        350,
-        820,
-        { type: 'COINS', val: 175 },
-        { type: 'RECRUIT', val: 3 },
-        { type: 'WEAPON', val: 3 }
-      ),
-      ...drumV3(
-        -66,
-        520,
-        940,
-        540,
-        { type: 'WEAPON', val: 4 },
-        { type: 'COINS', val: 240 },
-        { type: 'RECRUIT', val: 4 }
-      ),
-      ...drumV3(
-        -244,
-        1180,
-        880,
-        1220,
-        { type: 'RECRUIT', val: 5 },
-        { type: 'WEAPON', val: 5 },
-        { type: 'COINS', val: 380 }
-      ),
-    ],
-    gatePairs: [
-      { z: -85, left: addGate(-30, 42), right: addGate(6, 46) },
-      { z: -174, left: null, right: null, full: shootMulGate(0.05, 44) },
-      { z: -288, left: shootMulGate(1.2, 82), right: addGate(-32, 58) },
-    ],
-    tireStacks: [
-      ...tireWall3(-152, 4850, 4250, 4980, 'CENTER', 4, 420),
-      ...tireWall3(-222, 5750, 6450, 6650, 'LEFT', 5, 560),
-    ],
-    enemyWaves: [
-      { z: -43, lane: 'CENTER', count: 40, hpPerEnemy: 42, heavyCount: 6, speed: 2.14, coinPerKill: 12 },
-      { z: -126, lane: 'CENTER', count: 44, hpPerEnemy: 64, heavyCount: 9, speed: 2.28, coinPerKill: 13 },
-      { z: -266, lane: 'CENTER', count: 47, hpPerEnemy: 96, heavyCount: 11, speed: 2.4, coinPerKill: 15 },
-      { z: -312, lane: 'CENTER', count: 48, hpPerEnemy: 108, heavyCount: 12, speed: 2.44, coinPerKill: 16 },
-    ],
-    midBrute: {
-      z: -208,
-      name: 'Obsidian Goliath',
-      maxHp: 28000,
-      speed: 2.0,
-      clubDamage: 10,
-      coinReward: 900,
-    },
+    title: 'Obsidian Bulwark Causeway',
+    boardLayout: 'SPLIT_CAUSEWAY',
+    baseSpan: 330,
+    hpScale: 4.75,
+    gateK: 3.68,
+    negGateBase: -32,
+    posGateBase: 6,
+    enemyBaseHp: 48,
+    enemyBaseSpeed: 2.20,
+    coinBase: 12,
+    bruteName: 'Obsidian Goliath',
+    bruteMaxHp: 42000,
+    bruteSpeed: 2.10,
+    bruteDamage: 12,
+    bruteCoins: 1140,
     boss: {
       name: 'Obsidian Titan',
       chassis: 'SOVEREIGN_TITAN',
       primaryHex: 0x1d2028,
       accentHex: 0xd92638,
       trimHex: 0xffa62b,
-      maxHp: 59000,
+      maxHp: 88500,
       segments: 8,
-      advanceSpeed: 1.38,
+      advanceSpeed: 1.45,
       salvoLanes: 2,
-      salvoInterval: 2.18,
-      salvoDamage: 9,
-      rewardCoins: 1300,
+      salvoInterval: 2.04,
+      salvoDamage: 11,
+      rewardCoins: 1700,
     },
-  },
-  {
+  }),
+  buildMarathonSector({
     stageNumber: 9,
     title: 'Plasma Horizon Span',
-    trackLength: 336,
-    supplyDrums: [
-      ...drumV3(
-        -18,
-        920,
-        420,
-        960,
-        { type: 'COINS', val: 215 },
-        { type: 'WEAPON', val: 4 },
-        { type: 'RECRUIT', val: 3 }
-      ),
-      ...drumV3(
-        -68,
-        620,
-        1080,
-        650,
-        { type: 'RECRUIT', val: 4 },
-        { type: 'COINS', val: 290 },
-        { type: 'WEAPON', val: 4 }
-      ),
-      ...drumV3(
-        -248,
-        1350,
-        1020,
-        1420,
-        { type: 'COINS', val: 460 },
-        { type: 'WEAPON', val: 5 },
-        { type: 'RECRUIT', val: 5 }
-      ),
-    ],
-    gatePairs: [
-      { z: -86, left: null, right: null, full: shootMulGate(0.05, 50) },
-      { z: -178, left: addGate(6, 52), right: addGate(-34, 48) },
-      { z: -294, left: shootMulGate(0.05, 64), right: shootMulGate(1.2, 92) },
-    ],
-    tireStacks: [
-      ...tireWall3(-156, 5650, 5850, 4950, 'RIGHT', 5, 510),
-      ...tireWall3(-226, 7100, 6450, 7280, 'CENTER', 5, 680),
-    ],
-    enemyWaves: [
-      { z: -44, lane: 'CENTER', count: 42, hpPerEnemy: 50, heavyCount: 7, speed: 2.18, coinPerKill: 14 },
-      { z: -130, lane: 'CENTER', count: 45, hpPerEnemy: 76, heavyCount: 9, speed: 2.32, coinPerKill: 16 },
-      { z: -272, lane: 'CENTER', count: 48, hpPerEnemy: 112, heavyCount: 11, speed: 2.44, coinPerKill: 18 },
-      { z: -318, lane: 'CENTER', count: 48, hpPerEnemy: 126, heavyCount: 12, speed: 2.48, coinPerKill: 19 },
-    ],
-    midBrute: {
-      z: -212,
-      name: 'Horizon Goliath',
-      maxHp: 31500,
-      speed: 2.02,
-      clubDamage: 11,
-      coinReward: 1080,
-    },
+    boardLayout: 'STANDARD_BRIDGE',
+    baseSpan: 336,
+    hpScale: 5.65,
+    gateK: 4.25,
+    negGateBase: -34,
+    posGateBase: 7,
+    enemyBaseHp: 58,
+    enemyBaseSpeed: 2.24,
+    coinBase: 14,
+    bruteName: 'Horizon Goliath',
+    bruteMaxHp: 47250,
+    bruteSpeed: 2.12,
+    bruteDamage: 13,
+    bruteCoins: 1360,
     boss: {
       name: 'Hyperion Warlord',
       chassis: 'SOVEREIGN_TITAN',
       primaryHex: 0x263248,
       accentHex: 0x36f3ff,
       trimHex: 0xffc845,
-      maxHp: 67000,
+      maxHp: 100500,
       segments: 9,
-      advanceSpeed: 1.40,
+      advanceSpeed: 1.48,
       salvoLanes: 2,
-      salvoInterval: 2.12,
-      salvoDamage: 9,
-      rewardCoins: 1600,
+      salvoInterval: 1.98,
+      salvoDamage: 11,
+      rewardCoins: 2050,
     },
-  },
-  {
+  }),
+  buildMarathonSector({
     stageNumber: 10,
-    title: 'Omega Citadel Bridge',
-    trackLength: 342,
-    supplyDrums: [
-      ...drumV3(
-        -18,
-        1080,
-        490,
-        1120,
-        { type: 'COINS', val: 260 },
-        { type: 'RECRUIT', val: 4 },
-        { type: 'WEAPON', val: 4 }
-      ),
-      ...drumV3(
-        -70,
-        740,
-        1250,
-        780,
-        { type: 'WEAPON', val: 4 },
-        { type: 'COINS', val: 360 },
-        { type: 'RECRUIT', val: 4 }
-      ),
-      ...drumV3(
-        -254,
-        1550,
-        1180,
-        1620,
-        { type: 'COINS', val: 560 },
-        { type: 'WEAPON', val: 5 },
-        { type: 'RECRUIT', val: 6 }
-      ),
-    ],
-    gatePairs: [
-      { z: -88, left: null, right: null, full: shootMulGate(0.05, 58) },
-      { z: -182, left: addGate(-36, 56), right: addGate(7, 62) },
-      { z: -300, left: shootMulGate(1.25, 102), right: shootMulGate(0.05, 72) },
-    ],
-    tireStacks: [
-      ...tireWall3(-160, 5650, 6450, 6350, 'LEFT', 5, 620),
-      ...tireWall3(-232, 7800, 7100, 7950, 'CENTER', 5, 820),
-    ],
-    enemyWaves: [
-      { z: -45, lane: 'CENTER', count: 44, hpPerEnemy: 60, heavyCount: 7, speed: 2.22, coinPerKill: 17 },
-      { z: -134, lane: 'CENTER', count: 46, hpPerEnemy: 90, heavyCount: 10, speed: 2.36, coinPerKill: 19 },
-      { z: -278, lane: 'CENTER', count: 48, hpPerEnemy: 130, heavyCount: 12, speed: 2.48, coinPerKill: 21 },
-      { z: -324, lane: 'CENTER', count: 48, hpPerEnemy: 145, heavyCount: 13, speed: 2.52, coinPerKill: 23 },
-    ],
-    midBrute: {
-      z: -218,
-      name: 'Omega Goliath',
-      maxHp: 35000,
-      speed: 2.06,
-      clubDamage: 12,
-      coinReward: 1300,
-    },
+    title: 'Omega Citadel Causeway',
+    boardLayout: 'SPLIT_CAUSEWAY',
+    baseSpan: 342,
+    hpScale: 6.75,
+    gateK: 4.90,
+    negGateBase: -36,
+    posGateBase: 7,
+    enemyBaseHp: 70,
+    enemyBaseSpeed: 2.28,
+    coinBase: 17,
+    bruteName: 'Omega Goliath',
+    bruteMaxHp: 52500,
+    bruteSpeed: 2.15,
+    bruteDamage: 14,
+    bruteCoins: 1650,
     boss: {
       name: 'Apex Sovereign Mech',
       chassis: 'SOVEREIGN_TITAN',
       primaryHex: 0x462440,
       accentHex: 0xf5b82e,
       trimHex: 0x38f6ff,
-      maxHp: 76000,
+      maxHp: 114000,
       segments: 10,
-      advanceSpeed: 1.44,
+      advanceSpeed: 1.52,
       salvoLanes: 2,
-      salvoInterval: 2.05,
-      salvoDamage: 10,
-      rewardCoins: 2000,
+      salvoInterval: 1.92,
+      salvoDamage: 12,
+      rewardCoins: 2600,
     },
-  },
+  }),
 ];
 
 export function getCampaignStage(stageNumber: number): StageDefinition {
@@ -835,164 +842,104 @@ const ENDLESS_CHASSIS_ROTATION: ReadonlyArray<{
   { chassis: 'SOVEREIGN_TITAN', label: 'Sovereign', primaryHex: 0x4a2b50, accentHex: 0xf5b82e, trimHex: 0x38f6ff },
 ];
 
+const SPLIT_CAUSEWAY_TITLES: ReadonlyArray<string> = [
+  'Bastion Split Causeway',
+  'Iron Divide Bulwark',
+  'Sunstone Garrison Wall',
+  'Crimson Breach Corridor',
+  'Twin-Channel Viaduct',
+  'Tempest Shield Causeway',
+  'Cobalt Siege Partition',
+  'Obsidian Gatehouse',
+  'Hyperion Split Span',
+  'Omega Citadel Causeway',
+];
+
 /**
- * Generates deterministic escalating sectors for Endless Bridge Mode (296m span per wave).
+ * Dedicated Split Causeway Mode generator (`SPLIT_CAUSEWAY` mode on Hub, Stages 1..infinity).
+ * Every stage features the fortified Cut-Stone Causeway, Center Ballistic Divider Wall,
+ * 28-node Left Barrel+Gate Conveyor Queue, and 22-echelon Right Battalion Siege + Boss Finale!
+ */
+export function generateSplitCausewayStage(stageNumber: number): StageDefinition {
+  const sNum = Math.max(1, Math.floor(stageNumber));
+  const scale = Math.pow(1.26, sNum - 1);
+  const archetype = ENDLESS_CHASSIS_ROTATION[(sNum - 1) % ENDLESS_CHASSIS_ROTATION.length];
+  const titleName = SPLIT_CAUSEWAY_TITLES[(sNum - 1) % SPLIT_CAUSEWAY_TITLES.length];
+
+  return buildMarathonSector({
+    stageNumber: sNum,
+    title: titleName,
+    boardLayout: 'SPLIT_CAUSEWAY',
+    baseSpan: Math.min(345, 286 + sNum * 6),
+    hpScale: scale,
+    gateK: scale,
+    negGateBase: -(18 + sNum * 2),
+    posGateBase: Math.min(8, 4 + Math.floor(sNum / 2)),
+    enemyBaseHp: 8.5 * scale,
+    enemyBaseSpeed: Math.min(2.35, 1.86 + sNum * 0.04),
+    coinBase: 3 + sNum * 2,
+    bruteName: `Causeway-${sNum} Goliath`,
+    bruteMaxHp: Math.round(15800 * DIFFICULTY_MULTIPLIER_V6 * Math.pow(1.22, sNum - 1)),
+    bruteSpeed: Math.min(2.22, 1.85 + sNum * 0.03),
+    bruteDamage: Math.min(15, 7 + Math.floor(sNum / 2)),
+    bruteCoins: Math.round(310 * scale),
+    boss: {
+      name: `Causeway-${sNum} ${archetype.label}`,
+      chassis: archetype.chassis,
+      primaryHex: archetype.primaryHex,
+      accentHex: archetype.accentHex,
+      trimHex: archetype.trimHex,
+      maxHp: Math.round(13500 * DIFFICULTY_MULTIPLIER_V6 * Math.pow(1.30, sNum - 1)),
+      segments: Math.min(10, 5 + Math.floor(sNum / 2)),
+      advanceSpeed: Math.min(1.54, 1.24 + sNum * 0.025),
+      salvoLanes: sNum >= 4 ? 2 : 1,
+      salvoInterval: Math.max(1.88, 2.34 - sNum * 0.05),
+      salvoDamage: Math.min(14, 7 + Math.floor(sNum / 2)),
+      rewardCoins: Math.round(360 + sNum * 115 * scale),
+    },
+  });
+}
+
+/**
+ * Generates deterministic 400%-longer, +50%-harder escalating sectors for Endless Bridge Mode
+ * (`1,184m` span per wave), alternating Standard Bridge (odd waves) & Split Causeway (even waves)!
  */
 export function generateEndlessWaveStage(waveNumber: number): StageDefinition {
   const w = Math.max(1, Math.floor(waveNumber));
   const scale = Math.pow(1.28, w - 1);
-  const kScale = Math.round(9 * scale);
-  const negBase = -(16 + w * 2);
-  const posBase = Math.min(8, 3 + Math.floor(w / 2));
-
-  const tierA = Math.min(5, 2 + Math.floor((w - 1) / 2)) as WeaponTierId;
-  const tierB = Math.min(5, 3 + Math.floor(w / 2)) as WeaponTierId;
-
-  const supplyDrums: SupplyDrumDefinition[] = [
-    ...drumV3(
-      -18,
-      Math.round(210 * scale),
-      Math.round(64 * scale),
-      Math.round(235 * scale),
-      { type: 'WEAPON', val: tierA },
-      { type: 'COINS', val: Math.round(30 + w * 14) },
-      { type: 'RECRUIT', val: 2 }
-    ),
-    ...drumV3(
-      -56,
-      Math.round(95 * scale),
-      Math.round(270 * scale),
-      Math.round(110 * scale),
-      { type: 'WEAPON', val: tierA },
-      { type: 'COINS', val: Math.round(50 + w * 18) },
-      { type: 'RECRUIT', val: 3 }
-    ),
-    ...drumV3(
-      -212,
-      Math.round(320 * scale),
-      Math.round(195 * scale),
-      Math.round(360 * scale),
-      { type: 'COINS', val: Math.round(90 + w * 28) },
-      { type: 'RECRUIT', val: 4 },
-      { type: 'WEAPON', val: tierB }
-    ),
-  ];
-
-  const startFrac = Math.max(0.05, Number((0.35 - (w - 1) * 0.05).toFixed(2)));
-  const gatePairs: GatePairDefinition[] = [
-    {
-      z: -75,
-      left: null,
-      right: null,
-      full: shootMulGate(startFrac, Math.max(8, kScale)),
-    },
-    {
-      z: -152,
-      left: w % 2 === 1 ? addGate(posBase, kScale * 2.2) : addGate(negBase, kScale * 1.9),
-      right: w % 2 === 1 ? addGate(negBase, kScale * 1.9) : addGate(posBase, kScale * 2.2),
-    },
-    {
-      z: -254,
-      left: w % 2 === 0 ? shootMulGate(1.1, Math.max(24, kScale * 3.2)) : shootMulGate(0.1, Math.max(18, kScale * 2.4)),
-      right: w % 2 === 0 ? shootMulGate(0.1, Math.max(18, kScale * 2.4)) : shootMulGate(1.1, Math.max(24, kScale * 3.2)),
-    },
-  ];
-
-  const laneOrder: ReadonlyArray<'LEFT' | 'CENTER' | 'RIGHT'> = ['CENTER', 'RIGHT', 'LEFT'];
-  const laneA = laneOrder[(w - 1) % 3];
-  const laneB = laneOrder[w % 3];
-  const baseWallA = Math.round(1020 * scale);
-  const baseWallB = Math.round(1780 * scale);
-
-  const midBrute: MidBridgeBruteDefinition = {
-    z: -176,
-    name: `Wave-${w} Goliath`,
-    maxHp: Math.round(6800 * scale),
-    speed: Math.min(2.12, 1.78 + w * 0.03),
-    clubDamage: Math.min(14, 6 + Math.floor(w / 2)),
-    coinReward: Math.round(230 * scale),
-  };
-
   const archetype = ENDLESS_CHASSIS_ROTATION[(w - 1) % ENDLESS_CHASSIS_ROTATION.length];
+  const boardLayout: BoardLayout = w % 2 === 0 ? 'SPLIT_CAUSEWAY' : 'STANDARD_BRIDGE';
 
-  return {
+  return buildMarathonSector({
     stageNumber: w,
-    title: `Endless Sector ${w}`,
-    trackLength: 296,
-    supplyDrums,
-    gatePairs,
-    tireStacks: [
-      ...tireWall3(
-        -130,
-        laneA === 'LEFT' ? baseWallA : Math.round(baseWallA * 1.42),
-        laneA === 'CENTER' ? baseWallA : Math.round(baseWallA * 1.38),
-        laneA === 'RIGHT' ? baseWallA : Math.round(baseWallA * 1.46),
-        laneA,
-        tierA,
-        Math.round(95 + w * 28)
-      ),
-      ...tireWall3(
-        -190,
-        laneB === 'LEFT' ? baseWallB : Math.round(baseWallB * 1.15),
-        laneB === 'CENTER' ? baseWallB : Math.round(baseWallB * 1.18),
-        laneB === 'RIGHT' ? baseWallB : Math.round(baseWallB * 1.14),
-        laneB,
-        tierB,
-        Math.round(140 + w * 38)
-      ),
-    ],
-    enemyWaves: [
-      {
-        z: -38,
-        lane: 'CENTER',
-        count: Math.min(44, 28 + w * 2),
-        hpPerEnemy: Math.round(6 * scale),
-        heavyCount: Math.min(8, 2 + Math.floor(w / 2)),
-        speed: 1.8 + Math.min(0.65, w * 0.04),
-        coinPerKill: 3 + w * 2,
-      },
-      {
-        z: -102,
-        lane: 'CENTER',
-        count: Math.min(46, 34 + w * 2),
-        hpPerEnemy: Math.round(12 * scale),
-        heavyCount: Math.min(9, 4 + Math.floor(w / 2)),
-        speed: 1.95 + Math.min(0.65, w * 0.04),
-        coinPerKill: 4 + w * 2,
-      },
-      {
-        z: -234,
-        lane: 'CENTER',
-        count: Math.min(48, 40 + w),
-        hpPerEnemy: Math.round(23 * scale),
-        heavyCount: Math.min(11, 6 + Math.floor(w / 2)),
-        speed: 2.1 + Math.min(0.65, w * 0.04),
-        coinPerKill: 5 + w * 2,
-      },
-      {
-        z: -274,
-        lane: 'CENTER',
-        count: Math.min(48, 44 + w),
-        hpPerEnemy: Math.round(27 * scale),
-        heavyCount: Math.min(12, 7 + Math.floor(w / 2)),
-        speed: 2.18 + Math.min(0.65, w * 0.04),
-        coinPerKill: 6 + w * 2,
-      },
-    ],
-    midBrute,
+    title: boardLayout === 'SPLIT_CAUSEWAY' ? `Endless Causeway ${w}` : `Endless Sector ${w}`,
+    boardLayout,
+    baseSpan: 296,
+    hpScale: scale,
+    gateK: scale,
+    negGateBase: -(16 + w * 2),
+    posGateBase: Math.min(8, 3 + Math.floor(w / 2)),
+    enemyBaseHp: 7.5 * scale,
+    enemyBaseSpeed: Math.min(2.38, 1.84 + w * 0.04),
+    coinBase: 3 + w * 2,
+    bruteName: `Wave-${w} Goliath`,
+    bruteMaxHp: Math.round(10200 * DIFFICULTY_MULTIPLIER_V6 * scale),
+    bruteSpeed: Math.min(2.22, 1.82 + w * 0.03),
+    bruteDamage: Math.min(15, 7 + Math.floor(w / 2)),
+    bruteCoins: Math.round(290 * scale),
     boss: {
       name: `Sector-${w} ${archetype.label}`,
       chassis: archetype.chassis,
       primaryHex: archetype.primaryHex,
       accentHex: archetype.accentHex,
       trimHex: archetype.trimHex,
-      maxHp: Math.round(13000 * Math.pow(1.32, w - 1)),
+      maxHp: Math.round(13000 * DIFFICULTY_MULTIPLIER_V6 * Math.pow(1.32, w - 1)),
       segments: Math.min(10, 5 + Math.floor(w / 2)),
-      advanceSpeed: Math.min(1.52, 1.2 + w * 0.025),
+      advanceSpeed: Math.min(1.54, 1.22 + w * 0.025),
       salvoLanes: w >= 4 ? 2 : 1,
-      salvoInterval: Math.max(1.92, 2.42 - w * 0.05),
-      salvoDamage: Math.min(12, 5 + Math.floor(w / 2)),
-      rewardCoins: Math.round(280 + w * 95 * scale),
+      salvoInterval: Math.max(1.88, 2.38 - w * 0.05),
+      salvoDamage: Math.min(14, 7 + Math.floor(w / 2)),
+      rewardCoins: Math.round(350 + w * 110 * scale),
     },
-  };
+  });
 }

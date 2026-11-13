@@ -1,5 +1,6 @@
 import type {
   ArmorySubTabId,
+  BoardLayout,
   BossChassisId,
   GameMode,
   GameState,
@@ -11,6 +12,7 @@ import type {
 } from '../core/types';
 import { CAMPAIGN_STAGES } from '../core/StageData';
 import type { EnemyWaveSlot } from '../entities/EnemyWave';
+import type { SplitCausewayController } from '../entities/SplitCausewayController';
 import {
   computeUpgradeCost,
   formatCoinAmount,
@@ -131,6 +133,7 @@ export class HudController {
   private readonly badgeMuteEl = mustEl<HTMLElement>('badge-mute');
   private readonly badgeHapticsEl = mustEl<HTMLElement>('badge-haptics');
   private readonly recordSquadEl = mustEl<HTMLElement>('record-squad');
+  private readonly recordSplitEl = mustEl<HTMLElement>('record-split');
   private readonly recordEndlessEl = mustEl<HTMLElement>('record-endless');
 
   private readonly pauseModalEl = mustEl<HTMLElement>('pause-modal');
@@ -238,6 +241,15 @@ export class HudController {
         const nextTab =
           targetTab !== 'BATTLE' && this.activeTab === targetTab ? 'BATTLE' : targetTab;
         this.switchHubTab(nextTab);
+      });
+    });
+
+    const modeButtons = document.querySelectorAll<HTMLButtonElement>('[data-select-mode]');
+    modeButtons.forEach((btn) => {
+      const mode = btn.dataset.selectMode as GameMode;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.callbacks.onSelectMode(mode);
       });
     });
 
@@ -414,17 +426,38 @@ export class HudController {
     save: SaveDataV1,
     stageTitle: string,
     bossName: string,
-    endlessWave: number
+    endlessWave: number,
+    boardLayout: BoardLayout = 'STANDARD_BRIDGE'
   ): void {
     this.latestSaveSnapshot = save;
     this.coinCountEl.textContent = formatCoinAmount(save.coins);
 
-    const isCampaign = save.selectedMode === 'CAMPAIGN';
-    this.hubSectorKickerEl.textContent = isCampaign
-      ? `SECTOR ${save.selectedStage}`
-      : `ENDLESS WAVE ${endlessWave}`;
+    const modePills = document.querySelectorAll<HTMLButtonElement>('[data-select-mode]');
+    modePills.forEach((pill) => {
+      pill.classList.toggle('is-active', pill.dataset.selectMode === save.selectedMode);
+    });
+
+    if (save.selectedMode === 'SPLIT_CAUSEWAY') {
+      this.hubSectorKickerEl.textContent = `SPLIT CAUSEWAY • STAGE ${save.splitCausewayStage}`;
+    } else if (save.selectedMode === 'ENDLESS') {
+      this.hubSectorKickerEl.textContent =
+        boardLayout === 'SPLIT_CAUSEWAY'
+          ? `ENDLESS WAVE ${endlessWave} • SPLIT CAUSEWAY`
+          : `ENDLESS WAVE ${endlessWave}`;
+    } else {
+      this.hubSectorKickerEl.textContent =
+        boardLayout === 'SPLIT_CAUSEWAY'
+          ? `SECTOR ${save.selectedStage} • SPLIT CAUSEWAY`
+          : `SECTOR ${save.selectedStage}`;
+    }
     this.hubSectorTitleEl.textContent = stageTitle.toUpperCase();
     this.hubBossPreviewEl.textContent = `BOSS: ${bossName.toUpperCase()}`;
+
+    const launchTextEl = this.btnStartMarch.querySelector<HTMLElement>('.drag-launch-pill__text');
+    if (launchTextEl) {
+      launchTextEl.textContent =
+        boardLayout === 'SPLIT_CAUSEWAY' ? 'DRAG TO DEFEND CAUSEWAY' : 'DRAG BRIDGE TO MARCH';
+    }
 
     const muteLabel = save.settings.muted ? 'OFF' : 'ON';
     const hapticsLabel = save.settings.haptics ? 'ON' : 'OFF';
@@ -434,6 +467,7 @@ export class HudController {
     this.badgePauseHapticsEl.textContent = hapticsLabel;
 
     this.recordSquadEl.textContent = `${save.highScoreSquad}`;
+    this.recordSplitEl.textContent = `S${save.bestSplitStage}`;
     this.recordEndlessEl.textContent = `${Math.round(save.bestEndlessDistance)}m`;
 
     for (const key of UPGRADE_ORDER) {
@@ -569,10 +603,12 @@ export class HudController {
       this.armoryItemKicker.textContent = `SECTOR ${st.stageNumber} // ${CHASSIS_LABELS[boss.chassis]}`;
       this.armoryItemName.textContent = boss.name.toUpperCase();
 
-      const hpPct = Math.min(100, Math.max(10, Math.round((boss.maxHp / 76000) * 100)));
+      const hpPct = Math.min(100, Math.max(10, Math.round((boss.maxHp / 114000) * 100)));
       const segPct = Math.round((boss.segments / 10) * 100);
-      const spdPct = Math.round((boss.advanceSpeed / 1.5) * 100);
-      const rewPct = Math.round((boss.rewardCoins / 2000) * 100);
+      const spdPct = Math.round((boss.advanceSpeed / 1.55) * 100);
+      const rewPct = Math.min(100, Math.round((boss.rewardCoins / 2800) * 100));
+      const layoutTag =
+        st.boardLayout === 'SPLIT_CAUSEWAY' ? 'Split Causeway Siege' : `${st.trackLength}m Bridge`;
 
       this.armoryStatBars.innerHTML = `
         <div class="stat-meter">
@@ -592,12 +628,30 @@ export class HudController {
           <div class="stat-meter__track"><div class="stat-meter__fill" style="width:${rewPct}%"></div></div>
         </div>
       `;
-      this.armoryItemNote.textContent = `Guarding ${st.title} (${st.trackLength}m). Fires ${boss.salvoLanes}-lane telegraphed plasma salvos every ${boss.salvoInterval.toFixed(1)}s — steer into the open lane!`;
+      this.armoryItemNote.textContent = `Guarding ${st.title} (${layoutTag}). Fires ${boss.salvoLanes}-lane telegraphed plasma salvos every ${boss.salvoInterval.toFixed(1)}s — steer into the open lane!`;
     }
   }
 
   private renderSectorMap(save: SaveDataV1): void {
     this.sectorMapList.innerHTML = '';
+
+    const splitBtn = document.createElement('button');
+    splitBtn.type = 'button';
+    const splitSelected = save.selectedMode === 'SPLIT_CAUSEWAY';
+    splitBtn.className = `sector-node${splitSelected ? ' is-selected' : ''}`;
+    splitBtn.innerHTML = `
+      <div class="sector-node__num">⇄</div>
+      <div class="sector-node__info">
+        <span class="sector-node__title">SPLIT CAUSEWAY SIEGE</span>
+        <span class="sector-node__sub">Left Barrel+Gate Queue vs Right Battalions • Stage ${save.splitCausewayStage} (Best: S${save.bestSplitStage})</span>
+      </div>
+      <span class="sector-node__status">${splitSelected ? 'ACTIVE' : 'DEPLOY'}</span>
+    `;
+    splitBtn.addEventListener('click', () => {
+      this.callbacks.onSelectMode('SPLIT_CAUSEWAY');
+      this.switchHubTab('BATTLE');
+    });
+    this.sectorMapList.appendChild(splitBtn);
 
     const endlessBtn = document.createElement('button');
     endlessBtn.type = 'button';
@@ -607,7 +661,7 @@ export class HudController {
       <div class="sector-node__num">∞</div>
       <div class="sector-node__info">
         <span class="sector-node__title">ENDLESS BRIDGE GAUNTLET</span>
-        <span class="sector-node__sub">Escalating Swarms, Goliaths &amp; Bosses • Best: ${Math.round(save.bestEndlessDistance)}m</span>
+        <span class="sector-node__sub">4x Marathon Bridges &amp; Split Sieges • Best: ${Math.round(save.bestEndlessDistance)}m</span>
       </div>
       <span class="sector-node__status">${endlessSelected ? 'ACTIVE' : 'DEPLOY'}</span>
     `;
@@ -622,6 +676,8 @@ export class HudController {
       const cleared = st.stageNumber < save.unlockedStage;
       const isSelected =
         save.selectedMode === 'CAMPAIGN' && save.selectedStage === st.stageNumber;
+      const boardBadge =
+        st.boardLayout === 'SPLIT_CAUSEWAY' ? '[SPLIT CAUSEWAY]' : `[${st.trackLength}m]`;
 
       const row = document.createElement('button');
       row.type = 'button';
@@ -647,7 +703,7 @@ export class HudController {
         <div class="sector-node__num">${String(st.stageNumber).padStart(2, '0')}</div>
         <div class="sector-node__info">
           <span class="sector-node__title">${st.title.toUpperCase()}</span>
-          <span class="sector-node__sub">${st.boss.name} • +${formatCoinAmount(st.boss.rewardCoins)} Clear Coins</span>
+          <span class="sector-node__sub">${boardBadge} ${st.boss.name} • +${formatCoinAmount(st.boss.rewardCoins)} Clear Coins</span>
         </div>
         <span class="sector-node__status">${statusText}</span>
       `;
@@ -670,14 +726,17 @@ export class HudController {
     progressRatio: number,
     mode: GameMode,
     _distanceMeters: number,
-    endlessWave: number
+    endlessWave: number,
+    splitStage = 1
   ): void {
     const pct = Math.max(0, Math.min(100, progressRatio * 100));
     this.progressFillEl.style.width = `${pct.toFixed(1)}%`;
     this.progressPctEl.textContent =
       mode === 'ENDLESS'
         ? `W${endlessWave} • ${Math.round(pct)}%`
-        : `${Math.round(pct)}%`;
+        : mode === 'SPLIT_CAUSEWAY'
+          ? `S${splitStage} • ${Math.round(pct)}%`
+          : `${Math.round(pct)}%`;
   }
 
   public updateWorldOverlays(
@@ -692,7 +751,8 @@ export class HudController {
     bossName: string,
     bossHp: number,
     bossMaxHp: number,
-    bossSegments: number
+    bossSegments: number,
+    splitCauseway?: SplitCausewayController
   ): void {
     const inCombat = state === 'RUNNING' || state === 'BOSS_FIGHT';
 
@@ -745,6 +805,48 @@ export class HudController {
             usedBars++;
           }
         }
+
+        if (
+          splitCauseway &&
+          splitCauseway.active &&
+          splitCauseway.rightAliveCount > 0 &&
+          usedBars < MAX_HEAVY_HP_BARS
+        ) {
+          const totalTroopers = splitCauseway.totalTroopers;
+          for (let u = 0; u < totalTroopers && usedBars < MAX_HEAVY_HP_BARS; u++) {
+            const isHeavyUnit = splitCauseway.unitRank[u] === 2 ? 1 : 0;
+            if (
+              splitCauseway.unitAlive[u] === 0 ||
+              isHeavyUnit !== wantHeavy ||
+              splitCauseway.unitHp[u] >= splitCauseway.unitMaxHp[u] - 0.01
+            ) {
+              continue;
+            }
+            const uz = splitCauseway.unitZ[u];
+            const distAhead = squadZ - uz;
+            if (distAhead > 38 || distAhead < -3) {
+              continue;
+            }
+            const isElite = wantHeavy === 1;
+            const headY = isElite ? 1.98 : 1.56;
+            sceneManager.projectToScreen(splitCauseway.unitX[u], headY, uz, _projScratch);
+            if (!_projScratch.visible) {
+              continue;
+            }
+
+            const bar = this.heavyHpBars[usedBars];
+            const fill = this.heavyHpFills[usedBars];
+            const ratio = Math.max(
+              0,
+              Math.min(1, splitCauseway.unitHp[u] / Math.max(1, splitCauseway.unitMaxHp[u]))
+            );
+            bar.classList.remove('is-hidden');
+            bar.classList.toggle('heavy-hp-bar--elite', isElite);
+            bar.style.transform = `translate3d(${_projScratch.x.toFixed(1)}px, ${_projScratch.y.toFixed(1)}px, 0) translate(-50%, -100%)`;
+            fill.style.width = `${(ratio * 100).toFixed(1)}%`;
+            usedBars++;
+          }
+        }
       }
     }
     for (let i = usedBars; i < MAX_HEAVY_HP_BARS; i++) {
@@ -779,7 +881,9 @@ export class HudController {
     const modeLabel =
       summary.mode === 'ENDLESS'
         ? `ENDLESS WAVE ${summary.stageNumber}`
-        : `SECTOR ${summary.stageNumber}`;
+        : summary.mode === 'SPLIT_CAUSEWAY'
+          ? `SPLIT CAUSEWAY ${summary.stageNumber}`
+          : `SECTOR ${summary.stageNumber}`;
 
     this.summaryKickerEl.textContent = isVictory
       ? `${modeLabel} CLEARED!`

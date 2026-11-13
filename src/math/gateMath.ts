@@ -319,7 +319,10 @@ export function formatGateLabel(
       const tenths = vig / 20;
       return `X${tenths.toFixed(1)}`;
     }
-    return `x${Math.round(value)}`;
+    if (Math.abs(value - Math.round(value)) > 0.01) {
+      return `X${value.toFixed(1)}`;
+    }
+    return `X${Math.round(value)}`;
   }
   if (operator === 'DIV') {
     return `÷${Math.round(value)}`;

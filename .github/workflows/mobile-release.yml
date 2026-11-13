@@ -130,13 +130,14 @@ jobs:
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v5.3.0
-          name: Bridge Blitz v5.3.0 — Comprehensive Visual, Audio & Gameplay Polish APK
+          tag_name: v6.0.0
+          name: Bridge Blitz v6.0.0 — Split Causeway Siege, 4x Marathon Bridges & +50% Difficulty APK
           body: |
-            ### Bridge Blitz v5.3.0 — Pixel 10 XL Comprehensive Polish Release (`versionCode 12`)
-            - **Direct Chrome Download (installs cleanly over v5.2 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=12)
-            - **What's Upgraded in v5.3**:
-              - **Visual & Cel Readability**: Throttled hit-flashes so Tire Walls stay deep black rubber and Goliaths retain rich crimson armor under 40-gun fire; Boss cel-saturation & GLSL ES normal hardening; unobscured gate numerals with vertical micro scale-pops; aimed muzzle flashes; Campaign bridge terminus overlooking open ocean water; stationary ready stance on `PRE_RUN` & un-aggroed sentry enemies.
-              - **Gameplay & HUD**: Early Boss HP bar reveal on approach; Goliath aimed smash + inner timing disc; Juggernaut-priority mini HP bars; Armory framing & `Lv5` stat meters; tactile upgrade purchase card pop; monotonic 10-stage Goliath HP curve.
-              - **Audio**: Cached white-noise impact transients, crowd-scaled gunfire (`1→40`), and throttled coin pickup chime.
+            ### Bridge Blitz v6.0.0 — Split Causeway Siege & 400%-Longer Marathon Release (`versionCode 13`)
+            - **Direct Chrome Download (installs cleanly over v5.3 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=13)
+            - **What's New in v6.0**:
+              - **New Split Causeway Board Mode & Campaign Integration**: Woven into Campaign Sectors `2, 4, 6, 8, 10` (and even Endless waves) plus playable anytime from Stage 1 via the dedicated **`SPLIT CAUSEWAY`** mode switcher on the Live-Bridge Hub and Sector Map.
+              - **Left-Lane Barrel + Gate Conveyor Queue**: Shatter front horizontal barrels to immediately trigger paired `X2` / `X1.5` / `+3` gates, `Lv2`–`Lv5` 3D weapons, or coin jackpots, ignite a Golden Squad Celebration Ring + Rising Starburst, and spring-slide the queue forward across the fortified stone causeway.
+              - **Right-Lane 3-Rank Battalions & Retracting Center Divider Wall**: Defend against Olive Vanguard Raiders, Crimson Shock Troopers, Dark Ironclad Heavy Juggernauts, and Right-Corridor Riot Goliaths before the Ballistic Center Divider Wall hydraulically retracts for the 3-Lane Boss Finale (`100%`).
+              - **400% Longer (`4x`) & 50% Harder (`1.5x`)**: Standard Bridge sectors now span `1,120m–1,368m` with seamless slot streaming, and obstacle/gate/horde/Goliath/Boss HP scales `+50%` (`18,750 → 114,000` Boss HP).
           files: BridgeBlitz-Pixel10XL.apk

@@ -91,7 +91,8 @@ export class SquadController {
     dt: number,
     horizontalDelta: number,
     advanceForward: boolean,
-    animateMarch: boolean
+    animateMarch: boolean,
+    splitDividerActive = false
   ): void {
     if (this.logicalCount <= 0) {
       return;
@@ -118,14 +119,31 @@ export class SquadController {
       this.barrelSpinAngle += dt * 3.2;
     }
 
+    // On Split Causeway boards while the center divider is raised, smoothly pack outer squad ranks
+    // into the active left or right corridor so all 1..40 guns fire cleanly past the center armor wall!
+    let laneMinX = -4.38;
+    let laneMaxX = 4.38;
+    let spreadScaleX = 1.0;
+    if (splitDividerActive) {
+      spreadScaleX = 0.72;
+      if (this.x < -0.32) {
+        const commit = Math.min(1, (-this.x - 0.32) / 0.85);
+        laneMaxX = 4.38 + (-0.28 - 4.38) * commit;
+      } else if (this.x > 0.32) {
+        const commit = Math.min(1, (this.x - 0.32) / 0.85);
+        laneMinX = -4.38 + (0.28 - -4.38) * commit;
+      }
+    }
+
     const vis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
     const followFactor = Math.min(1, dt * 15);
     for (let i = 0; i < vis; i++) {
       getEliteFormationOffset(i, vis, _slotOffset);
-      const rawTargetX = this.x + _slotOffset.x;
+      const rawTargetX = this.x + _slotOffset.x * spreadScaleX;
+      const jitter = (i % 3) * 0.06;
       const clampedTargetX = Math.max(
-        -4.38 + (i % 3) * 0.08,
-        Math.min(4.38 - (i % 3) * 0.08, rawTargetX)
+        laneMinX + jitter,
+        Math.min(laneMaxX - jitter, rawTargetX)
       );
       const targetZ = this.z + _slotOffset.z;
       this.soldierWorldX[i] += (clampedTargetX - this.soldierWorldX[i]) * followFactor;

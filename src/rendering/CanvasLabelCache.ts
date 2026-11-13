@@ -53,7 +53,7 @@ export class EditableGateTexture {
     flashIntensity: number,
     panelWidthMeters = 4.76
   ): void {
-    const valKey = operator === 'MUL' && !isLocked ? Math.round(value * 100) : Math.round(value);
+    const valKey = operator === 'MUL' ? Math.round(value * 100) : Math.round(value);
     const flashFlag = flashIntensity > 0.15 ? 1 : 0;
     const widthBucket = Math.round(panelWidthMeters * 10);
     const sig = `${operator}:${valKey}:${isLocked ? 1 : 0}:${flashFlag}:${widthBucket}`;

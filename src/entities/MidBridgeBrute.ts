@@ -169,7 +169,7 @@ class EditableBruteChestBarTexture {
  *   telegraphed lane-smashing club blows so players weave left/right while stray shots chip obstacles behind him!
  */
 export class MidBridgeBrute {
-  public readonly entityId = BRUTE_ENTITY_ID;
+  public readonly entityId: number;
   public readonly root = new THREE.Group();
   public active = false;
   public defeated = false;
@@ -203,7 +203,8 @@ export class MidBridgeBrute {
   private stateTimer = 1.0;
   private lockedSmashX = 0;
 
-  constructor() {
+  constructor(slotIndex = 0) {
+    this.entityId = BRUTE_ENTITY_ID + slotIndex;
     // Grounded contact shadow under Goliath
     const shadow = new THREE.Mesh(
       new THREE.CircleGeometry(1.75, 24),
@@ -407,9 +408,6 @@ export class MidBridgeBrute {
     this.bodyRig.add(this.leftArmPivot);
 
     // --- RIGHT ARTICULATED SPIKED BREACHING MAUL / WAR-CLUB ARM ---
-    // Note: Brute faces +Z toward player, so his anatomical right arm is at -X or +X?
-    // Facing +Z, anatomical right is -X and screen-right is +X; putting club at +1.28 X makes the huge
-    // spiked war-club silhouette clearly visible on screen beside him!
     this.clubArmPivot.position.set(1.28, 2.42, 0.08);
     const rUpper = new THREE.Mesh(
       new THREE.CapsuleGeometry(0.26, 0.48, 8, 12),
@@ -538,7 +536,7 @@ export class MidBridgeBrute {
     this.root.visible = false;
   }
 
-  public configure(def: MidBridgeBruteDefinition | undefined): void {
+  public configure(def: MidBridgeBruteDefinition | undefined, initialX = 0): void {
     if (!def) {
       this.hide();
       return;
@@ -546,7 +544,7 @@ export class MidBridgeBrute {
     this.active = true;
     this.defeated = false;
     this.name = def.name;
-    this.x = 0;
+    this.x = initialX;
     this.z = def.z;
     this.maxHp = Math.max(100, def.maxHp);
     this.hp = this.maxHp;
@@ -558,7 +556,7 @@ export class MidBridgeBrute {
     this.hitFlashCooldown = 0;
     this.attackState = 'COOLDOWN';
     this.stateTimer = 0.45;
-    this.lockedSmashX = 0;
+    this.lockedSmashX = initialX;
 
     this.root.position.set(this.x, 0, this.z);
     this.root.visible = true;
@@ -587,11 +585,19 @@ export class MidBridgeBrute {
     dt: number,
     squadX: number,
     squadZ: number,
-    playerLogicalSquad: number
+    playerLogicalSquad: number,
+    dividerTipZ?: number
   ): BruteClubSmashEvent | null {
     if (!this.active || this.defeated || this.hp <= 0) {
       return null;
     }
+
+    const distZ = squadZ - this.z;
+    if (distZ > 115) {
+      this.root.visible = false;
+      return null;
+    }
+    this.root.visible = true;
 
     if (this.hitFlashCooldown > 0) {
       this.hitFlashCooldown = Math.max(0, this.hitFlashCooldown - dt);
@@ -609,8 +615,11 @@ export class MidBridgeBrute {
       }
     }
 
-    const distZ = squadZ - this.z;
-    const engaged = distZ < ENGAGE_WAKE_DIST_Z;
+    const insideRightCorridor = dividerTipZ !== undefined && this.z <= dividerTipZ + 0.55;
+    const minAllowedX = insideRightCorridor ? 1.48 : -3.05;
+    const maxAllowedX = insideRightCorridor ? 3.42 : 3.05;
+
+    const engaged = dividerTipZ !== undefined ? distZ < 105 : distZ < ENGAGE_WAKE_DIST_Z;
     const inDuelRange = distZ <= DUEL_HALT_DIST_Z + 0.35 && distZ > -2.5;
     let smashEvent: BruteClubSmashEvent | null = null;
     let targetBodyYaw = 0;
@@ -619,18 +628,23 @@ export class MidBridgeBrute {
       // Heavy stomping advance toward the squad until close-quarters duel range
       this.z += this.speed * dt;
       this.stridePhase += dt * 5.8;
-      const dx = squadX - this.x;
-      this.x = Math.max(-2.95, Math.min(2.95, this.x + Math.sign(dx) * Math.min(Math.abs(dx), 1.35 * dt)));
+      const desiredX = Math.max(minAllowedX, Math.min(maxAllowedX, squadX));
+      const dx = desiredX - this.x;
+      this.x = Math.max(
+        minAllowedX,
+        Math.min(maxAllowedX, this.x + Math.sign(dx) * Math.min(Math.abs(dx), 1.35 * dt))
+      );
       targetBodyYaw = Math.max(-0.28, Math.min(0.28, Math.atan2(dx, Math.max(3.5, distZ))));
     } else if (inDuelRange) {
       this.stridePhase += dt * 3.4;
 
       if (this.attackState === 'COOLDOWN') {
         this.dangerZoneGroup.visible = false;
-        const dx = squadX - this.x;
+        const desiredX = Math.max(minAllowedX, Math.min(maxAllowedX, squadX));
+        const dx = desiredX - this.x;
         this.x = Math.max(
-          -3.05,
-          Math.min(3.05, this.x + Math.sign(dx) * Math.min(Math.abs(dx), 2.15 * dt))
+          minAllowedX,
+          Math.min(maxAllowedX, this.x + Math.sign(dx) * Math.min(Math.abs(dx), 2.15 * dt))
         );
         targetBodyYaw = Math.max(-0.34, Math.min(0.34, Math.atan2(dx, Math.max(2.4, distZ))));
         this.clubArmPivot.rotation.x += (0 - this.clubArmPivot.rotation.x) * Math.min(1, dt * 8);
@@ -644,10 +658,11 @@ export class MidBridgeBrute {
         const progress = 1 - this.stateTimer / CLUB_WINDUP_DURATION;
         // Track softly only in first 35% of windup, then lock lane so player can dodge cleanly!
         if (progress < 0.35) {
-          const dx = squadX - this.x;
+          const desiredX = Math.max(minAllowedX, Math.min(maxAllowedX, squadX));
+          const dx = desiredX - this.x;
           this.x = Math.max(
-            -3.05,
-            Math.min(3.05, this.x + Math.sign(dx) * Math.min(Math.abs(dx), 1.65 * dt))
+            minAllowedX,
+            Math.min(maxAllowedX, this.x + Math.sign(dx) * Math.min(Math.abs(dx), 1.65 * dt))
           );
           this.lockedSmashX = Math.max(-3.35, Math.min(3.35, this.x + (squadX - this.x) * 0.5));
         }
@@ -730,12 +745,13 @@ export class MidBridgeBrute {
     prevBz: number,
     damage: number,
     lastHitId: number,
-    squadZ?: number
+    squadZ?: number,
+    maxHitRangeZ = ENGAGE_WAKE_DIST_Z
   ): 'NONE' | 'HIT' | 'DEFEATED' {
     if (!this.active || this.defeated || this.hp <= 0 || lastHitId === this.entityId) {
       return 'NONE';
     }
-    if (squadZ !== undefined && squadZ - this.z > ENGAGE_WAKE_DIST_Z) {
+    if (squadZ !== undefined && squadZ - this.z > maxHitRangeZ) {
       return 'NONE';
     }
     const minZ = Math.min(bz, prevBz) - 1.15;

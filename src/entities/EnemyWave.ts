@@ -27,6 +27,7 @@ export class EnemyWaveSlot {
   public readonly unitCountCap = MAX_UNITS_PER_WAVE;
   public readonly unitAlive = new Uint8Array(MAX_UNITS_PER_WAVE);
   public readonly unitIsHeavy = new Uint8Array(MAX_UNITS_PER_WAVE);
+  public readonly unitIsVanguard = new Uint8Array(MAX_UNITS_PER_WAVE);
   public readonly unitX = new Float32Array(MAX_UNITS_PER_WAVE);
   public readonly unitZ = new Float32Array(MAX_UNITS_PER_WAVE);
   public readonly unitHp = new Float32Array(MAX_UNITS_PER_WAVE);
@@ -39,6 +40,7 @@ export class EnemyWaveSlot {
   public readonly lastKills: EliminatedEnemyEvent[] = [];
 
   private totalConfigured = 0;
+  private withinRenderRange = true;
 
   constructor(waveIndex: number) {
     this.entityId = 800 + waveIndex;
@@ -58,14 +60,18 @@ export class EnemyWaveSlot {
     this.z = def.z;
     this.marchPhase = 0;
     this.isMarching = false;
+    this.withinRenderRange = true;
     this.lastKillCount = 0;
 
     const heavyTarget =
       def.heavyCount ?? Math.max(2, Math.floor(this.totalConfigured * 0.24));
+    const vanguardRatio = def.vanguardRatio ?? 0.34;
     const baseCoin = def.coinPerKill ?? 8;
     const spanHalfX = def.lane === 'CENTER' ? 3.85 : 2.35;
 
     const cols = def.lane === 'CENTER' ? 7 : 5;
+    const totalRows = Math.max(1, Math.ceil(this.totalConfigured / cols));
+    const vanguardRowCutoff = Math.max(1, Math.round(totalRows * vanguardRatio));
     const centerCol = Math.floor(cols / 2);
     const heavyOrder: number[] = [];
     for (let i = 0; i < this.totalConfigured; i++) {
@@ -84,6 +90,7 @@ export class EnemyWaveSlot {
       const isHeavy = heavySet.has(i) ? 1 : 0;
       this.unitIsHeavy[i] = isHeavy;
       const row = Math.floor(i / cols);
+      this.unitIsVanguard[i] = !isHeavy && row < vanguardRowCutoff ? 1 : 0;
       const col = i % cols;
       const uNorm = cols > 1 ? col / (cols - 1) - 0.5 : 0;
       const rowShift = (row % 2) * 0.28 - 0.14;
@@ -116,6 +123,11 @@ export class EnemyWaveSlot {
 
   public update(dt: number, squadX: number, squadZ: number): void {
     if (!this.active || this.aliveCount <= 0) {
+      return;
+    }
+    this.withinRenderRange = squadZ - this.z < 126;
+    if (!this.withinRenderRange) {
+      this.isMarching = false;
       return;
     }
 
@@ -172,7 +184,7 @@ export class EnemyWaveSlot {
   }
 
   public pushInstances(renderer: InstancedBatchRenderer, isCombatMoving = true): void {
-    if (!this.active || this.aliveCount <= 0) {
+    if (!this.active || this.aliveCount <= 0 || !this.withinRenderRange) {
       return;
     }
     const marching = isCombatMoving && this.isMarching;
@@ -194,7 +206,8 @@ export class EnemyWaveSlot {
           this.unitZ[i],
           this.marchPhase + i * 0.85,
           this.unitHitFlash[i],
-          marching
+          marching,
+          this.unitIsVanguard[i] === 1
         );
       }
     }

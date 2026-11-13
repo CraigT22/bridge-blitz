@@ -10,7 +10,41 @@ export type BossChassisId =
   | 'KRAKEN_WALKER'
   | 'SOVEREIGN_TITAN';
 
-export type GameMode = 'CAMPAIGN' | 'ENDLESS';
+export type GameMode = 'CAMPAIGN' | 'SPLIT_CAUSEWAY' | 'ENDLESS';
+
+export type BoardLayout = 'STANDARD_BRIDGE' | 'SPLIT_CAUSEWAY';
+
+export type EnemyVisualRank = 0 | 1 | 2;
+
+export type SplitNodeReward =
+  | { readonly kind: 'GATE'; readonly operator: 'ADD' | 'MUL'; readonly value: number }
+  | { readonly kind: 'WEAPON'; readonly weaponTier: WeaponTierId }
+  | { readonly kind: 'COINS'; readonly coins: number };
+
+export interface SplitBarrelNodeDefinition {
+  readonly barrelHp: number;
+  readonly reward: SplitNodeReward;
+}
+
+export interface SplitHordeEchelonDefinition {
+  readonly startZ: number;
+  readonly rows: number;
+  readonly cols: number;
+  readonly rank: EnemyVisualRank;
+  readonly hpPerUnit: number;
+  readonly speed: number;
+  readonly coinPerKill: number;
+}
+
+export interface SplitCausewayDefinition {
+  readonly siegeColumnSpan: number;
+  readonly marchSpeed: number;
+  readonly dividerStartZ: number;
+  readonly dividerLength: number;
+  readonly leftQueue: ReadonlyArray<SplitBarrelNodeDefinition>;
+  readonly rightEchelons: ReadonlyArray<SplitHordeEchelonDefinition>;
+  readonly goliathSpawns: ReadonlyArray<MidBridgeBruteDefinition>;
+}
 
 export type WeaponTierId = 1 | 2 | 3 | 4 | 5;
 
@@ -77,6 +111,7 @@ export interface EnemyWaveDefinition {
   readonly hpPerEnemy: number;
   readonly speed: number;
   readonly heavyCount?: number;
+  readonly vanguardRatio?: number;
   readonly coinPerKill?: number;
 }
 
@@ -107,12 +142,15 @@ export interface MidBridgeBruteDefinition {
 export interface StageDefinition {
   readonly stageNumber: number;
   readonly title: string;
+  readonly boardLayout?: BoardLayout;
   readonly trackLength: number;
   readonly supplyDrums: SupplyDrumDefinition[];
   readonly gatePairs: GatePairDefinition[];
   readonly tireStacks: TireStackDefinition[];
   readonly enemyWaves: EnemyWaveDefinition[];
   readonly midBrute?: MidBridgeBruteDefinition;
+  readonly midBrutes?: ReadonlyArray<MidBridgeBruteDefinition>;
+  readonly splitCauseway?: SplitCausewayDefinition;
   readonly boss: BossDefinition;
 }
 
@@ -136,6 +174,8 @@ export interface SaveDataV1 {
   unlockedStage: number;
   selectedStage: number;
   selectedMode: GameMode;
+  splitCausewayStage: number;
+  bestSplitStage: number;
   upgrades: UpgradeLevels;
   highScoreSquad: number;
   bestEndlessDistance: number;
@@ -163,6 +203,7 @@ export interface RunSummary {
 export interface TelemetrySnapshot {
   state: GameState;
   mode: GameMode;
+  boardLayout: BoardLayout;
   stage: number;
   coins: number;
   liveCoinsThisRun: number;
@@ -178,6 +219,8 @@ export interface TelemetrySnapshot {
   marchHaltedByBrute: boolean;
   bossHp: number;
   bossMaxHp: number;
+  splitQueueRemaining: number;
+  splitRightAlive: number;
   drumsBrokenThisRun: number;
   gatesFlippedThisRun: number;
   tiresBrokenThisRun: number;
