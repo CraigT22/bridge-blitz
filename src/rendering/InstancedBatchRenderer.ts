@@ -681,7 +681,9 @@ export class InstancedBatchRenderer {
     recoilKick = 0,
     barrelSpinAngle = 0,
     facingYaw = 0,
-    celebrateHop = 0
+    celebrateHop = 0,
+    focalX = 0,
+    focalZ = -23.5
   ): void {
     const safeCount = Math.min(count, MAX_VISUAL_SOLDIERS);
     this.playerMesh.count = safeCount;
@@ -714,24 +716,14 @@ export class InstancedBatchRenderer {
       }
     }
 
-    // Angled ~31° (-0.54 rad) bladed tactical rifle stance exposes the athletic legs & 3D weapon profile!
-    const bladedStanceYaw = -0.54;
-    const gunProfileYaw = -0.16;
     const hopY = Math.sin(celebrateHop * Math.PI) * 0.34;
     const s = COMMANDO_MODEL_SCALE * (1 + Math.sin(celebrateHop * Math.PI) * 0.08);
-
-    const yawBody = facingYaw + bladedStanceYaw - steerBankAngle * 0.35;
-    const yawGun = facingYaw + gunProfileYaw - steerBankAngle * 0.35;
     const gripLocalX = EQUIPPED_GUN_PIVOT_X;
     const gripLocalZ = -0.235;
-    const bodyGripX = gripLocalX * Math.cos(yawBody) + gripLocalZ * Math.sin(yawBody);
-    const bodyGripZ = -gripLocalX * Math.sin(yawBody) + gripLocalZ * Math.cos(yawBody);
-    const gunGripX = gripLocalX * Math.cos(yawGun) + gripLocalZ * Math.sin(yawGun);
-    const gunGripZ = -gripLocalX * Math.sin(yawGun) + gripLocalZ * Math.cos(yawGun);
-    const gunShiftX = (bodyGripX - gunGripX) * s;
-    const gunShiftZ = (bodyGripZ - gunGripZ) * s;
 
     for (let i = 0; i < safeCount; i++) {
+      const wx = worldX[i];
+      const wz = worldZ[i];
       const bobPhase = marchPhase * 11.8 + i * 0.92;
       const bobY =
         (isMoving
@@ -739,8 +731,23 @@ export class InstancedBatchRenderer {
           : Math.sin(marchPhase * 2.4 + i * 0.7) * 0.016) + hopY;
       const swayZ = isMoving ? Math.sin(bobPhase) * 0.036 : 0;
 
-      // Commando body takes the ~31° bladed stance while the gun grip stays locked in their gloves!
-      _pos.set(worldX[i], bobY, worldZ[i]);
+      // Per-commando inward gun aim toward (focalX, focalZ) so left & right flank guns point into the cone!
+      const inwardGunYaw = isMoving
+        ? Math.max(-0.38, Math.min(0.38, -Math.atan2(focalX - wx, Math.max(5.5, wz - focalZ))))
+        : facingYaw - 0.14;
+      const yawGun = inwardGunYaw - steerBankAngle * 0.35;
+      const yawBody =
+        (isMoving ? -0.45 + inwardGunYaw * 0.72 : facingYaw - 0.52) -
+        steerBankAngle * 0.35;
+
+      const bodyGripX = gripLocalX * Math.cos(yawBody) + gripLocalZ * Math.sin(yawBody);
+      const bodyGripZ = -gripLocalX * Math.sin(yawBody) + gripLocalZ * Math.cos(yawBody);
+      const gunGripX = gripLocalX * Math.cos(yawGun) + gripLocalZ * Math.sin(yawGun);
+      const gunGripZ = -gripLocalX * Math.sin(yawGun) + gripLocalZ * Math.cos(yawGun);
+      const gunShiftX = (bodyGripX - gunGripX) * s;
+      const gunShiftZ = (bodyGripZ - gunGripZ) * s;
+
+      _pos.set(wx, bobY, wz);
       _euler.set(
         isMoving ? -0.07 : -0.04,
         yawBody,
@@ -751,7 +758,7 @@ export class InstancedBatchRenderer {
       _mat4.compose(_pos, _quat, _scale);
       this.playerMesh.setMatrixAt(i, _mat4);
 
-      _pos.set(worldX[i] + gunShiftX, bobY, worldZ[i] + gunShiftZ);
+      _pos.set(wx + gunShiftX, bobY, wz + gunShiftZ);
       _euler.set(
         isMoving ? -0.04 : -0.02,
         yawGun,
@@ -761,7 +768,7 @@ export class InstancedBatchRenderer {
       _mat4.compose(_pos, _quat, _scale);
       activeWeaponMesh.setMatrixAt(i, _mat4);
 
-      _pos.set(worldX[i], 0.022, worldZ[i]);
+      _pos.set(wx, 0.022, wz);
       _quat.identity();
       const shadowScale = Math.max(0.58, 0.92 - bobY * 0.85);
       _scale.set(shadowScale, 1, shadowScale);

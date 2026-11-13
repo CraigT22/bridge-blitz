@@ -6,15 +6,19 @@ import {
 } from '../math/formationMath';
 import {
   COMMANDO_MODEL_SCALE,
+  computeConvergingShotTrajectory,
   computeSquadVolleyPlan,
+  FOCAL_CONVERGENCE_DISTANCE,
   MAX_SQUAD_COUNT,
   MAX_VISUAL_SOLDIERS,
   WEAPON_SPECS,
+  type ConvergingShotTrajectory,
 } from '../math/weaponMath';
 
 export const SQUAD_MARCH_SPEED = 6.5;
 
 const _slotOffset = { x: 0, z: 0 };
+const _shotTraj: ConvergingShotTrajectory = { vx: 0, vz: 0, maxAge: 1 };
 
 export class SquadController {
   public logicalCount = 1;
@@ -59,7 +63,7 @@ export class SquadController {
   }
 
   /**
-   * Updates elite squad count (clamped to MAX_SQUAD_COUNT = 10) and returns any overflow commandos
+   * Updates elite squad count (clamped to MAX_SQUAD_COUNT = 40) and returns any overflow commandos
    * above the cap so the caller can convert excess reinforcements into bonus War Chest coins!
    */
   public setLogicalCount(nextCount: number): number {
@@ -170,7 +174,9 @@ export class SquadController {
     fireRateMultiplier: number,
     bulletPowerMultiplier: number,
     bulletPool: BulletPool,
-    aimYawRadians = 0
+    focalX = this.x,
+    focalZ = this.z - FOCAL_CONVERGENCE_DISTANCE,
+    marchingForward = true
   ): boolean {
     if (this.logicalCount <= 0) {
       return false;
@@ -189,7 +195,9 @@ export class SquadController {
           spec.spreadRadians,
           false,
           bulletPool,
-          aimYawRadians
+          focalX,
+          focalZ,
+          marchingForward
         );
         firedAny = true;
       }
@@ -212,19 +220,23 @@ export class SquadController {
           spec.spreadRadians,
           false,
           bulletPool,
-          aimYawRadians
+          focalX,
+          focalZ,
+          marchingForward
         );
         this.pendingBurstTimer = 0.062;
         this.pendingBurstDamage = plan.damagePerProjectile;
         this.pendingBurstEmitters = plan.activeEmitters;
-      } else if (spec.pattern === 'TWIN_SPREAD') {
+      } else if (spec.pattern === 'TWIN_CONVERGE') {
         this.emitVolleyStream(
           plan.activeEmitters,
           plan.damagePerProjectile,
           spec.spreadRadians,
           true,
           bulletPool,
-          aimYawRadians
+          focalX,
+          focalZ,
+          marchingForward
         );
       } else {
         this.emitVolleyStream(
@@ -233,7 +245,9 @@ export class SquadController {
           spec.spreadRadians,
           false,
           bulletPool,
-          aimYawRadians
+          focalX,
+          focalZ,
+          marchingForward
         );
       }
       firedAny = true;
@@ -249,10 +263,12 @@ export class SquadController {
   private emitVolleyStream(
     emitterCount: number,
     damagePerProjectile: number,
-    spreadRad: number,
+    apexJitterMeters: number,
     twinStream: boolean,
     bulletPool: BulletPool,
-    aimYawRadians: number
+    focalX: number,
+    focalZ: number,
+    marchingForward: boolean
   ): void {
     const vis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
     if (vis <= 0 || emitterCount <= 0) {
@@ -262,59 +278,94 @@ export class SquadController {
     const spec = WEAPON_SPECS[this.weaponTier];
     const speed = spec.projectileSpeed;
     const bulletScale = 1.24;
-    const maxAge = 1.32;
-    const muzzleOffsetX = 0.255 * COMMANDO_MODEL_SCALE;
+    const muzzleLocalX = 0.255 * COMMANDO_MODEL_SCALE;
     const muzzleY = 0.548 * COMMANDO_MODEL_SCALE;
-    const muzzleOffsetZ = -0.68 * COMMANDO_MODEL_SCALE;
+    const muzzleLocalZ = -0.68 * COMMANDO_MODEL_SCALE;
+    const frontMuzzleZ = this.z + muzzleLocalZ;
 
     for (let e = 0; e < emitterCount; e++) {
       const soldierIdx = (this.emitterCursor + e) % vis;
-      const sx = this.soldierWorldX[soldierIdx] + muzzleOffsetX;
-      const sz = this.soldierWorldZ[soldierIdx] + muzzleOffsetZ;
+      const soldierX = this.soldierWorldX[soldierIdx];
+      const soldierZ = this.soldierWorldZ[soldierIdx];
+
+      const gunYaw = Math.max(
+        -0.38,
+        Math.min(0.38, -Math.atan2(focalX - soldierX, Math.max(5.5, soldierZ - focalZ)))
+      );
+      const cy = Math.cos(gunYaw);
+      const sy = Math.sin(gunYaw);
+      const sx = soldierX + muzzleLocalX * cy + muzzleLocalZ * sy;
+      const sz = soldierZ - muzzleLocalX * sy + muzzleLocalZ * cy;
+
+      // Compensate rear ranks for forward march speed so all 1..40 crowd ranks meet at the exact same focal tip!
+      const rowLagZ = Math.max(0, sz - frontMuzzleZ);
+      const marchApexZ = marchingForward
+        ? focalZ - rowLagZ * (SQUAD_MARCH_SPEED / speed)
+        : focalZ;
+      const tipJitter =
+        apexJitterMeters > 0
+          ? (((soldierIdx * 7 + e * 3) % 5) - 2) * 0.5 * apexJitterMeters
+          : 0;
+      const tipX = focalX + tipJitter;
 
       if (twinStream) {
-        const angLeft = aimYawRadians - spreadRad;
+        const leftMuzzleX = sx - 0.085;
+        computeConvergingShotTrajectory(
+          leftMuzzleX,
+          sz,
+          tipX,
+          marchApexZ,
+          speed,
+          _shotTraj
+        );
         bulletPool.spawn(
-          sx - 0.08,
+          leftMuzzleX,
           muzzleY,
           sz,
-          Math.sin(angLeft) * speed,
-          -Math.cos(angLeft) * speed,
+          _shotTraj.vx,
+          _shotTraj.vz,
           damagePerProjectile,
           spec.pierceCount,
-          maxAge,
+          _shotTraj.maxAge,
           bulletScale,
           this.weaponTier,
           spec.colorHex
         );
 
-        const angRight = aimYawRadians + spreadRad;
-        bulletPool.spawn(
-          sx + 0.08,
-          muzzleY,
+        const rightMuzzleX = sx + 0.085;
+        computeConvergingShotTrajectory(
+          rightMuzzleX,
           sz,
-          Math.sin(angRight) * speed,
-          -Math.cos(angRight) * speed,
+          tipX,
+          marchApexZ,
+          speed,
+          _shotTraj
+        );
+        const leadTime = Math.min(_shotTraj.maxAge * 0.42, 0.36 / speed);
+        bulletPool.spawn(
+          rightMuzzleX + _shotTraj.vx * leadTime,
+          muzzleY,
+          sz + _shotTraj.vz * leadTime,
+          _shotTraj.vx,
+          _shotTraj.vz,
           damagePerProjectile,
           spec.pierceCount,
-          maxAge,
+          Math.max(0.05, _shotTraj.maxAge - leadTime),
           bulletScale,
           this.weaponTier,
           spec.colorHex
         );
       } else {
-        const jitterAngle =
-          spreadRad > 0 ? (((soldierIdx * 7 + e * 3) % 9) - 4) * 0.25 * spreadRad : 0;
-        const totalAngle = aimYawRadians + jitterAngle;
+        computeConvergingShotTrajectory(sx, sz, tipX, marchApexZ, speed, _shotTraj);
         bulletPool.spawn(
           sx,
           muzzleY,
           sz,
-          Math.sin(totalAngle) * speed,
-          -Math.cos(totalAngle) * speed,
+          _shotTraj.vx,
+          _shotTraj.vz,
           damagePerProjectile,
           spec.pierceCount,
-          maxAge,
+          _shotTraj.maxAge,
           bulletScale,
           this.weaponTier,
           spec.colorHex

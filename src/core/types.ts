@@ -14,7 +14,7 @@ export type GameMode = 'CAMPAIGN' | 'ENDLESS';
 
 export type WeaponTierId = 1 | 2 | 3 | 4 | 5;
 
-export type ProjectilePattern = 'SINGLE' | 'BURST_2' | 'TWIN_SPREAD' | 'PIERCING';
+export type ProjectilePattern = 'SINGLE' | 'BURST_2' | 'TWIN_CONVERGE' | 'PIERCING';
 
 export interface WeaponSpec {
   readonly tier: WeaponTierId;

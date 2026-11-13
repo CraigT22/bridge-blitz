@@ -18,6 +18,7 @@ import {
 } from '../math/progressionMath';
 import {
   COMMANDO_MODEL_SCALE,
+  FOCAL_CONVERGENCE_DISTANCE,
   MAX_VISUAL_SOLDIERS,
   OVERFLOW_SQUAD_COIN_BONUS,
   resolveWeaponPickup,
@@ -623,6 +624,45 @@ export class BridgeBlitzGame {
     return 'RUN_TACTICAL';
   }
 
+  private focalTargetX = 0;
+  private focalTargetZ = -FOCAL_CONVERGENCE_DISTANCE;
+
+  private updateFocalTarget(): void {
+    const state = this.stateMachine.state;
+    const effectiveState =
+      state === 'PAUSED' ? this.stateMachine.resumeTargetState : state;
+
+    if (
+      effectiveState === 'BOSS_FIGHT' &&
+      this.boss.active &&
+      !this.boss.defeated
+    ) {
+      this.focalTargetX = this.boss.x;
+      this.focalTargetZ = Math.min(this.squad.z - 5.5, this.boss.z - 0.15);
+      return;
+    }
+
+    const vis = Math.min(this.squad.logicalCount, MAX_VISUAL_SOLDIERS);
+    const muzzleOffsetX = 0.255 * COMMANDO_MODEL_SCALE;
+    this.focalTargetX =
+      vis === 1
+        ? this.squad.soldierWorldX[0] + muzzleOffsetX
+        : this.squad.x + muzzleOffsetX * 0.35;
+
+    if (
+      effectiveState === 'RUNNING' &&
+      this.boss.active &&
+      !this.boss.defeated &&
+      this.squad.z - this.boss.z <= FOCAL_CONVERGENCE_DISTANCE + 1.5 &&
+      Math.abs(this.squad.x - this.boss.x) <= 2.8
+    ) {
+      this.focalTargetX = this.boss.x;
+      this.focalTargetZ = Math.min(this.squad.z - 6.0, this.boss.z - 0.15);
+    } else {
+      this.focalTargetZ = this.squad.z - FOCAL_CONVERGENCE_DISTANCE;
+    }
+  }
+
   private fixedUpdate(rawDt: number): void {
     const dt = rawDt * this.stateMachine.timeScale;
     const state = this.stateMachine.state;
@@ -669,14 +709,19 @@ export class BridgeBlitzGame {
 
     if (state === 'PRE_RUN') {
       this.squad.updateMovement(dt, 0, false, false);
+      this.updateFocalTarget();
     } else if (state === 'RUNNING') {
-      this.squad.updateMovement(dt, lateralDelta, !haltedByBrute, true);
+      const marchingForward = !haltedByBrute;
+      this.squad.updateMovement(dt, lateralDelta, marchingForward, true);
+      this.updateFocalTarget();
       const fired = this.squad.updateAutoFire(
         dt,
         getFireRateMultiplier(save.upgrades.fireRate),
         getBulletPowerMultiplier(save.upgrades.bulletPower),
         this.bulletPool,
-        0
+        this.focalTargetX,
+        this.focalTargetZ,
+        marchingForward
       );
       if (fired) {
         this.sound.playGunfire(this.squad.weaponTier);
@@ -698,12 +743,15 @@ export class BridgeBlitzGame {
       }
     } else if (state === 'BOSS_FIGHT') {
       this.squad.updateMovement(dt, lateralDelta, false, true);
+      this.updateFocalTarget();
       const fired = this.squad.updateAutoFire(
         dt,
         getFireRateMultiplier(save.upgrades.fireRate),
         getBulletPowerMultiplier(save.upgrades.bulletPower),
         this.bulletPool,
-        bossAimYaw
+        this.focalTargetX,
+        this.focalTargetZ,
+        false
       );
       if (fired) {
         this.sound.playGunfire(this.squad.weaponTier);
@@ -1266,8 +1314,13 @@ export class BridgeBlitzGame {
         }
       }
 
-      // 5. Check Boss Entity
-      if (!consumedHit && this.stateMachine.state === 'BOSS_FIGHT' && this.boss.active) {
+      // 5. Check Boss Entity (including final approach at 95%-100% so bullets strike the visible Boss!)
+      const canHitBoss =
+        this.boss.active &&
+        !this.boss.defeated &&
+        (this.stateMachine.state === 'BOSS_FIGHT' ||
+          (this.stateMachine.state === 'RUNNING' && this.squad.z - this.boss.z <= 28));
+      if (!consumedHit && canHitBoss) {
         const bossRes = this.boss.tryBulletHit(
           bx,
           bz,
@@ -1602,6 +1655,8 @@ export class BridgeBlitzGame {
     const celebrateHop =
       this.celebrateHopTimer > 0 ? 1 - this.celebrateHopTimer / 0.38 : 0;
 
+    this.updateFocalTarget();
+
     this.batchRenderer.syncPlayerSoldiers(
       this.squad.logicalCount,
       this.squad.soldierWorldX,
@@ -1613,7 +1668,9 @@ export class BridgeBlitzGame {
       this.squad.recoilImpulse,
       this.squad.barrelSpinAngle,
       this.commandoFacingYaw,
-      celebrateHop
+      celebrateHop,
+      this.focalTargetX,
+      this.focalTargetZ
     );
 
     this.batchRenderer.beginEnemyFrame();

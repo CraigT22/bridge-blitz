@@ -61,10 +61,10 @@ const CHASSIS_LABELS: Readonly<Record<BossChassisId, string>> = {
 };
 
 const PATTERN_LABELS: Readonly<Record<string, string>> = {
-  SINGLE: 'PRECISION AUTOMATIC',
-  BURST_2: '2-ROUND TACTICAL BURST',
-  TWIN_SPREAD: '6-BARREL TWIN STREAM',
-  PIERCING: 'PLASMA PIERCE (×2)',
+  SINGLE: 'FOCUSED CONE AUTO',
+  BURST_2: '2-ROUND FOCUSED BURST',
+  TWIN_CONVERGE: '6-BARREL FOCUSED CONE',
+  PIERCING: 'PLASMA PIERCE CONE (×2)',
 };
 
 const _projScratch: ScreenProjection = { x: 0, y: 0, visible: false };

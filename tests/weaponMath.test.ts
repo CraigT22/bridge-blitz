@@ -51,4 +51,44 @@ describe('weaponMath', () => {
 
     expect(dps40 / dps1).toBeCloseTo(computeEffectiveFiringSquad(40), 4);
   });
+
+  it('converges left, center, and right crowd muzzles to a single forward focal point with zero crossover past the tip', async () => {
+    const {
+      computeConvergingShotTrajectory,
+      FOCAL_CONVERGENCE_DISTANCE,
+      WEAPON_SPECS,
+    } = await import('../src/math/weaponMath');
+    const { BulletPool } = await import('../src/core/ObjectPool');
+    const { SquadController } = await import('../src/entities/SquadController');
+
+    expect(WEAPON_SPECS[4].pattern).toBe('TWIN_CONVERGE');
+
+    const outLeft = { vx: 0, vz: 0, maxAge: 0 };
+    const outRight = { vx: 0, vz: 0, maxAge: 0 };
+    computeConvergingShotTrajectory(-1.75, 0, 0, -FOCAL_CONVERGENCE_DISTANCE, 40, outLeft);
+    computeConvergingShotTrajectory(1.75, 0, 0, -FOCAL_CONVERGENCE_DISTANCE, 40, outRight);
+
+    expect(outLeft.vx).toBeGreaterThan(0);
+    expect(outRight.vx).toBeLessThan(0);
+    expect(outLeft.vx).toBeCloseTo(-outRight.vx, 5);
+
+    // At t = maxAge, both left and right flank rays meet at x = 0 and never cross over for 0 <= t < maxAge
+    expect(-1.75 + outLeft.vx * outLeft.maxAge).toBeCloseTo(0, 5);
+    expect(1.75 + outRight.vx * outRight.maxAge).toBeCloseTo(0, 5);
+    expect(-1.75 + outLeft.vx * (outLeft.maxAge * 0.99)).toBeLessThan(0);
+    expect(1.75 + outRight.vx * (outRight.maxAge * 0.99)).toBeGreaterThan(0);
+
+    // Full 40-commando Lv4 Minigun crowd volley converges every single bullet inward toward focalX = 0
+    const squad = new SquadController();
+    squad.resetForRun(40);
+    squad.weaponTier = 4;
+    const pool = new BulletPool(256);
+    squad.updateAutoFire(0.2, 1.0, 1.0, pool, 0, -FOCAL_CONVERGENCE_DISTANCE, false);
+
+    expect(pool.activeCount).toBe(52);
+    for (let i = 0; i < pool.activeCount; i++) {
+      const endX = pool.x[i] + pool.vx[i] * pool.maxAge[i];
+      expect(Math.abs(endX)).toBeLessThanOrEqual(0.06);
+    }
+  });
 });

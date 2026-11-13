@@ -8,8 +8,36 @@ export const MAX_ACTIVE_VOLLEY_EMITTERS = 26;
 export const OVERFLOW_SQUAD_COIN_BONUS = 10;
 export const COMMANDO_MODEL_SCALE = 1.02;
 export const BASE_SOLDIER_BULLET_DAMAGE = 5.2;
+export const FOCAL_CONVERGENCE_DISTANCE = 23.5;
 
-const DEG_TO_RAD = Math.PI / 180;
+export interface ConvergingShotTrajectory {
+  vx: number;
+  vz: number;
+  maxAge: number;
+}
+
+/**
+ * Computes inward-angled velocity `(vx, vz)` and exact apex lifetime `maxAge` from a commando's
+ * gun muzzle `(muzzleX, muzzleZ)` to a single forward focal apex `(focalX, focalZ)` so:
+ * 1. All guns across 1..40 commandos (including Lv4 Minigun twin rotary streams) come to a sharp point, and
+ * 2. `maxAge = dist / speed` terminates bullets right at the apex so rays NEVER cross over past the tip!
+ */
+export function computeConvergingShotTrajectory(
+  muzzleX: number,
+  muzzleZ: number,
+  focalX: number,
+  focalZ: number,
+  projectileSpeed: number,
+  out: ConvergingShotTrajectory
+): void {
+  const dx = focalX - muzzleX;
+  const dz = Math.min(-2.5, focalZ - muzzleZ);
+  const dist = Math.hypot(dx, dz);
+  const safeSpeed = Math.max(1, projectileSpeed);
+  out.vx = (dx / dist) * safeSpeed;
+  out.vz = (dz / dist) * safeSpeed;
+  out.maxAge = dist / safeSpeed;
+}
 
 export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
   1: {
@@ -21,7 +49,7 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     damageMultiplier: 1.0,
     projectileSpeed: 31,
     pierceCount: 1,
-    spreadRadians: 0.4 * DEG_TO_RAD,
+    spreadRadians: 0.03,
     colorHex: 0x1ee6ff,
     bossArmorFactor: 1.0,
   },
@@ -34,7 +62,7 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     damageMultiplier: 1.12,
     projectileSpeed: 35,
     pierceCount: 1,
-    spreadRadians: 1.2 * DEG_TO_RAD,
+    spreadRadians: 0.045,
     colorHex: 0x08dcff,
     bossArmorFactor: 1.0,
   },
@@ -47,7 +75,7 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     damageMultiplier: 1.88,
     projectileSpeed: 38,
     pierceCount: 1,
-    spreadRadians: 1.0 * DEG_TO_RAD,
+    spreadRadians: 0.04,
     colorHex: 0xff7d24,
     bossArmorFactor: 1.0,
   },
@@ -55,12 +83,12 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     tier: 4,
     name: 'Rotary Minigun',
     shortBadge: 'Lv4 MINIGUN',
-    pattern: 'TWIN_SPREAD',
+    pattern: 'TWIN_CONVERGE',
     fireRate: 7.6,
     damageMultiplier: 1.82,
     projectileSpeed: 40,
     pierceCount: 1,
-    spreadRadians: 2.8 * DEG_TO_RAD,
+    spreadRadians: 0.04,
     colorHex: 0xff6614,
     bossArmorFactor: 1.0,
   },
@@ -73,7 +101,7 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     damageMultiplier: 3.25,
     projectileSpeed: 44,
     pierceCount: 2,
-    spreadRadians: 0.8 * DEG_TO_RAD,
+    spreadRadians: 0.03,
     colorHex: 0x18f4ff,
     bossArmorFactor: 1.35,
   },
@@ -147,7 +175,7 @@ export function computeEffectiveFiringSquad(logicalSquad: number): number {
 }
 
 /**
- * Computes 1:1 per-commando emitter streams and projectile damage for our 1-10 elite commando squad.
+ * Computes 1:1 per-commando emitter streams and projectile damage for our 1-40 elite commando crowd.
  */
 export function computeSquadVolleyPlan(
   logicalSquad: number,
@@ -171,7 +199,7 @@ export function computeSquadVolleyPlan(
   const activeEmitters = Math.min(clampedSquad, MAX_ACTIVE_VOLLEY_EMITTERS);
 
   const projectilesPerEmitter =
-    spec.pattern === 'BURST_2' || spec.pattern === 'TWIN_SPREAD' ? 2 : 1;
+    spec.pattern === 'BURST_2' || spec.pattern === 'TWIN_CONVERGE' ? 2 : 1;
 
   const perEventDamage =
     BASE_SOLDIER_BULLET_DAMAGE * bulletPowerMultiplier * spec.damageMultiplier;
