@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { MidBridgeBruteDefinition } from '../core/types';
+import type { MidBridgeBruteDefinition, SkinThemeId } from '../core/types';
 import { computeSquadOuterRadius } from '../math/formationMath';
 import { formatObstacleHp } from '../math/progressionMath';
 import { attachWeldedOutlineNormals } from '../rendering/ProceduralGeometries';
@@ -199,7 +199,10 @@ export class MidBridgeBrute {
   public coinReward = 450;
   public name = 'SIEGE GOLIATH';
 
+  private skinTheme: SkinThemeId = 'TACTICAL';
   private readonly bodyRig = new THREE.Group();
+  private readonly tacticalParts: THREE.Object3D[] = [];
+  private readonly unicornParts: THREE.Object3D[] = [];
   private readonly leftLegPivot = new THREE.Group();
   private readonly rightLegPivot = new THREE.Group();
   private readonly clubArmPivot = new THREE.Group();
@@ -270,18 +273,55 @@ export class MidBridgeBrute {
     });
     const visorGlowMat = new THREE.MeshBasicMaterial({ color: 0xffbe32 });
 
+    // Giant Varsity Boy Champ materials (Royal-Blue & Kelly-Green sporty armor + Foam Bopper Hammer)
+    const boyBlueMat = new THREE.MeshStandardMaterial({
+      color: 0x1a66ff,
+      roughness: 0.34,
+      metalness: 0.16,
+    });
+    const boyGreenMat = new THREE.MeshStandardMaterial({
+      color: 0x1ecb52,
+      roughness: 0.34,
+      metalness: 0.16,
+    });
+    const boyNavyShortsMat = new THREE.MeshStandardMaterial({
+      color: 0x163868,
+      roughness: 0.42,
+      metalness: 0.12,
+    });
+    const boySkinMat = new THREE.MeshStandardMaterial({
+      color: 0xffcba6,
+      roughness: 0.48,
+      metalness: 0.05,
+    });
+    const boyWhiteMat = new THREE.MeshStandardMaterial({
+      color: 0xf4f9ff,
+      roughness: 0.32,
+      metalness: 0.12,
+    });
+    const boyOrangeFoamMat = new THREE.MeshStandardMaterial({
+      color: 0xff7a1c,
+      emissive: 0x521c00,
+      roughness: 0.28,
+      metalness: 0.14,
+    });
+
     this.flashMaterials.push(
       obsidianVioletMat,
       titaniumArmorMat,
-      voltGoldMat
+      voltGoldMat,
+      boyBlueMat,
+      boyGreenMat
     );
 
-    // --- HEAVY FACETED MECHA LEGS ---
+    // --- HEAVY FACETED MECHA LEGS (TACTICAL) + VARSITY BOY SNEAKER LEGS (UNICORN) ---
     for (const [sideSign, legPivot] of [
       [-1, this.leftLegPivot],
       [1, this.rightLegPivot],
     ] as const) {
       legPivot.position.set(sideSign * 0.48, 1.18, 0);
+
+      const tacLeg = new THREE.Group();
       const thigh = new THREE.Mesh(
         new THREE.BoxGeometry(0.50, 0.68, 0.52),
         obsidianVioletMat
@@ -306,26 +346,69 @@ export class MidBridgeBrute {
         darkIronMat
       );
       boot.position.set(0, -1.05, 0.12);
+      tacLeg.add(thigh, kneeSpike, shin, boot);
+      this.tacticalParts.push(tacLeg);
 
-      legPivot.add(thigh, kneeSpike, shin, boot);
+      const uniLeg = new THREE.Group();
+      const boyShortsLeg = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.30, 0.28, 0.52, 8),
+        boyNavyShortsMat
+      );
+      boyShortsLeg.position.set(0, -0.26, 0);
+
+      const boyKneePad = new THREE.Mesh(
+        new THREE.BoxGeometry(0.38, 0.24, 0.38),
+        sideSign < 0 ? boyBlueMat : boyGreenMat
+      );
+      boyKneePad.position.set(0, -0.54, 0.10);
+
+      const boyCalf = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.22, 0.19, 0.36, 8),
+        boySkinMat
+      );
+      boyCalf.position.set(0, -0.74, 0);
+
+      const boySock = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.23, 0.22, 0.20, 8),
+        boyWhiteMat
+      );
+      boySock.position.set(0, -0.90, 0);
+
+      const boySneaker = new THREE.Mesh(
+        new THREE.BoxGeometry(0.52, 0.28, 0.80),
+        sideSign < 0 ? boyGreenMat : boyBlueMat
+      );
+      boySneaker.position.set(0, -1.05, 0.13);
+
+      const sneakerSole = new THREE.Mesh(
+        new THREE.BoxGeometry(0.56, 0.10, 0.84),
+        boyWhiteMat
+      );
+      sneakerSole.position.set(0, -1.15, 0.13);
+
+      uniLeg.add(boyShortsLeg, boyKneePad, boyCalf, boySock, boySneaker, sneakerSole);
+      this.unicornParts.push(uniLeg);
+
+      legPivot.add(tacLeg, uniLeg);
       this.bodyRig.add(legPivot);
     }
 
-    // --- HULKING MECHA TORSO, REACTOR CORE & SPIKED PAULDRONS ---
+    // --- HULKING MECHA TORSO, REACTOR CORE & HORNED HELM (TACTICAL) ---
+    const tacticalTorsoGroup = new THREE.Group();
     const pelvis = new THREE.Mesh(
       new THREE.CylinderGeometry(0.70, 0.60, 0.44, 6),
       darkIronMat
     );
     pelvis.scale.set(1.18, 1, 0.90);
     pelvis.position.set(0, 1.28, 0);
-    this.bodyRig.add(pelvis);
+    tacticalTorsoGroup.add(pelvis);
 
     const beltCore = new THREE.Mesh(
       new THREE.BoxGeometry(0.50, 0.22, 0.20),
       voltGoldMat
     );
     beltCore.position.set(0, 1.32, 0.58);
-    this.bodyRig.add(beltCore);
+    tacticalTorsoGroup.add(beltCore);
 
     const torso = new THREE.Mesh(
       new THREE.CylinderGeometry(0.98, 0.70, 1.26, 6),
@@ -333,14 +416,14 @@ export class MidBridgeBrute {
     );
     torso.scale.set(1.24, 1, 0.90);
     torso.position.set(0, 2.02, 0);
-    this.bodyRig.add(torso);
+    tacticalTorsoGroup.add(torso);
 
     const siegeChestPlate = new THREE.Mesh(
       new THREE.BoxGeometry(1.62, 0.94, 0.64),
       crimsonMechaMat
     );
     siegeChestPlate.position.set(0, 2.08, 0.24);
-    this.bodyRig.add(siegeChestPlate);
+    tacticalTorsoGroup.add(siegeChestPlate);
 
     const chestReactor = new THREE.Mesh(
       new THREE.CylinderGeometry(0.24, 0.24, 0.14, 6),
@@ -348,7 +431,7 @@ export class MidBridgeBrute {
     );
     chestReactor.rotation.x = Math.PI / 2;
     chestReactor.position.set(0, 2.38, 0.56);
-    this.bodyRig.add(chestReactor);
+    tacticalTorsoGroup.add(chestReactor);
 
     for (const sideSign of [-1, 1]) {
       const pauldron = new THREE.Mesh(
@@ -357,7 +440,7 @@ export class MidBridgeBrute {
       );
       pauldron.rotation.z = -sideSign * 0.20;
       pauldron.position.set(sideSign * 1.22, 2.48, 0.04);
-      this.bodyRig.add(pauldron);
+      tacticalTorsoGroup.add(pauldron);
 
       const pauldronTrim = new THREE.Mesh(
         new THREE.BoxGeometry(0.88, 0.14, 0.92),
@@ -365,7 +448,7 @@ export class MidBridgeBrute {
       );
       pauldronTrim.rotation.z = -sideSign * 0.20;
       pauldronTrim.position.set(sideSign * 1.24, 2.76, 0.04);
-      this.bodyRig.add(pauldronTrim);
+      tacticalTorsoGroup.add(pauldronTrim);
 
       const spike = new THREE.Mesh(
         new THREE.ConeGeometry(0.16, 0.52, 5),
@@ -373,16 +456,15 @@ export class MidBridgeBrute {
       );
       spike.rotation.z = -sideSign * 0.42;
       spike.position.set(sideSign * 1.42, 3.04, 0.04);
-      this.bodyRig.add(spike);
+      tacticalTorsoGroup.add(spike);
     }
 
-    // --- FACETED 6-SIDED HORNED SIEGE BATTLE-HELM ---
     const blastCollar = new THREE.Mesh(
       new THREE.CylinderGeometry(0.66, 0.76, 0.28, 6),
       darkIronMat
     );
     blastCollar.position.set(0, 2.66, 0.06);
-    this.bodyRig.add(blastCollar);
+    tacticalTorsoGroup.add(blastCollar);
 
     const helmShell = new THREE.Mesh(
       new THREE.CylinderGeometry(0.56, 0.68, 0.68, 6),
@@ -390,14 +472,14 @@ export class MidBridgeBrute {
     );
     helmShell.scale.set(1.08, 1.0, 1.12);
     helmShell.position.set(0, 3.04, 0.06);
-    this.bodyRig.add(helmShell);
+    tacticalTorsoGroup.add(helmShell);
 
     const helmCrest = new THREE.Mesh(
       new THREE.BoxGeometry(0.22, 0.28, 0.88),
       titaniumArmorMat
     );
     helmCrest.position.set(0, 3.42, 0.04);
-    this.bodyRig.add(helmCrest);
+    tacticalTorsoGroup.add(helmCrest);
 
     for (const sideSign of [-1, 1]) {
       const horn = new THREE.Mesh(
@@ -407,7 +489,7 @@ export class MidBridgeBrute {
       horn.rotation.z = -sideSign * 0.52;
       horn.rotation.x = -0.18;
       horn.position.set(sideSign * 0.68, 3.48, -0.02);
-      this.bodyRig.add(horn);
+      tacticalTorsoGroup.add(horn);
     }
 
     const visorSlit = new THREE.Mesh(
@@ -415,10 +497,111 @@ export class MidBridgeBrute {
       visorGlowMat
     );
     visorSlit.position.set(0, 2.98, 0.66);
-    this.bodyRig.add(visorSlit);
+    tacticalTorsoGroup.add(visorSlit);
 
-    // --- LEFT ARMORED SHIELD-GAUNTLET ARM ---
+    this.tacticalParts.push(tacticalTorsoGroup);
+    this.bodyRig.add(tacticalTorsoGroup);
+
+    // --- GIANT VARSITY BOY CHAMP TORSO & SKATE/BATTING HELMET (UNICORN) ---
+    const unicornTorsoGroup = new THREE.Group();
+    const boyHipShorts = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.72, 0.64, 0.44, 8),
+      boyNavyShortsMat
+    );
+    boyHipShorts.scale.set(1.16, 1, 0.90);
+    boyHipShorts.position.set(0, 1.28, 0);
+    unicornTorsoGroup.add(boyHipShorts);
+
+    const boyJerseyBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.94, 0.72, 1.24, 8),
+      boyBlueMat
+    );
+    boyJerseyBody.scale.set(1.20, 1, 0.90);
+    boyJerseyBody.position.set(0, 2.00, 0);
+    unicornTorsoGroup.add(boyJerseyBody);
+
+    const boyGreenVest = new THREE.Mesh(
+      new THREE.BoxGeometry(1.52, 0.94, 0.66),
+      boyGreenMat
+    );
+    boyGreenVest.position.set(0, 2.06, 0.20);
+    unicornTorsoGroup.add(boyGreenVest);
+
+    const boyChestStripe = new THREE.Mesh(
+      new THREE.BoxGeometry(1.56, 0.20, 0.70),
+      boyWhiteMat
+    );
+    boyChestStripe.position.set(0, 2.28, 0.21);
+    unicornTorsoGroup.add(boyChestStripe);
+
+    for (const sideSign of [-1, 1]) {
+      const sportPad = new THREE.Mesh(
+        new THREE.SphereGeometry(0.52, 10, 8),
+        sideSign < 0 ? boyGreenMat : boyBlueMat
+      );
+      sportPad.scale.set(1.18, 0.82, 1.05);
+      sportPad.position.set(sideSign * 1.18, 2.48, 0.04);
+      unicornTorsoGroup.add(sportPad);
+
+      const padStripe = new THREE.Mesh(
+        new THREE.BoxGeometry(0.74, 0.14, 0.76),
+        boyWhiteMat
+      );
+      padStripe.position.set(sideSign * 1.18, 2.58, 0.04);
+      unicornTorsoGroup.add(padStripe);
+    }
+
+    const boyHoodCollar = new THREE.Mesh(
+      new THREE.TorusGeometry(0.54, 0.14, 8, 12),
+      boyGreenMat
+    );
+    boyHoodCollar.rotation.x = Math.PI / 2;
+    boyHoodCollar.position.set(0, 2.64, 0.02);
+    unicornTorsoGroup.add(boyHoodCollar);
+
+    const boyHead = new THREE.Mesh(
+      new THREE.SphereGeometry(0.52, 12, 10),
+      boySkinMat
+    );
+    boyHead.position.set(0, 3.00, 0.08);
+    unicornTorsoGroup.add(boyHead);
+
+    const boyHelmetDome = new THREE.Mesh(
+      new THREE.SphereGeometry(0.60, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.62),
+      boyBlueMat
+    );
+    boyHelmetDome.position.set(0, 3.06, 0.06);
+    unicornTorsoGroup.add(boyHelmetDome);
+
+    const boyHelmetStripe = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.30, 1.12),
+      boyGreenMat
+    );
+    boyHelmetStripe.position.set(0, 3.48, 0.06);
+    unicornTorsoGroup.add(boyHelmetStripe);
+
+    const boyCapBrim = new THREE.Mesh(
+      new THREE.BoxGeometry(0.96, 0.12, 0.56),
+      boyGreenMat
+    );
+    boyCapBrim.rotation.x = 0.12;
+    boyCapBrim.position.set(0, 3.16, 0.56);
+    unicornTorsoGroup.add(boyCapBrim);
+
+    const boyGoggles = new THREE.Mesh(
+      new THREE.BoxGeometry(0.84, 0.22, 0.22),
+      visorGlowMat
+    );
+    boyGoggles.position.set(0, 3.00, 0.56);
+    unicornTorsoGroup.add(boyGoggles);
+
+    this.unicornParts.push(unicornTorsoGroup);
+    this.bodyRig.add(unicornTorsoGroup);
+
+    // --- LEFT ARMORED SHIELD-GAUNTLET ARM (TACTICAL + UNICORN) ---
     this.leftArmPivot.position.set(-1.28, 2.38, 0.06);
+
+    const tacLeftArm = new THREE.Group();
     const lUpper = new THREE.Mesh(
       new THREE.BoxGeometry(0.42, 0.66, 0.42),
       titaniumArmorMat
@@ -431,11 +614,38 @@ export class MidBridgeBrute {
     );
     lGauntlet.position.set(-0.16, -0.78, 0.38);
     lGauntlet.rotation.x = -0.55;
-    this.leftArmPivot.add(lUpper, lGauntlet);
+    tacLeftArm.add(lUpper, lGauntlet);
+    this.tacticalParts.push(tacLeftArm);
+
+    const uniLeftArm = new THREE.Group();
+    const boyLUpper = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.23, 0.20, 0.64, 8),
+      boyBlueMat
+    );
+    boyLUpper.position.set(-0.12, -0.34, 0.12);
+    boyLUpper.rotation.x = -0.38;
+    const boyLForearm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.20, 0.18, 0.52, 8),
+      boySkinMat
+    );
+    boyLForearm.position.set(-0.16, -0.76, 0.38);
+    boyLForearm.rotation.x = -0.55;
+    const boyBuckler = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.52, 0.52, 0.18, 8),
+      boyGreenMat
+    );
+    boyBuckler.rotation.z = Math.PI / 2;
+    boyBuckler.position.set(-0.38, -0.78, 0.42);
+    uniLeftArm.add(boyLUpper, boyLForearm, boyBuckler);
+    this.unicornParts.push(uniLeftArm);
+
+    this.leftArmPivot.add(tacLeftArm, uniLeftArm);
     this.bodyRig.add(this.leftArmPivot);
 
-    // --- RIGHT TWIN-BLADED PLASMA BREACHING GREATAXE ARM ---
+    // --- RIGHT WEAPON ARM: PLASMA GREATAXE (TACTICAL) + FOAM BOPPER HAMMER (UNICORN) ---
     this.clubArmPivot.position.set(1.28, 2.42, 0.08);
+
+    const tacClubArm = new THREE.Group();
     const rUpper = new THREE.Mesh(
       new THREE.BoxGeometry(0.44, 0.68, 0.44),
       titaniumArmorMat
@@ -475,7 +685,6 @@ export class MidBridgeBrute {
     axeHub.position.set(0, 1.88, 0);
     axeGroup.add(axeHub);
 
-    // Fore & aft glowing plasma crescent/wedge blades!
     for (const zSign of [-1, 1]) {
       const bladeBack = new THREE.Mesh(
         new THREE.BoxGeometry(0.14, 0.88, 0.58),
@@ -501,10 +710,68 @@ export class MidBridgeBrute {
     topSpike.position.set(0, 2.46, 0);
     axeGroup.add(topSpike);
 
-    this.clubArmPivot.add(rUpper, rGauntlet, axeGroup);
+    tacClubArm.add(rUpper, rGauntlet, axeGroup);
+    this.tacticalParts.push(tacClubArm);
+
+    const uniClubArm = new THREE.Group();
+    const boyRUpper = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.24, 0.20, 0.66, 8),
+      boyGreenMat
+    );
+    boyRUpper.position.set(0.14, -0.32, 0.16);
+    boyRUpper.rotation.x = -0.45;
+
+    const boyRForearm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.21, 0.19, 0.52, 8),
+      boySkinMat
+    );
+    boyRForearm.position.set(0.18, -0.74, 0.46);
+    boyRForearm.rotation.x = -0.65;
+
+    const bopperGroup = new THREE.Group();
+    bopperGroup.position.set(0.18, -0.82, 0.64);
+    bopperGroup.rotation.x = 0.88;
+
+    const bopperShaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.10, 0.09, 2.45, 8),
+      boyGreenMat
+    );
+    bopperShaft.position.set(0, 1.00, 0);
+    bopperGroup.add(bopperShaft);
+
+    const bopperGrip = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.125, 0.125, 0.58, 8),
+      boyWhiteMat
+    );
+    bopperGrip.position.set(0, 0.15, 0);
+    bopperGroup.add(bopperGrip);
+
+    const bopperDrum = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.46, 0.46, 1.38, 10),
+      boyBlueMat
+    );
+    bopperDrum.rotation.x = Math.PI / 2;
+    bopperDrum.position.set(0, 1.92, 0);
+    bopperGroup.add(bopperDrum);
+
+    for (const zSign of [-1, 1]) {
+      const foamBumper = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.50, 0.46, 0.24, 10),
+        boyOrangeFoamMat
+      );
+      foamBumper.rotation.x = Math.PI / 2;
+      foamBumper.position.set(0, 1.92, zSign * 0.72);
+      bopperGroup.add(foamBumper);
+    }
+
+    uniClubArm.add(boyRUpper, boyRForearm, bopperGroup);
+    this.unicornParts.push(uniClubArm);
+
+    this.clubArmPivot.add(tacClubArm, uniClubArm);
     this.bodyRig.add(this.clubArmPivot);
 
     attachBruteCelOutlines(this.bodyRig);
+    this.syncSkinRigVisibility();
     this.root.add(this.bodyRig);
 
     // --- WORLD-SPACE CHAMFERED TACTICAL CHEST HP BAR ---
@@ -521,7 +788,7 @@ export class MidBridgeBrute {
     this.chestBarMesh.position.set(0, 1.92, 0.96);
     this.root.add(this.chestBarMesh);
 
-    // --- TELEGRAPHED HEXAGONAL PLASMA AXE SMASH ZONE ---
+    // --- TELEGRAPHED HEXAGONAL PLASMA AXE / FOAM BOPPER SMASH ZONE ---
     this.dangerFillMat = new THREE.MeshBasicMaterial({
       color: 0xff245c,
       transparent: true,
@@ -566,6 +833,24 @@ export class MidBridgeBrute {
     this.root.add(this.dangerZoneGroup);
 
     this.root.visible = false;
+  }
+
+  public setSkinTheme(theme: SkinThemeId): void {
+    if (this.skinTheme === theme) {
+      return;
+    }
+    this.skinTheme = theme;
+    this.syncSkinRigVisibility();
+  }
+
+  private syncSkinRigVisibility(): void {
+    const isUnicorn = this.skinTheme === 'UNICORN';
+    for (let i = 0; i < this.tacticalParts.length; i++) {
+      this.tacticalParts[i].visible = !isUnicorn;
+    }
+    for (let i = 0; i < this.unicornParts.length; i++) {
+      this.unicornParts[i].visible = isUnicorn;
+    }
   }
 
   public configure(def: MidBridgeBruteDefinition | undefined, initialX = 0): void {

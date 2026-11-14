@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import type { GateOperator, WeaponTierId } from '../core/types';
+import type { GateOperator, SkinThemeId, WeaponTierId } from '../core/types';
 import { formatGateLabel, isNegativeGateState } from '../math/gateMath';
 import { formatObstacleHp } from '../math/progressionMath';
-import { WEAPON_SPECS } from '../math/weaponMath';
+import { getWeaponDisplaySpec } from '../math/weaponMath';
 
 function traceChamferRect(
   ctx: CanvasRenderingContext2D,
@@ -230,32 +230,46 @@ export class EditableArcadeHpTexture {
 
 export class EditableTirePlaqueTexture extends EditableArcadeHpTexture {}
 
-export function createStaticWeaponBadgeTexture(tier: WeaponTierId): THREE.CanvasTexture {
+const _badgeTexCache = new Map<string, THREE.CanvasTexture>();
+
+export function createStaticWeaponBadgeTexture(
+  tier: WeaponTierId,
+  skinTheme: SkinThemeId = 'TACTICAL'
+): THREE.CanvasTexture {
+  const cacheKey = `${skinTheme}:${tier}`;
+  const cached = _badgeTexCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const canvas = document.createElement('canvas');
-  canvas.width = 320;
+  canvas.width = 336;
   canvas.height = 96;
   const ctx = canvas.getContext('2d');
   if (!ctx) {
     throw new Error('2D canvas context unavailable');
   }
 
-  const spec = WEAPON_SPECS[tier];
+  const spec = getWeaponDisplaySpec(tier, skinTheme);
   const hex = `#${spec.colorHex.toString(16).padStart(6, '0')}`;
 
-  traceChamferRect(ctx, 8, 10, 304, 76, 16);
-  ctx.fillStyle = 'rgba(8, 15, 26, 0.94)';
+  traceChamferRect(ctx, 8, 10, 320, 76, 16);
+  ctx.fillStyle = skinTheme === 'UNICORN' ? 'rgba(34, 10, 44, 0.94)' : 'rgba(8, 15, 26, 0.94)';
   ctx.fill();
   ctx.lineWidth = 5;
   ctx.strokeStyle = hex;
   ctx.stroke();
 
+  const badgeText = spec.shortBadge.toUpperCase();
+  const fontSize = badgeText.length >= 13 ? 30 : badgeText.length >= 11 ? 33 : 35;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = '900 35px "Segoe UI", Roboto, system-ui, sans-serif';
+  ctx.font = `900 ${fontSize}px "Segoe UI", Roboto, system-ui, sans-serif`;
   ctx.fillStyle = hex;
-  ctx.fillText(spec.shortBadge.toUpperCase(), 160, 49);
+  ctx.fillText(badgeText, 168, 49);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  _badgeTexCache.set(cacheKey, tex);
   return tex;
 }

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import type { BossChassisId, BossDefinition, WeaponTierId } from '../core/types';
-import { WEAPON_SPECS } from '../math/weaponMath';
+import type { BossChassisId, BossDefinition, SkinThemeId, WeaponTierId } from '../core/types';
+import { getWeaponDisplaySpec } from '../math/weaponMath';
 import {
   createAllBossChassisRigs,
   type BossChassisRig,
@@ -40,11 +40,12 @@ export class SceneManager {
   private readonly skyUniforms: { uTime: { value: number } };
 
   // Self-contained 3D Armory Showcase Stage (single-pass forward rendered!)
+  private skinTheme: SkinThemeId = 'TACTICAL';
   private readonly armoryRoot = new THREE.Group();
   private readonly armoryTurntable = new THREE.Group();
   private readonly armoryRingMat: THREE.MeshBasicMaterial;
   private readonly armoryOuterRing: THREE.Mesh;
-  private readonly armoryWeapons: Record<WeaponTierId, ShowcaseWeaponRig>;
+  private readonly armoryWeaponsByTheme: Record<SkinThemeId, Record<WeaponTierId, ShowcaseWeaponRig>>;
   private readonly armoryBosses: Record<BossChassisId, BossChassisRig>;
   private armoryMode: 'WEAPONS' | 'BOSSES' = 'WEAPONS';
   private armoryWeaponTier: WeaponTierId = 1;
@@ -203,20 +204,27 @@ export class SceneManager {
 
     this.armoryRoot.add(this.armoryTurntable);
 
-    this.armoryWeapons = {
-      1: createShowcaseWeaponGroup(1),
-      2: createShowcaseWeaponGroup(2),
-      3: createShowcaseWeaponGroup(3),
-      4: createShowcaseWeaponGroup(4),
-      5: createShowcaseWeaponGroup(5),
+    const buildArmoryWeapons = (theme: SkinThemeId): Record<WeaponTierId, ShowcaseWeaponRig> => ({
+      1: createShowcaseWeaponGroup(1, theme),
+      2: createShowcaseWeaponGroup(2, theme),
+      3: createShowcaseWeaponGroup(3, theme),
+      4: createShowcaseWeaponGroup(4, theme),
+      5: createShowcaseWeaponGroup(5, theme),
+    });
+
+    this.armoryWeaponsByTheme = {
+      TACTICAL: buildArmoryWeapons('TACTICAL'),
+      UNICORN: buildArmoryWeapons('UNICORN'),
     };
-    for (const t of [1, 2, 3, 4, 5] as const) {
-      const w = this.armoryWeapons[t];
-      const scale = t === 1 ? 1.85 : t === 2 ? 1.55 : 1.38;
-      w.root.scale.setScalar(scale);
-      w.root.position.set(0, 0.18, 0);
-      w.root.rotation.z = 0.10;
-      this.armoryTurntable.add(w.root);
+    for (const theme of ['TACTICAL', 'UNICORN'] as const) {
+      for (const t of [1, 2, 3, 4, 5] as const) {
+        const w = this.armoryWeaponsByTheme[theme][t];
+        const scale = t === 1 ? 1.85 : t === 2 ? 1.55 : 1.38;
+        w.root.scale.setScalar(scale);
+        w.root.position.set(0, 0.18, 0);
+        w.root.rotation.z = 0.10;
+        this.armoryTurntable.add(w.root);
+      }
     }
 
     this.armoryBosses = createAllBossChassisRigs();
@@ -257,11 +265,24 @@ export class SceneManager {
     this.applyViewportFraming();
   };
 
+  public setSkinTheme(theme: SkinThemeId): void {
+    if (this.skinTheme === theme) {
+      return;
+    }
+    this.skinTheme = theme;
+    if (this.armoryMode === 'WEAPONS') {
+      this.armoryRingMat.color.setHex(
+        getWeaponDisplaySpec(this.armoryWeaponTier, this.skinTheme).colorHex
+      );
+    }
+    this.syncArmoryVisibility();
+  }
+
   public configureArmoryWeapon(tier: WeaponTierId): void {
     this.armoryMode = 'WEAPONS';
     this.armoryWeaponTier = tier;
     this.armoryYaw = -0.36;
-    this.armoryRingMat.color.setHex(WEAPON_SPECS[tier].colorHex);
+    this.armoryRingMat.color.setHex(getWeaponDisplaySpec(tier, this.skinTheme).colorHex);
     this.syncArmoryVisibility();
   }
 
@@ -284,9 +305,13 @@ export class SceneManager {
   }
 
   private syncArmoryVisibility(): void {
-    for (const t of [1, 2, 3, 4, 5] as const) {
-      this.armoryWeapons[t].root.visible =
-        this.armoryMode === 'WEAPONS' && t === this.armoryWeaponTier;
+    for (const theme of ['TACTICAL', 'UNICORN'] as const) {
+      for (const t of [1, 2, 3, 4, 5] as const) {
+        this.armoryWeaponsByTheme[theme][t].root.visible =
+          this.armoryMode === 'WEAPONS' &&
+          theme === this.skinTheme &&
+          t === this.armoryWeaponTier;
+      }
     }
     for (const key of Object.keys(this.armoryBosses) as BossChassisId[]) {
       this.armoryBosses[key].root.visible =
@@ -328,7 +353,7 @@ export class SceneManager {
       this.armoryOuterRing.rotation.z = -this.elapsedSkyTime * 0.5;
 
       if (this.armoryMode === 'WEAPONS') {
-        const wRig = this.armoryWeapons[this.armoryWeaponTier];
+        const wRig = this.armoryWeaponsByTheme[this.skinTheme][this.armoryWeaponTier];
         wRig.root.position.y = 0.18 + Math.sin(this.elapsedSkyTime * 2.2) * 0.05;
         if (wRig.spinCluster) {
           wRig.spinCluster.rotation.x += dt * 12.0;

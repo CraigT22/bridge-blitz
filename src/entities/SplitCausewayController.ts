@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import type {
+  SkinThemeId,
   SplitBarrelNodeDefinition,
   SplitCausewayDefinition,
   SplitNodeReward,
   WeaponTierId,
 } from '../core/types';
 import { computeSquadOuterRadius } from '../math/formationMath';
-import { WEAPON_SPECS } from '../math/weaponMath';
+import { getWeaponDisplaySpec } from '../math/weaponMath';
 import {
   createStaticWeaponBadgeTexture,
   EditableArcadeHpTexture,
@@ -67,8 +68,8 @@ interface LeftQueueVisualSlot {
   readonly glowHaloMat: THREE.MeshBasicMaterial;
   readonly glowHaloMesh: THREE.Mesh;
   readonly coinGroup: THREE.Group;
-  readonly weaponRigs: Record<WeaponTierId, ShowcaseWeaponRig>;
-  readonly weaponBadges: Record<WeaponTierId, THREE.Mesh>;
+  readonly weaponRigsByTheme: Record<SkinThemeId, Record<WeaponTierId, ShowcaseWeaponRig>>;
+  readonly weaponBadgesByTheme: Record<SkinThemeId, Record<WeaponTierId, THREE.Mesh>>;
   boundNodeIndex: number;
   flashTimer: number;
   flashCooldown: number;
@@ -106,6 +107,8 @@ export class SplitCausewayController {
 
   public readonly lastKill = { x: 0, z: 0, isHeavy: false, coinReward: 0 };
 
+  private skinTheme: SkinThemeId = 'TACTICAL';
+  private readonly pylonMat: THREE.MeshStandardMaterial;
   private queueDefs: ReadonlyArray<SplitBarrelNodeDefinition> = [];
   private readonly visualSlots: LeftQueueVisualSlot[] = [];
   private slideOffsetZ = 0;
@@ -123,7 +126,7 @@ export class SplitCausewayController {
   private celebrationTimer = 0;
 
   constructor() {
-    const pylonMat = new THREE.MeshStandardMaterial({
+    this.pylonMat = new THREE.MeshStandardMaterial({
       color: 0x18f2c8,
       emissive: 0x065448,
       roughness: 0.28,
@@ -149,6 +152,7 @@ export class SplitCausewayController {
       opacity: 0.48,
       depthWrite: false,
     });
+    const badgeGeo = new THREE.PlaneGeometry(2.12, 0.62);
 
     for (let s = 0; s < VISIBLE_QUEUE_SLOTS; s++) {
       const group = new THREE.Group();
@@ -210,11 +214,11 @@ export class SplitCausewayController {
       gateArchGroup.position.set(0, 0, -1.92);
 
       for (const px of [-LEFT_GATE_PANEL_WIDTH * 0.5 - 0.04, LEFT_GATE_PANEL_WIDTH * 0.5 + 0.04]) {
-        const post = new THREE.Mesh(postGeo, pylonMat);
+        const post = new THREE.Mesh(postGeo, this.pylonMat);
         post.position.set(px, 1.68, 0);
         const postOutline = new THREE.Mesh(postOutlineGeo, outlineMat);
         postOutline.position.set(px, 1.68, 0);
-        const cap = new THREE.Mesh(capGeo, pylonMat);
+        const cap = new THREE.Mesh(capGeo, this.pylonMat);
         cap.position.set(px, 3.42, 0);
         const capOutline = new THREE.Mesh(capOutlineGeo, outlineMat);
         capOutline.position.set(px, 3.42, 0);
@@ -254,46 +258,58 @@ export class SplitCausewayController {
       coinGroup.scale.setScalar(1.22);
       rewardPedestalGroup.add(coinGroup);
 
-      const weaponRigs: Record<WeaponTierId, ShowcaseWeaponRig> = {
-        1: createShowcaseWeaponGroup(1),
-        2: createShowcaseWeaponGroup(2),
-        3: createShowcaseWeaponGroup(3),
-        4: createShowcaseWeaponGroup(4),
-        5: createShowcaseWeaponGroup(5),
-      };
-      const badgeGeo = new THREE.PlaneGeometry(2.12, 0.62);
-      const weaponBadges: Record<WeaponTierId, THREE.Mesh> = {
+      const buildWeaponSet = (theme: SkinThemeId): Record<WeaponTierId, ShowcaseWeaponRig> => ({
+        1: createShowcaseWeaponGroup(1, theme),
+        2: createShowcaseWeaponGroup(2, theme),
+        3: createShowcaseWeaponGroup(3, theme),
+        4: createShowcaseWeaponGroup(4, theme),
+        5: createShowcaseWeaponGroup(5, theme),
+      });
+      const buildBadgeSet = (theme: SkinThemeId): Record<WeaponTierId, THREE.Mesh> => ({
         1: new THREE.Mesh(
           badgeGeo,
-          new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(1), transparent: true, depthWrite: false })
+          new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(1, theme), transparent: true, depthWrite: false })
         ),
         2: new THREE.Mesh(
           badgeGeo,
-          new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(2), transparent: true, depthWrite: false })
+          new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(2, theme), transparent: true, depthWrite: false })
         ),
         3: new THREE.Mesh(
           badgeGeo,
-          new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(3), transparent: true, depthWrite: false })
+          new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(3, theme), transparent: true, depthWrite: false })
         ),
         4: new THREE.Mesh(
           badgeGeo,
-          new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(4), transparent: true, depthWrite: false })
+          new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(4, theme), transparent: true, depthWrite: false })
         ),
         5: new THREE.Mesh(
           badgeGeo,
-          new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(5), transparent: true, depthWrite: false })
+          new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(5, theme), transparent: true, depthWrite: false })
         ),
+      });
+
+      const weaponRigsByTheme: Record<SkinThemeId, Record<WeaponTierId, ShowcaseWeaponRig>> = {
+        TACTICAL: buildWeaponSet('TACTICAL'),
+        UNICORN: buildWeaponSet('UNICORN'),
+      };
+      const weaponBadgesByTheme: Record<SkinThemeId, Record<WeaponTierId, THREE.Mesh>> = {
+        TACTICAL: buildBadgeSet('TACTICAL'),
+        UNICORN: buildBadgeSet('UNICORN'),
       };
 
-      for (const t of [1, 2, 3, 4, 5] as const) {
-        const rig = weaponRigs[t];
-        rig.root.scale.setScalar(1.66);
-        rig.root.rotation.z = 0.14;
-        rewardPedestalGroup.add(rig.root);
+      for (const theme of ['TACTICAL', 'UNICORN'] as const) {
+        for (const t of [1, 2, 3, 4, 5] as const) {
+          const rig = weaponRigsByTheme[theme][t];
+          rig.root.scale.setScalar(1.66);
+          rig.root.rotation.z = 0.14;
+          rig.root.visible = false;
+          rewardPedestalGroup.add(rig.root);
 
-        const badge = weaponBadges[t];
-        badge.position.set(0, 0.92, 0.12);
-        rewardPedestalGroup.add(badge);
+          const badge = weaponBadgesByTheme[theme][t];
+          badge.position.set(0, 0.92, 0.12);
+          badge.visible = false;
+          rewardPedestalGroup.add(badge);
+        }
       }
 
       group.add(rewardPedestalGroup);
@@ -313,8 +329,8 @@ export class SplitCausewayController {
         glowHaloMat,
         glowHaloMesh,
         coinGroup,
-        weaponRigs,
-        weaponBadges,
+        weaponRigsByTheme,
+        weaponBadgesByTheme,
         boundNodeIndex: -1,
         flashTimer: 0,
         flashCooldown: 0,
@@ -383,6 +399,23 @@ export class SplitCausewayController {
     this.celebrationGroup.visible = false;
     this.root.add(this.celebrationGroup);
     this.root.visible = false;
+  }
+
+  public setSkinTheme(theme: SkinThemeId): void {
+    if (this.skinTheme === theme) {
+      return;
+    }
+    this.skinTheme = theme;
+    if (theme === 'UNICORN') {
+      this.pylonMat.color.setHex(0xff66cc);
+      this.pylonMat.emissive.setHex(0x661248);
+    } else {
+      this.pylonMat.color.setHex(0x18f2c8);
+      this.pylonMat.emissive.setHex(0x065448);
+    }
+    if (this.active) {
+      this.bindLeftQueueSlots(false);
+    }
   }
 
   public configure(def: SplitCausewayDefinition, sectorBaseZ: number): void {
@@ -475,6 +508,8 @@ export class SplitCausewayController {
       }
     }
 
+    const isUnicorn = this.skinTheme === 'UNICORN';
+
     for (let s = 0; s < VISIBLE_QUEUE_SLOTS; s++) {
       const slot = this.visualSlots[s];
       const nodeIdx = this.queueCursor + s;
@@ -498,8 +533,8 @@ export class SplitCausewayController {
 
       const reward = nodeDef.reward;
       if (reward.kind === 'GATE') {
-        slot.barrelMat.color.setHex(0x6ceef0);
-        slot.hoopMat.color.setHex(0x8ec8ff);
+        slot.barrelMat.color.setHex(isUnicorn ? 0xff92db : 0x6ceef0);
+        slot.hoopMat.color.setHex(isUnicorn ? 0xffe4fa : 0x8ec8ff);
         slot.gateArchGroup.visible = true;
         slot.rewardPedestalGroup.visible = false;
         slot.gateTex.redrawIfDirty(
@@ -511,27 +546,33 @@ export class SplitCausewayController {
           LEFT_GATE_PANEL_WIDTH
         );
       } else if (reward.kind === 'WEAPON') {
-        slot.barrelMat.color.setHex(0xe2567c);
-        slot.hoopMat.color.setHex(0xffbe3b);
+        slot.barrelMat.color.setHex(isUnicorn ? 0xff70c2 : 0xe2567c);
+        slot.hoopMat.color.setHex(isUnicorn ? 0xffcf40 : 0xffbe3b);
         slot.gateArchGroup.visible = false;
         slot.rewardPedestalGroup.visible = true;
         slot.coinGroup.visible = false;
-        slot.glowHaloMat.color.setHex(WEAPON_SPECS[reward.weaponTier].colorHex);
-        for (const t of [1, 2, 3, 4, 5] as const) {
-          const match = t === reward.weaponTier;
-          slot.weaponRigs[t].root.visible = match;
-          slot.weaponBadges[t].visible = match;
+        slot.glowHaloMat.color.setHex(
+          getWeaponDisplaySpec(reward.weaponTier, this.skinTheme).colorHex
+        );
+        for (const theme of ['TACTICAL', 'UNICORN'] as const) {
+          for (const t of [1, 2, 3, 4, 5] as const) {
+            const match = theme === this.skinTheme && t === reward.weaponTier;
+            slot.weaponRigsByTheme[theme][t].root.visible = match;
+            slot.weaponBadgesByTheme[theme][t].visible = match;
+          }
         }
       } else {
-        slot.barrelMat.color.setHex(0xa8c6e4);
+        slot.barrelMat.color.setHex(isUnicorn ? 0xdca8ff : 0xa8c6e4);
         slot.hoopMat.color.setHex(0xffb830);
         slot.gateArchGroup.visible = false;
         slot.rewardPedestalGroup.visible = true;
         slot.coinGroup.visible = true;
         slot.glowHaloMat.color.setHex(0xffcf48);
-        for (const t of [1, 2, 3, 4, 5] as const) {
-          slot.weaponRigs[t].root.visible = false;
-          slot.weaponBadges[t].visible = false;
+        for (const theme of ['TACTICAL', 'UNICORN'] as const) {
+          for (const t of [1, 2, 3, 4, 5] as const) {
+            slot.weaponRigsByTheme[theme][t].root.visible = false;
+            slot.weaponBadgesByTheme[theme][t].visible = false;
+          }
         }
       }
     }
@@ -620,8 +661,9 @@ export class SplitCausewayController {
         if (slot.coinGroup.visible) {
           slot.coinGroup.rotation.y = Math.sin(phase * 1.2) * 0.55;
         } else {
+          const activeRigs = slot.weaponRigsByTheme[this.skinTheme];
           for (const t of [1, 2, 3, 4, 5] as const) {
-            const rig = slot.weaponRigs[t];
+            const rig = activeRigs[t];
             if (rig.root.visible) {
               rig.root.rotation.y = Math.sin(phase * 0.85) * 0.28;
               if (rig.spinCluster) {

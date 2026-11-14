@@ -130,12 +130,13 @@ jobs:
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v7.0.0
-          name: Bridge Blitz v7.0.0 — Midnight Storm Viaduct & Punishing Tactical Overhaul APK
+          tag_name: v7.1.0
+          name: Bridge Blitz v7.1.0 — Girls vs. Boys Unicorn Magic Skin Toggle APK
           body: |
-            ### Bridge Blitz v7.0.0 — Midnight Storm Viaduct & Punishing Tactical Overhaul (`versionCode 15`)
-            - **Direct Chrome Download (installs cleanly over v6.1 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=15)
-            - **What's New in v7.0**:
-              - **100% Original Midnight Storm Viaduct Visual Overhaul**: Brushed slate-titanium armored viaduct & hex-plate Split Causeway with glowing electric-teal & crimson lane telemetry chevrons, storm-navy ocean & moonlit sky dome, obsidian naval truss towers, faceted stealth-visor commandos, horned Syndicate Raider/Enforcer mechs, 6-sided Hexagonal Ordnance Pods, 5-tier Modular Hex-Chevron Blast Barricades, Hex-Grid Holo-Pylon gates, Syndicate Siege Goliaths wielding Twin-Bladed Plasma Breaching Greataxes, and an angular chamfered military telemetry HUD.
-              - **Punishing Tactical Difficulty & Balance Overhaul**: Tamed permanent upgrade & top-tier weapon DPS curves, removed cheap opening handouts (`-17.5m` SMG & Split Node #0 `X2`), added armored center-lane traps that defeat AFK/passive runs, raised enemy wave wake range (`46m`) & march speed, sharpened Siege Goliath greataxe slams (`0.80s` windup), and unlocked `2`-lane telegraphed Boss salvos (`0.76s` telegraph, `30.5 m/s` warheads) starting from Sector 2+ / Stage 2+ / Wave 2+.
+            ### Bridge Blitz v7.1.0 — Girls vs. Boys Unicorn Magic Skin Toggle (`versionCode 16`)
+            - **Direct Chrome Download (installs cleanly over v7.0 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=16)
+            - **What's New in v7.1**:
+              - **Live Bidirectional Skin Toggle (`TACTICAL` ⇄ `UNICORN`)**: Instant O(1) 1-tap skin switch on the Live-Bridge Hub (`#btn-hub-skin-toggle`), in Settings (`#btn-toggle-skin`), and in the Mid-Run Pause Modal (`#btn-pause-skin`), persisted automatically in `SaveDataV1`.
+              - **Girls in Pink Outfits & Helmets vs. Boys in Royal-Blue & Kelly-Green Outfits**: Sculpted Pink Girl squad in bubblegum-pink pleated outfits, pearl-white boots, twin blonde ponytails, and golden-crested pink helmets battling 50/50 mixed battalions of rival Boys in Royal-Blue & Kelly-Green sporty outfits, Varsity Boy Captains, and Giant Varsity Boy Champ brutes wielding Foam Bopper Hammers.
+              - **All 5 Weapons Reimagined as Unicorn Magic Horns & Wands**: **Sparkle Star Wand** (`Lv1`), **Spiral Unicorn Horn** (`Lv2`), **Pegasus Wing Wand** (`Lv3`), **Rainbow Prism Horn** (`Lv4` spinning 6-horn rainbow carousel), and **Royal Alicorn Wand** (`Lv5` sculpted unicorn head + blazing spiral horn + 3 halo rings) firing starlight magic bolts with 100% `v7.0` tactical DPS parity.
           files: BridgeBlitz-Pixel10XL.apk

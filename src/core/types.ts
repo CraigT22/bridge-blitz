@@ -163,9 +163,12 @@ export interface UpgradeLevels {
   warChest: number;
 }
 
+export type SkinThemeId = 'TACTICAL' | 'UNICORN';
+
 export interface GameSettings {
   muted: boolean;
   haptics: boolean;
+  skinTheme: SkinThemeId;
 }
 
 export interface SaveDataV1 {
@@ -231,5 +234,6 @@ export interface TelemetrySnapshot {
   bossSalvosDodgedThisRun: number;
   activeBullets: number;
   activeParticles: number;
+  skinTheme: SkinThemeId;
   upgrades: UpgradeLevels;
 }

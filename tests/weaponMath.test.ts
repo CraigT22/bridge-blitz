@@ -91,4 +91,37 @@ describe('weaponMath', () => {
       expect(Math.abs(endX)).toBeLessThanOrEqual(0.06);
     }
   });
+
+  it('exposes Unicorn Magic Horns & Wands specs in UNICORN skin while preserving exact combat DPS parity', async () => {
+    const {
+      getWeaponDisplaySpec,
+      UNICORN_WEAPON_SPECS,
+      WEAPON_SPECS,
+    } = await import('../src/math/weaponMath');
+
+    for (const tier of [1, 2, 3, 4, 5] as const) {
+      const tactical = getWeaponDisplaySpec(tier, 'TACTICAL');
+      const unicorn = getWeaponDisplaySpec(tier, 'UNICORN');
+
+      expect(tactical).toBe(WEAPON_SPECS[tier]);
+      expect(unicorn).toBe(UNICORN_WEAPON_SPECS[tier]);
+      expect(unicorn.damage).toBe(tactical.damage);
+      expect(unicorn.fireInterval).toBe(tactical.fireInterval);
+      expect(unicorn.projectilesPerVolley).toBe(tactical.projectilesPerVolley);
+      expect(unicorn.pierce).toBe(tactical.pierce);
+      expect(unicorn.bossArmorFactor).toBe(tactical.bossArmorFactor);
+      expect(unicorn.name).not.toBe(tactical.name);
+      expect(unicorn.shortBadge).not.toBe(tactical.shortBadge);
+    }
+
+    expect(UNICORN_WEAPON_SPECS[1].name).toContain('Wand');
+    expect(UNICORN_WEAPON_SPECS[2].name).toContain('Horn');
+    expect(UNICORN_WEAPON_SPECS[3].name).toContain('Wand');
+    expect(UNICORN_WEAPON_SPECS[4].name).toContain('Horn');
+    expect(UNICORN_WEAPON_SPECS[5].name).toContain('Wand');
+
+    const upUnicorn = resolveWeaponPickup(1, 5, 'UNICORN');
+    expect(upUnicorn.upgraded).toBe(true);
+    expect(upUnicorn.bannerText).toBe('Lv5 ALICORN EQUIPPED!');
+  });
 });

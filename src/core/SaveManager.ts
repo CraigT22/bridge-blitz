@@ -22,6 +22,7 @@ export function createDefaultSaveData(): SaveDataV1 {
     settings: {
       muted: false,
       haptics: true,
+      skinTheme: 'TACTICAL',
     },
   };
 }
@@ -85,6 +86,7 @@ export function sanitizeSaveData(raw: unknown): SaveDataV1 {
       muted: typeof rawSettings.muted === 'boolean' ? rawSettings.muted : defaults.settings.muted,
       haptics:
         typeof rawSettings.haptics === 'boolean' ? rawSettings.haptics : defaults.settings.haptics,
+      skinTheme: rawSettings.skinTheme === 'UNICORN' ? 'UNICORN' : 'TACTICAL',
     },
   };
 }

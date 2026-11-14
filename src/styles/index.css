@@ -423,6 +423,81 @@ button {
   box-shadow: 0 2px 8px rgba(40, 248, 220, 0.32);
 }
 
+/* 1-Tap Girls vs. Boys Unicorn Magic Skin Toggle Pill */
+.hub-skin-toggle {
+  margin-top: 5px;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 114, 206, 0.55);
+  background: rgba(12, 18, 32, 0.90);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  transition: transform 90ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.hub-skin-toggle:active {
+  transform: scale(0.96);
+}
+
+.hub-skin-toggle__icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.hub-skin-toggle__label {
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #dbeeff;
+  white-space: nowrap;
+}
+
+.hub-skin-toggle__state {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ff3399 0%, #b84dff 55%, #1e88ff 100%);
+  font-family: var(--font-display);
+  font-size: 8.8px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.72);
+  white-space: nowrap;
+}
+
+.hub-skin-toggle.is-unicorn {
+  border-color: #ffd854;
+  background: linear-gradient(90deg, rgba(72, 14, 58, 0.94) 0%, rgba(42, 18, 72, 0.94) 55%, rgba(12, 42, 78, 0.94) 100%);
+  box-shadow:
+    0 0 14px rgba(255, 72, 184, 0.48),
+    0 4px 12px rgba(0, 0, 0, 0.60);
+}
+
+.hub-skin-toggle.is-unicorn .hub-skin-toggle__label {
+  color: #ffe6f7;
+}
+
+.hub-skin-toggle.is-unicorn .hub-skin-toggle__state {
+  background: linear-gradient(180deg, #ffe268 0%, #ffa824 100%);
+  color: #24081c;
+  text-shadow: none;
+}
+
+[data-skin="UNICORN"] .top-weapon-pill {
+  border-top-color: rgba(255, 108, 204, 0.85);
+  border-bottom-color: rgba(255, 212, 82, 0.85);
+  background: rgba(34, 10, 36, 0.92);
+}
+
+[data-skin="UNICORN"] .top-weapon-pill__label {
+  color: #ff8de0;
+}
+
 /* Angular Active-Run Telemetry Progress Bar (replaces capsule + red circular flag) */
 .run-progress-pill {
   margin-top: 3px;
@@ -595,6 +670,17 @@ button {
   font-weight: 700;
 }
 
+.settings-row--skin {
+  border-color: rgba(255, 108, 204, 0.45);
+  background: linear-gradient(90deg, rgba(44, 14, 42, 0.92), rgba(14, 24, 44, 0.92));
+  color: #ffe2f5;
+}
+
+.settings-row--skin .settings-row__badge.is-on {
+  background: linear-gradient(180deg, #ff5cb8 0%, #c82484 100%);
+  color: #ffffff;
+}
+
 .settings-row--danger {
   color: #ff6b88;
 }
@@ -686,6 +772,33 @@ button {
 .recruit-float-btn.is-affordable {
   border-color: #28f8dc;
   background: linear-gradient(180deg, #127a72 0%, #094644 100%);
+}
+
+[data-skin="UNICORN"] .recruit-float-btn {
+  border-color: rgba(255, 114, 206, 0.65);
+  background: linear-gradient(180deg, #4d1a42 0%, #240c24 100%);
+}
+
+[data-skin="UNICORN"] .recruit-float-btn.is-affordable {
+  border-color: #ff7ad9;
+  background: linear-gradient(180deg, #b8287c 0%, #68124a 100%);
+}
+
+[data-skin="UNICORN"] .recruit-float-btn__lvl {
+  border-color: #ff7ad9;
+  color: #ff9ae8;
+}
+
+.recruit-svg--unicorn {
+  display: none;
+}
+
+[data-skin="UNICORN"] .recruit-svg--tactical {
+  display: none;
+}
+
+[data-skin="UNICORN"] .recruit-svg--unicorn {
+  display: block;
 }
 
 .recruit-float-btn:active {

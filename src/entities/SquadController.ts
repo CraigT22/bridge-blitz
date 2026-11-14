@@ -1,5 +1,5 @@
 import type { BulletPool } from '../core/ObjectPool';
-import type { WeaponTierId } from '../core/types';
+import type { SkinThemeId, WeaponTierId } from '../core/types';
 import {
   clampSquadCenterX,
   getEliteFormationOffset,
@@ -9,6 +9,7 @@ import {
   computeConvergingShotTrajectory,
   computeSquadVolleyPlan,
   FOCAL_CONVERGENCE_DISTANCE,
+  getWeaponDisplaySpec,
   MAX_SQUAD_COUNT,
   MAX_VISUAL_SOLDIERS,
   WEAPON_SPECS,
@@ -24,6 +25,7 @@ export class SquadController {
   public logicalCount = 1;
   public peakCount = 1;
   public weaponTier: WeaponTierId = 1;
+  public skinTheme: SkinThemeId = 'TACTICAL';
   public x = 0;
   public z = 0;
   public marchPhase = 0;
@@ -293,7 +295,7 @@ export class SquadController {
       return;
     }
 
-    const spec = WEAPON_SPECS[this.weaponTier];
+    const spec = getWeaponDisplaySpec(this.weaponTier, this.skinTheme);
     const speed = spec.projectileSpeed;
     const bulletScale = 1.24;
     const muzzleLocalX = 0.255 * COMMANDO_MODEL_SCALE;

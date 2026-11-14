@@ -1,4 +1,4 @@
-import type { WeaponSpec, WeaponTierId } from '../core/types';
+import type { SkinThemeId, WeaponSpec, WeaponTierId } from '../core/types';
 
 export const WEAPON_LOCK_BONUS_COINS = 25;
 export const WEAPON_LOCK_BONUS_SQUAD = 1;
@@ -107,6 +107,46 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
   },
 };
 
+export const UNICORN_WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
+  1: {
+    ...WEAPON_SPECS[1],
+    name: 'Sparkle Star Wand',
+    shortBadge: 'Lv1 STAR WAND',
+    colorHex: 0xff5cb8,
+  },
+  2: {
+    ...WEAPON_SPECS[2],
+    name: 'Spiral Unicorn Horn',
+    shortBadge: 'Lv2 UNI-HORN',
+    colorHex: 0xd966ff,
+  },
+  3: {
+    ...WEAPON_SPECS[3],
+    name: 'Pegasus Wing Wand',
+    shortBadge: 'Lv3 WING WAND',
+    colorHex: 0xffcf40,
+  },
+  4: {
+    ...WEAPON_SPECS[4],
+    name: 'Rainbow Prism Horn',
+    shortBadge: 'Lv4 PRISM HORN',
+    colorHex: 0xff3d9a,
+  },
+  5: {
+    ...WEAPON_SPECS[5],
+    name: 'Royal Alicorn Wand',
+    shortBadge: 'Lv5 ALICORN',
+    colorHex: 0xf74dff,
+  },
+};
+
+export function getWeaponDisplaySpec(
+  tier: WeaponTierId,
+  skinTheme: SkinThemeId = 'TACTICAL'
+): WeaponSpec {
+  return skinTheme === 'UNICORN' ? UNICORN_WEAPON_SPECS[tier] : WEAPON_SPECS[tier];
+}
+
 export interface WeaponPickupResolution {
   readonly equippedTier: WeaponTierId;
   readonly upgraded: boolean;
@@ -123,10 +163,11 @@ export interface WeaponPickupResolution {
  */
 export function resolveWeaponPickup(
   currentTier: WeaponTierId,
-  pickupTier: WeaponTierId
+  pickupTier: WeaponTierId,
+  skinTheme: SkinThemeId = 'TACTICAL'
 ): WeaponPickupResolution {
   if (pickupTier > currentTier) {
-    const spec = WEAPON_SPECS[pickupTier];
+    const spec = getWeaponDisplaySpec(pickupTier, skinTheme);
     return {
       equippedTier: pickupTier,
       upgraded: true,
@@ -143,7 +184,10 @@ export function resolveWeaponPickup(
     lockedBonusTriggered: true,
     bonusCoins: WEAPON_LOCK_BONUS_COINS,
     bonusSquad: WEAPON_LOCK_BONUS_SQUAD,
-    bannerText: `WEAPON LOCKED: +${WEAPON_LOCK_BONUS_COINS} COINS`,
+    bannerText:
+      skinTheme === 'UNICORN'
+        ? `WAND LOCKED: +${WEAPON_LOCK_BONUS_COINS} COINS`
+        : `WEAPON LOCKED: +${WEAPON_LOCK_BONUS_COINS} COINS`,
   };
 }
 

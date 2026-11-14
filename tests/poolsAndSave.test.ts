@@ -205,5 +205,18 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(clean.bestSplitStage).toBe(7);
     expect(clean.upgrades.fireRate).toBe(3);
     expect(clean.upgrades.bulletPower).toBe(0);
+    expect(clean.settings.skinTheme).toBe('TACTICAL');
+
+    const unicornClean = sanitizeSaveData({
+      settings: { muted: true, haptics: false, skinTheme: 'UNICORN' },
+    });
+    expect(unicornClean.settings.skinTheme).toBe('UNICORN');
+    expect(unicornClean.settings.muted).toBe(true);
+    expect(unicornClean.settings.haptics).toBe(false);
+
+    const invalidSkinClean = sanitizeSaveData({
+      settings: { skinTheme: 'RAINBOW_INVALID' },
+    });
+    expect(invalidSkinClean.settings.skinTheme).toBe('TACTICAL');
   });
 });

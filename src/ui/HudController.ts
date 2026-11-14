@@ -7,6 +7,7 @@ import type {
   MenuTabId,
   RunSummary,
   SaveDataV1,
+  SkinThemeId,
   UpgradeKey,
   WeaponTierId,
 } from '../core/types';
@@ -23,10 +24,10 @@ import {
   UPGRADE_ORDER,
 } from '../math/progressionMath';
 import {
+  getWeaponDisplaySpec,
   OVERFLOW_SQUAD_COIN_BONUS,
   WEAPON_LOCK_BONUS_COINS,
   WEAPON_LOCK_BONUS_SQUAD,
-  WEAPON_SPECS,
 } from '../math/weaponMath';
 import type { SceneManager, ScreenProjection } from '../rendering/SceneManager';
 
@@ -46,6 +47,7 @@ export interface HudCallbacks {
   onResumeRequest: () => void;
   onRestartRequest: () => void;
   onRetreatToHubRequest: () => void;
+  onToggleSkin: () => void;
   onToggleMute: () => void;
   onToggleHaptics: () => void;
   onExportSave: () => void;
@@ -69,6 +71,13 @@ const PATTERN_LABELS: Readonly<Record<string, string>> = {
   PIERCING: 'PLASMA PIERCE CONE (×2)',
 };
 
+const UNICORN_PATTERN_LABELS: Readonly<Record<string, string>> = {
+  SINGLE: 'STARLIGHT MAGIC CONE',
+  BURST_2: 'TWIN WING SPARKLE BURST',
+  TWIN_CONVERGE: '6-HORN RAINBOW CAROUSEL',
+  PIERCING: 'ROYAL ALICORN PIERCE (×2)',
+};
+
 const _projScratch: ScreenProjection = { x: 0, y: 0, visible: false };
 
 function mustEl<T extends HTMLElement>(id: string): T {
@@ -82,11 +91,15 @@ function mustEl<T extends HTMLElement>(id: string): T {
 export class HudController {
   private readonly callbacks: HudCallbacks;
 
+  private readonly gameViewportEl = mustEl<HTMLElement>('game-viewport');
   private readonly hubLeftToolsEl = mustEl<HTMLElement>('hub-left-tools');
   private readonly hubStageBannerEl = mustEl<HTMLElement>('hub-stage-banner');
   private readonly hubSectorKickerEl = mustEl<HTMLElement>('hub-sector-kicker');
   private readonly hubSectorTitleEl = mustEl<HTMLElement>('hub-sector-title');
   private readonly hubBossPreviewEl = mustEl<HTMLElement>('hub-boss-preview');
+  private readonly btnHubSkinToggle = mustEl<HTMLButtonElement>('btn-hub-skin-toggle');
+  private readonly hubSkinToggleLabelEl = mustEl<HTMLElement>('hub-skin-toggle-label');
+  private readonly hubSkinTogglePillEl = mustEl<HTMLElement>('hub-skin-toggle-pill');
 
   private readonly runProgressCard = mustEl<HTMLElement>('run-progress-card');
   private readonly topWeaponPill = mustEl<HTMLElement>('top-weapon-pill');
@@ -113,6 +126,7 @@ export class HudController {
   private readonly tabPanels: Record<'BATTLE' | 'ARMORY' | 'MAP', HTMLElement>;
   private readonly btnStartMarch = mustEl<HTMLButtonElement>('start-march-btn');
   private readonly btnAddSoldier = mustEl<HTMLButtonElement>('btn-add-soldier');
+  private readonly recruitBtnTitleEl = mustEl<HTMLElement>('recruit-btn-title');
 
   // Armory Overlay Elements
   private readonly btnArmoryWeapons = mustEl<HTMLButtonElement>('btn-armory-weapons');
@@ -130,6 +144,7 @@ export class HudController {
 
   // Settings & Pause Modals
   private readonly settingsDrawerEl = mustEl<HTMLElement>('settings-drawer');
+  private readonly badgeSkinEl = mustEl<HTMLElement>('badge-skin');
   private readonly badgeMuteEl = mustEl<HTMLElement>('badge-mute');
   private readonly badgeHapticsEl = mustEl<HTMLElement>('badge-haptics');
   private readonly recordSquadEl = mustEl<HTMLElement>('record-squad');
@@ -141,6 +156,7 @@ export class HudController {
   private readonly pauseWeaponEl = mustEl<HTMLElement>('pause-weapon');
   private readonly pauseProgressEl = mustEl<HTMLElement>('pause-progress');
   private readonly pauseKillsEl = mustEl<HTMLElement>('pause-kills');
+  private readonly badgePauseSkinEl = mustEl<HTMLElement>('badge-pause-skin');
   private readonly badgePauseMuteEl = mustEl<HTMLElement>('badge-pause-mute');
   private readonly badgePauseHapticsEl = mustEl<HTMLElement>('badge-pause-haptics');
 
@@ -163,6 +179,7 @@ export class HudController {
   private selectedArmoryBossStage = 1;
   private hubPreviewWeaponTier: WeaponTierId = 1;
   private latestSaveSnapshot: SaveDataV1 | null = null;
+  private currentSkinTheme: SkinThemeId = 'TACTICAL';
 
   private lastWeaponTier = -1;
   private lastBossSegments = -1;
@@ -251,6 +268,20 @@ export class HudController {
         e.stopPropagation();
         this.callbacks.onSelectMode(mode);
       });
+    });
+
+    // Skin Toggle Controls (Hub 1-Tap Pill, Settings Drawer, Mid-Run Pause Modal)
+    this.btnHubSkinToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.callbacks.onToggleSkin();
+    });
+    mustEl<HTMLButtonElement>('btn-toggle-skin').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.callbacks.onToggleSkin();
+    });
+    mustEl<HTMLButtonElement>('btn-pause-skin').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.callbacks.onToggleSkin();
     });
 
     // Armory Sub-Tabs & Preview Button
@@ -384,7 +415,10 @@ export class HudController {
     enemiesDefeated: number
   ): void {
     this.pauseSquadEl.textContent = `${squadCount}`;
-    this.pauseWeaponEl.textContent = WEAPON_SPECS[weaponTier].shortBadge;
+    this.pauseWeaponEl.textContent = getWeaponDisplaySpec(
+      weaponTier,
+      this.currentSkinTheme
+    ).shortBadge;
     this.pauseProgressEl.textContent = `${Math.round(progressRatio * 100)}%`;
     this.pauseKillsEl.textContent = `${enemiesDefeated}`;
     this.pauseModalEl.classList.remove('is-hidden');
@@ -431,6 +465,38 @@ export class HudController {
   ): void {
     this.latestSaveSnapshot = save;
     this.coinCountEl.textContent = formatCoinAmount(save.coins);
+
+    const skinTheme: SkinThemeId =
+      save.settings.skinTheme === 'UNICORN' ? 'UNICORN' : 'TACTICAL';
+    const isUnicorn = skinTheme === 'UNICORN';
+    const skinChanged = skinTheme !== this.currentSkinTheme;
+    this.currentSkinTheme = skinTheme;
+    this.gameViewportEl.dataset.skin = skinTheme;
+
+    this.btnHubSkinToggle.classList.toggle('is-unicorn', isUnicorn);
+    this.btnHubSkinToggle.setAttribute('aria-pressed', String(isUnicorn));
+    this.hubSkinToggleLabelEl.textContent = isUnicorn
+      ? 'SKIN: GIRLS VS BOYS'
+      : 'SKIN: TACTICAL';
+    this.hubSkinTogglePillEl.textContent = isUnicorn
+      ? 'UNICORN WANDS ★ ON'
+      : 'TAP: GIRLS VS BOYS';
+
+    const skinBadgeText = isUnicorn ? 'ON' : 'OFF';
+    this.badgeSkinEl.textContent = skinBadgeText;
+    this.badgeSkinEl.classList.toggle('is-on', isUnicorn);
+    this.badgePauseSkinEl.textContent = skinBadgeText;
+    this.badgePauseSkinEl.classList.toggle('is-on', isUnicorn);
+
+    this.recruitBtnTitleEl.textContent = isUnicorn ? 'PINK GIRL' : 'VANGUARD';
+    this.btnArmoryWeapons.textContent = isUnicorn ? 'Horns & Wands (5)' : 'Weapons (5)';
+
+    if (skinChanged) {
+      this.lastWeaponTier = -1;
+      if (this.activeTab === 'ARMORY') {
+        this.renderArmoryPanel();
+      }
+    }
 
     const modePills = document.querySelectorAll<HTMLButtonElement>('[data-select-mode]');
     modePills.forEach((pill) => {
@@ -526,6 +592,7 @@ export class HudController {
 
   private renderArmoryPanel(): void {
     const isWeapons = this.armorySubTab === 'WEAPONS';
+    const isUnicorn = this.currentSkinTheme === 'UNICORN';
     this.btnArmoryWeapons.classList.toggle('is-active', isWeapons);
     this.btnArmoryBosses.classList.toggle('is-active', !isWeapons);
     this.btnArmoryPreviewEquip.classList.toggle('is-hidden', !isWeapons);
@@ -537,7 +604,7 @@ export class HudController {
         const chip = document.createElement('button');
         chip.type = 'button';
         chip.className = `armory-chip${tier === this.selectedArmoryWeapon ? ' is-active' : ''}`;
-        chip.textContent = WEAPON_SPECS[tier].shortBadge;
+        chip.textContent = getWeaponDisplaySpec(tier, this.currentSkinTheme).shortBadge;
         chip.addEventListener('click', () => {
           this.selectedArmoryWeapon = tier;
           this.renderArmoryPanel();
@@ -546,8 +613,9 @@ export class HudController {
         this.armorySelectorStrip.appendChild(chip);
       }
 
-      const spec = WEAPON_SPECS[this.selectedArmoryWeapon];
-      this.armoryItemKicker.textContent = `TIER ${spec.tier} // ${PATTERN_LABELS[spec.pattern]}`;
+      const spec = getWeaponDisplaySpec(this.selectedArmoryWeapon, this.currentSkinTheme);
+      const patternTable = isUnicorn ? UNICORN_PATTERN_LABELS : PATTERN_LABELS;
+      this.armoryItemKicker.textContent = `TIER ${spec.tier} // ${patternTable[spec.pattern]}`;
       this.armoryItemName.textContent = spec.name.toUpperCase();
 
       const isHeld = this.hubPreviewWeaponTier === spec.tier;
@@ -580,10 +648,13 @@ export class HudController {
           <div class="stat-meter__track"><div class="stat-meter__fill" style="width:${armorPct}%"></div></div>
         </div>
       `;
+      const unitWord = isUnicorn ? 'Pink Girl' : 'Commando';
       this.armoryItemNote.textContent =
         spec.tier === 1
-          ? 'Standard sidearm equipped at launch. Breach Hex Ordnance Pods & Blast Barricades on the viaduct to upgrade live!'
-          : `Weapon Lock Rule: Breaking lower/equal weapon drops keeps this gun and awards +${WEAPON_LOCK_BONUS_COINS} Coins & +${WEAPON_LOCK_BONUS_SQUAD} Commando (overflow >40 converts to +${OVERFLOW_SQUAD_COIN_BONUS} Coins).`;
+          ? isUnicorn
+            ? 'Sparkle Star Wand equipped at launch. Breach Pods & Barricades to unlock Spiral Unicorn Horns & Alicorn Wands live!'
+            : 'Standard sidearm equipped at launch. Breach Hex Ordnance Pods & Blast Barricades on the viaduct to upgrade live!'
+          : `Weapon Lock Rule: Breaking lower/equal drops keeps this ${isUnicorn ? 'magic wand/horn' : 'gun'} and awards +${WEAPON_LOCK_BONUS_COINS} Coins & +${WEAPON_LOCK_BONUS_SQUAD} ${unitWord} (overflow >40 converts to +${OVERFLOW_SQUAD_COIN_BONUS} Coins).`;
     } else {
       for (const stage of CAMPAIGN_STAGES) {
         const chip = document.createElement('button');
@@ -758,7 +829,10 @@ export class HudController {
 
     if (weaponTier !== this.lastWeaponTier) {
       this.lastWeaponTier = weaponTier;
-      this.squadWeaponEl.textContent = WEAPON_SPECS[weaponTier].shortBadge;
+      this.squadWeaponEl.textContent = getWeaponDisplaySpec(
+        weaponTier,
+        this.currentSkinTheme
+      ).shortBadge;
     }
 
     // All 1..40 commandos are rendered 1:1 on the bridge — keep floating #squad-pill hidden for unobstructed action!

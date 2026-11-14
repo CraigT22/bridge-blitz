@@ -24,6 +24,7 @@ import {
 import {
   COMMANDO_MODEL_SCALE,
   FOCAL_CONVERGENCE_DISTANCE,
+  getWeaponDisplaySpec,
   MAX_VISUAL_SOLDIERS,
   OVERFLOW_SQUAD_COIN_BONUS,
   resolveWeaponPickup,
@@ -55,6 +56,7 @@ import type {
   MenuTabId,
   MidBridgeBruteDefinition,
   RunSummary,
+  SkinThemeId,
   SplitNodeReward,
   StageDefinition,
   TelemetrySnapshot,
@@ -197,6 +199,7 @@ export class BridgeBlitzGame {
       onResumeRequest: () => this.handleResumeRequest(),
       onRestartRequest: () => this.handleRestartSector(),
       onRetreatToHubRequest: () => this.handleRetreatToHub(),
+      onToggleSkin: () => this.handleToggleSkin(),
       onToggleMute: () => this.handleToggleMute(),
       onToggleHaptics: () => this.handleToggleHaptics(),
       onExportSave: () => this.handleExportSave(),
@@ -254,6 +257,7 @@ export class BridgeBlitzGame {
       },
     });
 
+    this.applySkinTheme(initialSave.settings.skinTheme);
     this.prepareStagingArea();
 
     this.loop = new GameLoop(
@@ -380,6 +384,7 @@ export class BridgeBlitzGame {
     this.squad.resetForRun(startTroops);
 
     this.populateSectorEntities(this.activeStageDef, 0);
+    this.applySkinTheme(save.settings.skinTheme);
 
     this.stateMachine.transitionTo('PRE_RUN');
     this.hud.hidePauseModal();
@@ -735,10 +740,20 @@ export class BridgeBlitzGame {
     if (key === 'startingSquad') {
       const nextCount = getStartingSquadCount(updated.upgrades.startingSquad);
       this.squad.setLogicalCount(nextCount);
-      this.vfx.spawnShockwave(this.squad.x, this.squad.z, 2.7, 0.38, 0x3bf088);
-      this.vfx.spawnImpactSplash(this.squad.x, 1.1, this.squad.z, 1.45, 0x56ff9d);
-      this.particlePool.spawnBurst(this.squad.x, 0.9, this.squad.z, 18, 5.2, 0x3bf088);
-      this.combatText.spawn(this.squad.x, 1.95, this.squad.z, '+1 SOLDIER!', 'positive', 0.85);
+      const isUnicorn = updated.settings.skinTheme === 'UNICORN';
+      const recruitFx = isUnicorn ? 0xff5cb8 : 0x3bf088;
+      const recruitSplash = isUnicorn ? 0xff9be0 : 0x56ff9d;
+      this.vfx.spawnShockwave(this.squad.x, this.squad.z, 2.7, 0.38, recruitFx);
+      this.vfx.spawnImpactSplash(this.squad.x, 1.1, this.squad.z, 1.45, recruitSplash);
+      this.particlePool.spawnBurst(this.squad.x, 0.9, this.squad.z, 18, 5.2, recruitFx);
+      this.combatText.spawn(
+        this.squad.x,
+        1.95,
+        this.squad.z,
+        isUnicorn ? '+1 PINK GIRL!' : '+1 SOLDIER!',
+        'positive',
+        0.85
+      );
     } else {
       const fxHex = key === 'fireRate' ? 0x28f8dc : key === 'bulletPower' ? 0xff4d6d : 0xffc938;
       this.vfx.spawnShockwave(this.squad.x, this.squad.z, 2.5, 0.36, fxHex);
@@ -790,6 +805,68 @@ export class BridgeBlitzGame {
     this.prepareStagingArea();
   }
 
+  private applySkinTheme(theme: SkinThemeId): void {
+    this.squad.skinTheme = theme;
+    this.batchRenderer.setSkinTheme(theme);
+    this.sceneManager.setSkinTheme(theme);
+    this.splitCauseway.setSkinTheme(theme);
+    for (let i = 0; i < MAX_SUPPLY_DRUMS; i++) {
+      this.supplyDrums[i].setSkinTheme(theme);
+    }
+    for (let i = 0; i < MAX_TIRE_STACKS; i++) {
+      this.tireStacks[i].setSkinTheme(theme);
+    }
+    for (let i = 0; i < MAX_MID_BRUTES; i++) {
+      this.midBrutes[i].setSkinTheme(theme);
+    }
+  }
+
+  private handleToggleSkin(): void {
+    this.sound.unlockOnGesture();
+    const next = this.saveManager.update((draft) => {
+      draft.settings.skinTheme =
+        draft.settings.skinTheme === 'UNICORN' ? 'TACTICAL' : 'UNICORN';
+    });
+    const isUnicorn = next.settings.skinTheme === 'UNICORN';
+    this.applySkinTheme(next.settings.skinTheme);
+    this.sound.playGateFlipChime();
+    this.celebrateHopTimer = 0.36;
+
+    const burstHex = isUnicorn ? 0xff4fb8 : 0x28f8dc;
+    const accentHex = isUnicorn ? 0xffe066 : 0x62f4ff;
+    this.vfx.spawnShockwave(this.squad.x, this.squad.z, 3.1, 0.42, burstHex);
+    this.vfx.spawnImpactSplash(this.squad.x, 1.15, this.squad.z, 1.6, accentHex);
+    this.particlePool.spawnBurst(this.squad.x, 1.0, this.squad.z, 22, 5.8, burstHex, 0.16, 0.48);
+
+    if (this.stateMachine.state !== 'PAUSED') {
+      this.combatText.spawn(
+        this.squad.x,
+        2.05,
+        this.squad.z,
+        isUnicorn ? 'UNICORN MAGIC ON!' : 'TACTICAL OPS ON!',
+        isUnicorn ? 'gold' : 'cyan',
+        0.92
+      );
+    }
+
+    this.hud.syncSaveState(
+      next,
+      this.activeStageDef.title,
+      this.activeStageDef.boss.name,
+      this.endlessWave,
+      this.activeBoardLayout
+    );
+
+    if (this.stateMachine.state === 'PAUSED') {
+      this.hud.showPauseModal(
+        this.squad.logicalCount,
+        this.squad.weaponTier,
+        this.computeSectorProgressRatio(),
+        this.enemiesDefeatedThisRun
+      );
+    }
+  }
+
   private handleToggleMute(): void {
     const next = this.saveManager.update((draft) => {
       draft.settings.muted = !draft.settings.muted;
@@ -836,6 +913,7 @@ export class BridgeBlitzGame {
   private handleResetSave(): void {
     const fresh = this.saveManager.reset();
     this.sound.updateSettings(fresh.settings);
+    this.applySkinTheme(fresh.settings.skinTheme);
     this.prepareStagingArea();
   }
 
@@ -849,7 +927,8 @@ export class BridgeBlitzGame {
       return;
     }
     const tier = this.squad.weaponTier;
-    const flashColor = WEAPON_SPECS[tier]?.colorHex ?? 0x62f4ff;
+    const skinTheme = this.saveManager.getData().settings.skinTheme;
+    const flashColor = getWeaponDisplaySpec(tier, skinTheme)?.colorHex ?? 0x62f4ff;
     const flashScale = tier >= 4 ? 1.42 : 1.08;
     const burstCount = Math.min(4, vis);
     const seed = Math.floor(this.elapsedTime * 60);
@@ -1605,6 +1684,7 @@ export class BridgeBlitzGame {
   private updateBullets(dt: number): void {
     const pool = this.bulletPool;
     const bossArmorFactor = WEAPON_SPECS[this.squad.weaponTier].bossArmorFactor;
+    const skinTheme = this.saveManager.getData().settings.skinTheme;
     const isSplit = this.activeBoardLayout === 'SPLIT_CAUSEWAY';
     const maxBulletRange = isSplit ? 46 : 36;
 
@@ -1641,7 +1721,7 @@ export class BridgeBlitzGame {
       const dmg = pool.damage[i];
       const lastHit = pool.lastHitEntityId[i];
       const wTier = (pool.weaponTier[i] || this.squad.weaponTier) as WeaponTierId;
-      const weaponSplashHex = WEAPON_SPECS[wTier]?.colorHex ?? 0x62f4ff;
+      const weaponSplashHex = getWeaponDisplaySpec(wTier, skinTheme)?.colorHex ?? 0x62f4ff;
       let consumedHit = false;
 
       if (isSplit && !this.splitCauseway.retractedForBoss) {
@@ -2063,7 +2143,9 @@ export class BridgeBlitzGame {
     this.enemiesDefeatedThisRun += 1;
     this.sound.playBossDefeat();
     this.sceneManager.addShake(0.56);
-    this.vfx.spawnShockwave(brute.x, brute.z, 5.2, 0.5, 0xff2e5c);
+    const isUnicorn = this.saveManager.getData().settings.skinTheme === 'UNICORN';
+    const ringColor = isUnicorn ? 0x1d70ff : 0xff2e5c;
+    this.vfx.spawnShockwave(brute.x, brute.z, 5.2, 0.5, ringColor);
     this.vfx.spawnImpactSplash(brute.x, 1.8, brute.z, 2.2, 0xffbe3b);
     this.particlePool.spawnBurst(
       brute.x,
@@ -2071,7 +2153,7 @@ export class BridgeBlitzGame {
       brute.z,
       32,
       8.2,
-      0xff2e5c,
+      ringColor,
       0.22,
       0.72
     );
@@ -2094,7 +2176,7 @@ export class BridgeBlitzGame {
       brute.x,
       2.7,
       brute.z,
-      `GOLIATH DOWN! +${formatCoinAmount(earned)}`,
+      `${isUnicorn ? 'CHAMP DOWN!' : 'GOLIATH DOWN!'} +${formatCoinAmount(earned)}`,
       'gold',
       1.15
     );
@@ -2105,12 +2187,13 @@ export class BridgeBlitzGame {
     worldX: number,
     worldZ: number
   ): void {
-    const pickup = resolveWeaponPickup(this.squad.weaponTier, droppedTier);
+    const skinTheme = this.saveManager.getData().settings.skinTheme;
+    const pickup = resolveWeaponPickup(this.squad.weaponTier, droppedTier, skinTheme);
     this.sound.playTireBreak(pickup.upgraded);
 
     if (pickup.upgraded) {
       this.squad.weaponTier = pickup.equippedTier;
-      const colorHex = WEAPON_SPECS[pickup.equippedTier].colorHex;
+      const colorHex = getWeaponDisplaySpec(pickup.equippedTier, skinTheme).colorHex;
       this.particlePool.spawnBurst(this.squad.x, 1.2, this.squad.z, 20, 6.0, colorHex, 0.18, 0.55);
       this.combatText.spawn(
         worldX,
@@ -2133,7 +2216,7 @@ export class BridgeBlitzGame {
         worldX,
         2.25,
         worldZ,
-        `WEAPON LOCK! +${formatCoinAmount(earned)}`,
+        `${skinTheme === 'UNICORN' ? 'MAGIC LOCK!' : 'WEAPON LOCK!'} +${formatCoinAmount(earned)}`,
         'gold',
         1.1
       );
@@ -2143,9 +2226,19 @@ export class BridgeBlitzGame {
   private handleSupplyDrumShattered(drum: SupplyDrumSlot): void {
     this.drumsBrokenThisRun++;
     this.sceneManager.addShake(0.24);
-    this.vfx.spawnShockwave(drum.x, drum.z, 2.6, 0.34, 0x28f8dc);
-    this.vfx.spawnImpactSplash(drum.x, 1.25, drum.z + 0.5, 1.6, 0x70ffe8);
-    this.particlePool.spawnBurst(drum.x, 1.0, drum.z, 20, 6.2, 0x6c86a4, 0.18, 0.5);
+    const isUnicorn = this.saveManager.getData().settings.skinTheme === 'UNICORN';
+    this.vfx.spawnShockwave(drum.x, drum.z, 2.6, 0.34, isUnicorn ? 0xff5cb8 : 0x28f8dc);
+    this.vfx.spawnImpactSplash(drum.x, 1.25, drum.z + 0.5, 1.6, isUnicorn ? 0xffaae8 : 0x70ffe8);
+    this.particlePool.spawnBurst(
+      drum.x,
+      1.0,
+      drum.z,
+      20,
+      6.2,
+      isUnicorn ? 0xd98ce8 : 0x6c86a4,
+      0.18,
+      0.5
+    );
 
     if (drum.rewardType === 'COINS') {
       this.sound.playTireBreak(false);
@@ -2153,17 +2246,27 @@ export class BridgeBlitzGame {
       this.awardLiveCoins(drum.rewardValue, drum.x, drum.z, true);
     } else if (drum.rewardType === 'RECRUIT') {
       this.sound.playGateCollect(true);
-      this.particlePool.spawnBurst(drum.x, 1.4, drum.z, 18, 5.5, 0x38f6ff, 0.18, 0.55);
+      this.particlePool.spawnBurst(
+        drum.x,
+        1.4,
+        drum.z,
+        18,
+        5.5,
+        isUnicorn ? 0xff66c4 : 0x38f6ff,
+        0.18,
+        0.55
+      );
       this.applySquadCountWithOverflow(
         this.squad.logicalCount + drum.rewardValue,
         drum.x,
         drum.z
       );
+      const unitLabel = isUnicorn ? 'PINK GIRL' : 'COMMANDO';
       this.combatText.spawn(
         drum.x,
         2.05,
         drum.z,
-        `+${drum.rewardValue} COMMANDO${drum.rewardValue > 1 ? 'S' : ''}!`,
+        `+${drum.rewardValue} ${unitLabel}${drum.rewardValue > 1 ? 'S' : ''}!`,
         'positive',
         1.0
       );
@@ -2176,8 +2279,9 @@ export class BridgeBlitzGame {
   private handleTireStackShattered(stack: TireWeaponStackSlot): void {
     this.tiresBrokenThisRun++;
     this.sceneManager.addShake(0.36);
+    const skinTheme = this.saveManager.getData().settings.skinTheme;
     const ringHex = stack.weaponTier
-      ? WEAPON_SPECS[stack.weaponTier].colorHex
+      ? getWeaponDisplaySpec(stack.weaponTier, skinTheme).colorHex
       : 0xffd447;
     this.vfx.spawnShockwave(stack.x, stack.z, 3.3, 0.42, ringHex);
     this.vfx.spawnImpactSplash(stack.x, 1.35, stack.z + 0.8, 1.75, ringHex);
@@ -2511,6 +2615,7 @@ export class BridgeBlitzGame {
       state: this.stateMachine.state,
       mode: save.selectedMode,
       boardLayout: this.activeBoardLayout,
+      skinTheme: save.settings.skinTheme,
       stage: stageNum,
       coins: save.coins,
       liveCoinsThisRun: this.liveCoinsThisRun,
@@ -2520,7 +2625,8 @@ export class BridgeBlitzGame {
       squadZ: this.squad.z,
       progress,
       weaponTier: this.squad.weaponTier,
-      weaponBadge: WEAPON_SPECS[this.squad.weaponTier].shortBadge,
+      weaponBadge: getWeaponDisplaySpec(this.squad.weaponTier, save.settings.skinTheme)
+        .shortBadge,
       bossHp: this.boss.currentHp,
       bossMaxHp: this.boss.maxHp,
       bruteHp: bruteTelemetry.hp,

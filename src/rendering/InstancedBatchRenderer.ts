@@ -1,10 +1,14 @@
 import * as THREE from 'three';
 import type { BulletPool, ParticlePool, RagdollPool } from '../core/ObjectPool';
-import type { WeaponTierId } from '../core/types';
+import type { SkinThemeId, WeaponTierId } from '../core/types';
 import { COMMANDO_MODEL_SCALE, MAX_VISUAL_SOLDIERS } from '../math/weaponMath';
 import {
+  createBoyEnemySoldierGeometry,
   createEnemySoldierGeometry,
+  createHeavyBoyEnemyGeometry,
   createHeavyEnemyGeometry,
+  createMagicStarBoltGeometry,
+  createPinkGirlSoldierGeometry,
   createPlayerSoldierGeometry,
   createTracerBoltGeometry,
 } from './ProceduralGeometries';
@@ -49,6 +53,7 @@ interface CommandoUniforms {
   uStrideTime: { value: number };
   uStrideAmp: { value: number };
   uRecoilKick: { value: number };
+  uUnicornSkin?: { value: number };
 }
 
 function buildCommandoStrideSnippet(enablePerInstanceStride: boolean): string {
@@ -90,7 +95,7 @@ function buildCommandoStrideSnippet(enablePerInstanceStride: boolean): string {
 
 /**
  * Injects single-pass GPU vertex animation (`aPartId`) plus optional per-instance solid-white
- * hit-flash (`aHitFlash` attribute), per-instance stride gating (`aStrideScale`), and echelon rank tint!
+ * hit-flash (`aHitFlash` attribute), per-instance stride gating (`aStrideScale`), and echelon/outfit tint!
  */
 function applyCommandoShader(
   mat: THREE.MeshStandardMaterial,
@@ -107,6 +112,9 @@ function applyCommandoShader(
     shader.uniforms.uStrideTime = uniforms.uStrideTime;
     shader.uniforms.uStrideAmp = uniforms.uStrideAmp;
     shader.uniforms.uRecoilKick = uniforms.uRecoilKick;
+    if (enableRankTint && uniforms.uUnicornSkin) {
+      shader.uniforms.uUnicornSkin = uniforms.uUnicornSkin;
+    }
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -115,7 +123,7 @@ function applyCommandoShader(
         attribute float aPartId;
         ${enableHitFlash ? 'attribute float aHitFlash;\nvarying float vHitFlash;' : ''}
         ${enablePerInstanceStride ? 'attribute float aStrideScale;' : ''}
-        ${enableRankTint ? 'attribute float aRankTint;\nvarying float vRankTint;\nvarying float vLocalY;' : ''}
+        ${enableRankTint ? 'attribute float aRankTint;\nvarying float vRankTint;\nvarying float vLocalY;\nvarying float vAltOutfit;' : ''}
         varying vec3 vToonWorldNormal;
         uniform float uStrideTime;
         uniform float uStrideAmp;
@@ -155,7 +163,7 @@ function applyCommandoShader(
         /* glsl */ `
         #include <begin_vertex>
         ${enableHitFlash ? 'vHitFlash = aHitFlash;' : ''}
-        ${enableRankTint ? 'vRankTint = aRankTint;\nvLocalY = position.y;' : ''}
+        ${enableRankTint ? 'vRankTint = aRankTint;\nvLocalY = position.y;\nvAltOutfit = mod(float(gl_InstanceID), 2.0);' : ''}
         ${strideSnippet}
         {
           vec3 wn = mat3(modelMatrix) * objectNormal;
@@ -173,7 +181,7 @@ function applyCommandoShader(
         /* glsl */ `
         #include <common>
         ${enableHitFlash ? 'varying float vHitFlash;' : ''}
-        ${enableRankTint ? 'varying float vRankTint;\nvarying float vLocalY;' : ''}
+        ${enableRankTint ? 'varying float vRankTint;\nvarying float vLocalY;\nvarying float vAltOutfit;\nuniform float uUnicornSkin;' : ''}
         varying vec3 vToonWorldNormal;
         `
       )
@@ -184,7 +192,11 @@ function applyCommandoShader(
         ${
           enableRankTint
             ? `
-        if (vRankTint < 0.5 && vLocalY < 0.78 && vLocalY > 0.09) {
+        if (uUnicornSkin > 0.5) {
+          if (vAltOutfit > 0.5 && max(gl_FragColor.g, gl_FragColor.b) > gl_FragColor.r * 1.18) {
+            gl_FragColor.rgb = vec3(gl_FragColor.r, gl_FragColor.b * 0.92, gl_FragColor.g * 1.06);
+          }
+        } else if (vRankTint < 0.5 && vLocalY < 0.78 && vLocalY > 0.09) {
           vec3 voltSyndicate = gl_FragColor.rgb * vec3(1.18, 0.82, 0.22) + vec3(0.14, 0.07, 0.0);
           gl_FragColor.rgb = mix(gl_FragColor.rgb, voltSyndicate, 0.84);
         }
@@ -426,6 +438,15 @@ export class InstancedBatchRenderer {
   public readonly bulletMesh: THREE.InstancedMesh;
   public readonly particleMesh: THREE.InstancedMesh;
 
+  private readonly playerGeos: Record<SkinThemeId, THREE.BufferGeometry>;
+  private readonly weaponGeos: Record<SkinThemeId, Record<WeaponTierId, THREE.BufferGeometry>>;
+  private readonly enemyGeos: Record<SkinThemeId, THREE.BufferGeometry>;
+  private readonly heavyGeos: Record<SkinThemeId, THREE.BufferGeometry>;
+  private readonly ragdollPlayerGeos: Record<SkinThemeId, THREE.BufferGeometry>;
+  private readonly ragdollEnemyGeos: Record<SkinThemeId, THREE.BufferGeometry>;
+  private readonly bulletGeos: Record<SkinThemeId, THREE.BufferGeometry>;
+  private activeSkinTheme: SkinThemeId = 'TACTICAL';
+
   private readonly enemyHitFlashAttr: THREE.InstancedBufferAttribute;
   private readonly heavyHitFlashAttr: THREE.InstancedBufferAttribute;
   private readonly enemyStrideScaleAttr: THREE.InstancedBufferAttribute;
@@ -441,6 +462,7 @@ export class InstancedBatchRenderer {
     uStrideTime: { value: 0 },
     uStrideAmp: { value: 0.68 },
     uRecoilKick: { value: 0 },
+    uUnicornSkin: { value: 0 },
   };
   private readonly weaponUniforms: WeaponBarrelSpinUniforms = {
     uBarrelSpin: { value: 0 },
@@ -455,14 +477,18 @@ export class InstancedBatchRenderer {
     bulletCapacity: number,
     particleCapacity: number
   ) {
-    // 1. Player Elite Commando InstancedMesh + Shared-Matrix Welded Cel-Outline Pass
-    const playerGeo = createPlayerSoldierGeometry();
+    // 1. Player Elite Commando / Pink Magical Squad Girl InstancedMesh + Shared-Matrix Welded Cel-Outline Pass
+    this.playerGeos = {
+      TACTICAL: createPlayerSoldierGeometry(),
+      UNICORN: createPinkGirlSoldierGeometry(),
+    };
+    const playerGeo = this.playerGeos.TACTICAL;
     const playerMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.40,
       metalness: 0.14,
     });
-    applyCommandoShader(playerMat, this.playerUniforms, 'commando-player-v70', false, false);
+    applyCommandoShader(playerMat, this.playerUniforms, 'commando-player-v71', false, false);
 
     this.playerMesh = new THREE.InstancedMesh(playerGeo, playerMat, MAX_VISUAL_SOLDIERS);
     this.playerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -473,7 +499,7 @@ export class InstancedBatchRenderer {
     const playerOutlineMat = createCommandoCelOutlineMaterial(
       this.playerUniforms,
       0.023,
-      'commando-player-outline-v70',
+      'commando-player-outline-v71',
       false
     );
     this.playerOutlineMesh = new THREE.InstancedMesh(
@@ -486,23 +512,40 @@ export class InstancedBatchRenderer {
     this.playerOutlineMesh.count = 0;
     scene.add(this.playerOutlineMesh);
 
-    // 2. Live Swappable 3D Squad Weapon Batches + Cel-Outline Pass (Tiers 1..5)
+    // 2. Live Swappable 3D Squad Weapon / Unicorn Magic Horn & Wand Batches + Cel-Outline Pass (Tiers 1..5)
     const weaponMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.28,
-      metalness: 0.42,
+      metalness: 0.34,
     });
-    applyEquippedWeaponShader(weaponMat, this.weaponUniforms, 'commando-weapon-v70');
+    applyEquippedWeaponShader(weaponMat, this.weaponUniforms, 'commando-weapon-v71');
     const weaponOutlineMat = createEquippedWeaponOutlineMaterial(
       this.weaponUniforms,
       0.017,
-      'commando-weapon-outline-v70'
+      'commando-weapon-outline-v71'
     );
+
+    this.weaponGeos = {
+      TACTICAL: {
+        1: createEquippedWeaponGeometry(1, 'TACTICAL'),
+        2: createEquippedWeaponGeometry(2, 'TACTICAL'),
+        3: createEquippedWeaponGeometry(3, 'TACTICAL'),
+        4: createEquippedWeaponGeometry(4, 'TACTICAL'),
+        5: createEquippedWeaponGeometry(5, 'TACTICAL'),
+      },
+      UNICORN: {
+        1: createEquippedWeaponGeometry(1, 'UNICORN'),
+        2: createEquippedWeaponGeometry(2, 'UNICORN'),
+        3: createEquippedWeaponGeometry(3, 'UNICORN'),
+        4: createEquippedWeaponGeometry(4, 'UNICORN'),
+        5: createEquippedWeaponGeometry(5, 'UNICORN'),
+      },
+    };
 
     const wMeshes = {} as Record<WeaponTierId, THREE.InstancedMesh>;
     const wOutlines = {} as Record<WeaponTierId, THREE.InstancedMesh>;
     for (const tier of [1, 2, 3, 4, 5] as const) {
-      const wGeo = createEquippedWeaponGeometry(tier);
+      const wGeo = this.weaponGeos.TACTICAL[tier];
       const wMesh = new THREE.InstancedMesh(wGeo, weaponMat, MAX_VISUAL_SOLDIERS);
       wMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       wMesh.frustumCulled = false;
@@ -522,34 +565,41 @@ export class InstancedBatchRenderer {
     this.squadWeaponMeshes = wMeshes;
     this.squadWeaponOutlineMeshes = wOutlines;
 
-    // 3. Standard Enemy Shock Troopers + Per-Instance White Hit-Flash + Stride Gating + Welded Cel-Outline
-    const enemyGeo = createEnemySoldierGeometry();
+    // 3. Standard Enemy Shock Troopers / Blue & Green Boys + Shared InstancedBufferAttributes
+    this.enemyGeos = {
+      TACTICAL: createEnemySoldierGeometry(),
+      UNICORN: createBoyEnemySoldierGeometry(),
+    };
     this.enemyHitFlashAttr = new THREE.InstancedBufferAttribute(
       new Float32Array(MAX_ENEMY_INSTANCES),
       1
     );
     this.enemyHitFlashAttr.setUsage(THREE.DynamicDrawUsage);
-    enemyGeo.setAttribute('aHitFlash', this.enemyHitFlashAttr);
 
     const enemyStrideInitial = new Float32Array(MAX_ENEMY_INSTANCES);
     enemyStrideInitial.fill(1);
     this.enemyStrideScaleAttr = new THREE.InstancedBufferAttribute(enemyStrideInitial, 1);
     this.enemyStrideScaleAttr.setUsage(THREE.DynamicDrawUsage);
-    enemyGeo.setAttribute('aStrideScale', this.enemyStrideScaleAttr);
 
     const enemyRankInitial = new Float32Array(MAX_ENEMY_INSTANCES);
     enemyRankInitial.fill(1);
     this.enemyRankTintAttr = new THREE.InstancedBufferAttribute(enemyRankInitial, 1);
     this.enemyRankTintAttr.setUsage(THREE.DynamicDrawUsage);
-    enemyGeo.setAttribute('aRankTint', this.enemyRankTintAttr);
+
+    for (const g of [this.enemyGeos.TACTICAL, this.enemyGeos.UNICORN]) {
+      g.setAttribute('aHitFlash', this.enemyHitFlashAttr);
+      g.setAttribute('aStrideScale', this.enemyStrideScaleAttr);
+      g.setAttribute('aRankTint', this.enemyRankTintAttr);
+    }
 
     const enemyMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.40,
       metalness: 0.18,
     });
-    applyCommandoShader(enemyMat, this.enemyUniforms, 'commando-enemy-v70', true, true, true);
+    applyCommandoShader(enemyMat, this.enemyUniforms, 'commando-enemy-v71', true, true, true);
 
+    const enemyGeo = this.enemyGeos.TACTICAL;
     this.enemyMesh = new THREE.InstancedMesh(enemyGeo, enemyMat, MAX_ENEMY_INSTANCES);
     this.enemyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.enemyMesh.frustumCulled = false;
@@ -559,7 +609,7 @@ export class InstancedBatchRenderer {
     const enemyOutlineMat = createCommandoCelOutlineMaterial(
       this.enemyUniforms,
       0.023,
-      'commando-enemy-outline-v70',
+      'commando-enemy-outline-v71',
       true
     );
     this.enemyOutlineMesh = new THREE.InstancedMesh(
@@ -572,28 +622,35 @@ export class InstancedBatchRenderer {
     this.enemyOutlineMesh.count = 0;
     scene.add(this.enemyOutlineMesh);
 
-    // 4. Heavy Armored Juggernaut Elites + Per-Instance White Hit-Flash + Stride Gating + Welded Cel-Outline
-    const heavyGeo = createHeavyEnemyGeometry();
+    // 4. Heavy Armored Juggernauts / Varsity Blue & Green Boy Captains
+    this.heavyGeos = {
+      TACTICAL: createHeavyEnemyGeometry(),
+      UNICORN: createHeavyBoyEnemyGeometry(),
+    };
     this.heavyHitFlashAttr = new THREE.InstancedBufferAttribute(
       new Float32Array(MAX_HEAVY_ENEMY_INSTANCES),
       1
     );
     this.heavyHitFlashAttr.setUsage(THREE.DynamicDrawUsage);
-    heavyGeo.setAttribute('aHitFlash', this.heavyHitFlashAttr);
 
     const heavyStrideInitial = new Float32Array(MAX_HEAVY_ENEMY_INSTANCES);
     heavyStrideInitial.fill(1);
     this.heavyStrideScaleAttr = new THREE.InstancedBufferAttribute(heavyStrideInitial, 1);
     this.heavyStrideScaleAttr.setUsage(THREE.DynamicDrawUsage);
-    heavyGeo.setAttribute('aStrideScale', this.heavyStrideScaleAttr);
+
+    for (const hg of [this.heavyGeos.TACTICAL, this.heavyGeos.UNICORN]) {
+      hg.setAttribute('aHitFlash', this.heavyHitFlashAttr);
+      hg.setAttribute('aStrideScale', this.heavyStrideScaleAttr);
+    }
 
     const heavyMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.36,
       metalness: 0.24,
     });
-    applyCommandoShader(heavyMat, this.enemyUniforms, 'commando-heavy-v70', true, true);
+    applyCommandoShader(heavyMat, this.enemyUniforms, 'commando-heavy-v71', true, true);
 
+    const heavyGeo = this.heavyGeos.TACTICAL;
     this.heavyEnemyMesh = new THREE.InstancedMesh(
       heavyGeo,
       heavyMat,
@@ -607,7 +664,7 @@ export class InstancedBatchRenderer {
     const heavyOutlineMat = createCommandoCelOutlineMaterial(
       this.enemyUniforms,
       0.026,
-      'commando-heavy-outline-v70',
+      'commando-heavy-outline-v71',
       true
     );
     this.heavyEnemyOutlineMesh = new THREE.InstancedMesh(
@@ -620,15 +677,18 @@ export class InstancedBatchRenderer {
     this.heavyEnemyOutlineMesh.count = 0;
     scene.add(this.heavyEnemyOutlineMesh);
 
-    // 5. Pooled Flying Knockback Ragdoll InstancedMeshes (Enemies turn monochrome ash-grey on death!)
-    const ragdollPlayerGeo = createPlayerSoldierGeometry();
+    // 5. Pooled Flying Knockback Ragdoll InstancedMeshes
+    this.ragdollPlayerGeos = {
+      TACTICAL: createPlayerSoldierGeometry(),
+      UNICORN: createPinkGirlSoldierGeometry(),
+    };
     const ragdollPlayerMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.44,
       metalness: 0.16,
     });
     this.playerRagdollMesh = new THREE.InstancedMesh(
-      ragdollPlayerGeo,
+      this.ragdollPlayerGeos.TACTICAL,
       ragdollPlayerMat,
       MAX_RAGDOLL_INSTANCES
     );
@@ -637,15 +697,21 @@ export class InstancedBatchRenderer {
     this.playerRagdollMesh.count = 0;
     scene.add(this.playerRagdollMesh);
 
-    const ragdollEnemyGeo = createEnemySoldierGeometry();
-    desaturateGeometryToAshGrey(ragdollEnemyGeo);
+    const ragEnemyTac = createEnemySoldierGeometry();
+    desaturateGeometryToAshGrey(ragEnemyTac);
+    const ragEnemyUni = createBoyEnemySoldierGeometry();
+    desaturateGeometryToAshGrey(ragEnemyUni);
+    this.ragdollEnemyGeos = {
+      TACTICAL: ragEnemyTac,
+      UNICORN: ragEnemyUni,
+    };
     const ragdollEnemyMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.48,
       metalness: 0.10,
     });
     this.enemyRagdollMesh = new THREE.InstancedMesh(
-      ragdollEnemyGeo,
+      this.ragdollEnemyGeos.TACTICAL,
       ragdollEnemyMat,
       MAX_RAGDOLL_INSTANCES
     );
@@ -656,10 +722,10 @@ export class InstancedBatchRenderer {
 
     const ragdollEnemyOutlineMat = createStaticCelOutlineMaterial(
       0.022,
-      'ragdoll-enemy-outline-v50'
+      'ragdoll-enemy-outline-v71'
     );
     this.enemyRagdollOutlineMesh = new THREE.InstancedMesh(
-      ragdollEnemyGeo,
+      this.ragdollEnemyGeos.TACTICAL,
       ragdollEnemyOutlineMat,
       MAX_RAGDOLL_INSTANCES
     );
@@ -682,8 +748,11 @@ export class InstancedBatchRenderer {
     this.shadowDiscMesh.count = 0;
     scene.add(this.shadowDiscMesh);
 
-    // 7. Crisp Elongated Two-Tone Bullet Tracer InstancedMesh
-    const bulletGeo = createTracerBoltGeometry();
+    // 7. Crisp Elongated Bullet Tracer / Magical Starlight Bolt InstancedMesh
+    this.bulletGeos = {
+      TACTICAL: createTracerBoltGeometry(),
+      UNICORN: createMagicStarBoltGeometry(),
+    };
     const bulletMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       vertexColors: true,
@@ -693,7 +762,11 @@ export class InstancedBatchRenderer {
       toneMapped: false,
       depthWrite: false,
     });
-    this.bulletMesh = new THREE.InstancedMesh(bulletGeo, bulletMat, bulletCapacity);
+    this.bulletMesh = new THREE.InstancedMesh(
+      this.bulletGeos.TACTICAL,
+      bulletMat,
+      bulletCapacity
+    );
     this.bulletMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.bulletMesh.frustumCulled = false;
     this.bulletMesh.count = 0;
@@ -717,6 +790,35 @@ export class InstancedBatchRenderer {
       this.particleMesh.setColorAt(i, _color.setRGB(1, 1, 1));
     }
     scene.add(this.particleMesh);
+  }
+
+  public setSkinTheme(theme: SkinThemeId): void {
+    if (this.activeSkinTheme === theme) {
+      return;
+    }
+    this.activeSkinTheme = theme;
+    this.enemyUniforms.uUnicornSkin!.value = theme === 'UNICORN' ? 1.0 : 0.0;
+
+    this.playerMesh.geometry = this.playerGeos[theme];
+    this.playerOutlineMesh.geometry = this.playerGeos[theme];
+
+    for (const tier of [1, 2, 3, 4, 5] as const) {
+      const wg = this.weaponGeos[theme][tier];
+      this.squadWeaponMeshes[tier].geometry = wg;
+      this.squadWeaponOutlineMeshes[tier].geometry = wg;
+    }
+
+    this.enemyMesh.geometry = this.enemyGeos[theme];
+    this.enemyOutlineMesh.geometry = this.enemyGeos[theme];
+
+    this.heavyEnemyMesh.geometry = this.heavyGeos[theme];
+    this.heavyEnemyOutlineMesh.geometry = this.heavyGeos[theme];
+
+    this.playerRagdollMesh.geometry = this.ragdollPlayerGeos[theme];
+    this.enemyRagdollMesh.geometry = this.ragdollEnemyGeos[theme];
+    this.enemyRagdollOutlineMesh.geometry = this.ragdollEnemyGeos[theme];
+
+    this.bulletMesh.geometry = this.bulletGeos[theme];
   }
 
   public syncPlayerSoldiers(

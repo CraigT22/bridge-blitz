@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import type { TireStackDefinition, WeaponTierId } from '../core/types';
-import { WEAPON_SPECS } from '../math/weaponMath';
+import type { SkinThemeId, TireStackDefinition, WeaponTierId } from '../core/types';
+import { getWeaponDisplaySpec } from '../math/weaponMath';
 import {
   createStaticWeaponBadgeTexture,
   EditableArcadeHpTexture,
@@ -64,6 +64,7 @@ export class TireWeaponStackSlot {
   public weaponTier: WeaponTierId | null = null;
   public coinReward = 40;
 
+  private skinTheme: SkinThemeId = 'TACTICAL';
   private readonly tierGroups: THREE.Group[] = [];
   private readonly armorMat: THREE.MeshStandardMaterial;
   private readonly coreGlowMat: THREE.MeshBasicMaterial;
@@ -73,8 +74,8 @@ export class TireWeaponStackSlot {
   private readonly plaqueTex: EditableArcadeHpTexture;
   private readonly pickupPivot = new THREE.Group();
   private readonly coinPickupGroup: THREE.Group;
-  private readonly weaponRigs: Record<WeaponTierId, ShowcaseWeaponRig>;
-  private readonly badgeMeshes: Record<WeaponTierId, THREE.Mesh>;
+  private readonly weaponRigsByTheme: Record<SkinThemeId, Record<WeaponTierId, ShowcaseWeaponRig>>;
+  private readonly badgeMeshesByTheme: Record<SkinThemeId, Record<WeaponTierId, THREE.Mesh>>;
   private flashTimer = 0;
   private flashCooldown = 0;
   private spinAngle = 0;
@@ -179,32 +180,81 @@ export class TireWeaponStackSlot {
     this.coinPickupGroup = createGoldCoinPickupGroup();
     this.pickupPivot.add(this.coinPickupGroup);
 
-    this.weaponRigs = {
-      1: createShowcaseWeaponGroup(1),
-      2: createShowcaseWeaponGroup(2),
-      3: createShowcaseWeaponGroup(3),
-      4: createShowcaseWeaponGroup(4),
-      5: createShowcaseWeaponGroup(5),
-    };
-
     const badgeGeo = new THREE.PlaneGeometry(2.18, 0.64);
-    this.badgeMeshes = {
-      1: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(1), transparent: true })),
-      2: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(2), transparent: true })),
-      3: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(3), transparent: true })),
-      4: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(4), transparent: true })),
-      5: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(5), transparent: true })),
+    const buildWeaponSet = (theme: SkinThemeId): Record<WeaponTierId, ShowcaseWeaponRig> => ({
+      1: createShowcaseWeaponGroup(1, theme),
+      2: createShowcaseWeaponGroup(2, theme),
+      3: createShowcaseWeaponGroup(3, theme),
+      4: createShowcaseWeaponGroup(4, theme),
+      5: createShowcaseWeaponGroup(5, theme),
+    });
+    const buildBadgeSet = (theme: SkinThemeId): Record<WeaponTierId, THREE.Mesh> => ({
+      1: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(1, theme), transparent: true })),
+      2: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(2, theme), transparent: true })),
+      3: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(3, theme), transparent: true })),
+      4: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(4, theme), transparent: true })),
+      5: new THREE.Mesh(badgeGeo, new THREE.MeshBasicMaterial({ map: createStaticWeaponBadgeTexture(5, theme), transparent: true })),
+    });
+
+    this.weaponRigsByTheme = {
+      TACTICAL: buildWeaponSet('TACTICAL'),
+      UNICORN: buildWeaponSet('UNICORN'),
+    };
+    this.badgeMeshesByTheme = {
+      TACTICAL: buildBadgeSet('TACTICAL'),
+      UNICORN: buildBadgeSet('UNICORN'),
     };
 
-    for (const t of [1, 2, 3, 4, 5] as const) {
-      const rig = this.weaponRigs[t];
-      rig.root.scale.setScalar(1.58);
-      rig.root.rotation.z = 0.14;
-      this.pickupPivot.add(rig.root);
-      this.badgeMeshes[t].visible = false;
+    for (const theme of ['TACTICAL', 'UNICORN'] as const) {
+      for (const t of [1, 2, 3, 4, 5] as const) {
+        const rig = this.weaponRigsByTheme[theme][t];
+        rig.root.scale.setScalar(1.58);
+        rig.root.rotation.z = 0.14;
+        rig.root.visible = false;
+        this.pickupPivot.add(rig.root);
+        this.badgeMeshesByTheme[theme][t].visible = false;
+      }
     }
 
     this.root.visible = false;
+  }
+
+  public setSkinTheme(theme: SkinThemeId): void {
+    if (this.skinTheme === theme) {
+      return;
+    }
+    this.skinTheme = theme;
+    this.armorMat.color.setHex(theme === 'UNICORN' ? 0xf6caff : 0xd8e8f8);
+    if (this.active && !this.broken) {
+      this.syncSkinVisuals();
+    }
+  }
+
+  private syncSkinVisuals(): void {
+    const isUnicorn = this.skinTheme === 'UNICORN';
+    this.armorMat.color.setHex(isUnicorn ? 0xf6caff : 0xd8e8f8);
+
+    const hasWeapon = this.weaponTier !== null;
+    const hasCoin = !hasWeapon && this.coinReward > 0;
+    this.pickupPivot.visible = hasWeapon || hasCoin;
+    this.coinPickupGroup.visible = hasCoin;
+
+    if (this.weaponTier) {
+      const wHex = getWeaponDisplaySpec(this.weaponTier, this.skinTheme).colorHex;
+      this.holoBeamMat.color.setHex(wHex);
+      this.coreGlowMat.color.setHex(wHex);
+    } else {
+      this.holoBeamMat.color.setHex(0xffcf48);
+      this.coreGlowMat.color.setHex(isUnicorn ? 0xff7ad9 : 0x28f2d4);
+    }
+
+    for (const theme of ['TACTICAL', 'UNICORN'] as const) {
+      for (const t of [1, 2, 3, 4, 5] as const) {
+        const show = theme === this.skinTheme && this.weaponTier === t;
+        this.weaponRigsByTheme[theme][t].root.visible = show;
+        this.badgeMeshesByTheme[theme][t].visible = false;
+      }
+    }
   }
 
   public configure(def: TireStackDefinition): void {
@@ -223,25 +273,7 @@ export class TireWeaponStackSlot {
     this.root.position.set(this.x, 0, this.z);
     this.root.visible = true;
 
-    const hasWeapon = this.weaponTier !== null;
-    const hasCoin = !hasWeapon && this.coinReward > 0;
-    this.pickupPivot.visible = hasWeapon || hasCoin;
-    this.coinPickupGroup.visible = hasCoin;
-
-    if (this.weaponTier) {
-      const wHex = WEAPON_SPECS[this.weaponTier].colorHex;
-      this.holoBeamMat.color.setHex(wHex);
-      this.coreGlowMat.color.setHex(wHex);
-    } else {
-      this.holoBeamMat.color.setHex(0xffcf48);
-      this.coreGlowMat.color.setHex(0x28f2d4);
-    }
-
-    for (const t of [1, 2, 3, 4, 5] as const) {
-      const show = this.weaponTier === t;
-      this.weaponRigs[t].root.visible = show;
-      this.badgeMeshes[t].visible = false;
-    }
+    this.syncSkinVisuals();
 
     this.syncStackHeight();
     this.plaqueTex.redrawIfDirty(this.remainingBreakCount, 0);
@@ -289,7 +321,7 @@ export class TireWeaponStackSlot {
     this.outerHoloRing.rotation.z = -this.spinAngle * 0.85;
 
     if (this.weaponTier) {
-      const activeRig = this.weaponRigs[this.weaponTier];
+      const activeRig = this.weaponRigsByTheme[this.skinTheme][this.weaponTier];
       if (activeRig.root.visible) {
         activeRig.root.rotation.y = Math.sin(this.spinAngle * 0.85) * 0.28;
         activeRig.root.position.y = 0.10 + Math.sin(this.spinAngle * 1.6) * 0.09;

@@ -14,7 +14,7 @@
     />
   </head>
   <body>
-    <div id="game-viewport" class="game-viewport">
+    <div id="game-viewport" class="game-viewport" data-skin="TACTICAL">
       <div id="canvas-container" class="canvas-container"></div>
 
       <!-- Projected 3D World Overlays (Squad Badge, Heavy Juggernaut HP Bars, Boss Bar, Popups) -->
@@ -82,6 +82,11 @@
               <button class="hub-mode-pill" data-select-mode="SPLIT_CAUSEWAY" type="button">SPLIT CAUSEWAY</button>
               <button class="hub-mode-pill" data-select-mode="ENDLESS" type="button">ENDLESS</button>
             </div>
+            <button id="btn-hub-skin-toggle" class="hub-skin-toggle" type="button" aria-pressed="false" title="Toggle Girls vs. Boys Unicorn Magic Skin">
+              <span class="hub-skin-toggle__icon" aria-hidden="true">🦄</span>
+              <span id="hub-skin-toggle-label" class="hub-skin-toggle__label">SKIN: TACTICAL</span>
+              <span id="hub-skin-toggle-pill" class="hub-skin-toggle__state">GIRLS VS BOYS</span>
+            </button>
           </div>
 
           <div id="run-progress-card" class="run-progress-pill is-hidden">
@@ -122,6 +127,10 @@
           <button id="btn-close-settings" class="settings-drawer__close" type="button">✕</button>
         </div>
         <div class="settings-drawer__list">
+          <button id="btn-toggle-skin" class="settings-row settings-row--skin" type="button">
+            <span>🦄 Girls vs. Boys Skin</span>
+            <span id="badge-skin" class="settings-row__badge">OFF</span>
+          </button>
           <button id="btn-toggle-mute" class="settings-row" type="button">
             <span>Sound Effects</span>
             <span id="badge-mute" class="settings-row__badge">ON</span>
@@ -156,15 +165,23 @@
               <button id="btn-add-soldier" class="recruit-float-btn" data-upgrade="startingSquad" type="button">
                 <span class="recruit-float-btn__lvl" data-lvl="startingSquad">1/9</span>
                 <div class="recruit-float-btn__art" aria-hidden="true">
-                  <svg viewBox="0 0 40 40" width="32" height="32">
+                  <svg class="recruit-svg recruit-svg--tactical" viewBox="0 0 40 40" width="32" height="32">
                     <polygon points="13,7 27,7 32,15 30,23 10,23 8,15" fill="#284b78" stroke="#08111d" stroke-width="2.2" />
                     <polygon points="11,15 29,15 28,20 12,20" fill="#28f8dc" stroke="#08111d" stroke-width="1.6" />
                     <polygon points="9,34 13,25 27,25 31,34" fill="#5e7c9c" stroke="#08111d" stroke-width="2.2" />
                     <polygon points="27,5 35,5 37,11 35,15 27,15 25,11" fill="#28f8dc" stroke="#061a18" stroke-width="1.8" />
                     <path d="M31 7.5v5M28.5 10h5" stroke="#061a18" stroke-width="2.1" stroke-linecap="square" />
                   </svg>
+                  <svg class="recruit-svg recruit-svg--unicorn" viewBox="0 0 40 40" width="32" height="32">
+                    <polygon points="20,2 23,11 17,11" fill="#ffd84d" stroke="#08111d" stroke-width="1.8" />
+                    <path d="M10,17 C10,10 30,10 30,17 L30,23 L10,23 Z" fill="#ff5cb8" stroke="#08111d" stroke-width="2.1" />
+                    <rect x="12" y="16" width="16" height="5" rx="2" fill="#b8f4ff" stroke="#08111d" stroke-width="1.5" />
+                    <polygon points="8,35 13,25 27,25 32,35" fill="#ff3399" stroke="#08111d" stroke-width="2.1" />
+                    <circle cx="31" cy="10" r="5.5" fill="#ff66cc" stroke="#08111d" stroke-width="1.8" />
+                    <path d="M31 7.5v5M28.5 10h5" stroke="#ffffff" stroke-width="2.1" stroke-linecap="square" />
+                  </svg>
                 </div>
-                <span class="recruit-float-btn__title">VANGUARD</span>
+                <span id="recruit-btn-title" class="recruit-float-btn__title">VANGUARD</span>
                 <span class="recruit-float-btn__cost">
                   <i class="coin-dot"></i><b data-cost="startingSquad">85</b>
                 </span>
@@ -338,6 +355,10 @@
           </div>
 
           <div class="pause-toggles">
+            <button id="btn-pause-skin" class="settings-row settings-row--skin" type="button">
+              <span>🦄 Girls vs. Boys Skin</span>
+              <span id="badge-pause-skin" class="settings-row__badge">OFF</span>
+            </button>
             <button id="btn-pause-mute" class="settings-row" type="button">
               <span>Sound Effects</span>
               <span id="badge-pause-mute" class="settings-row__badge">ON</span>
