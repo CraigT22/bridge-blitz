@@ -618,21 +618,23 @@ export class MidBridgeBrute {
     const insideRightCorridor = dividerTipZ !== undefined && this.z <= dividerTipZ + 0.55;
     const minAllowedX = insideRightCorridor ? 1.48 : -3.05;
     const maxAllowedX = insideRightCorridor ? 3.42 : 3.05;
+    const effectiveDuelDist = dividerTipZ !== undefined ? 6.3 : DUEL_HALT_DIST_Z;
+    const lateralPursueSpeed = dividerTipZ !== undefined && !insideRightCorridor ? 3.15 : 1.35;
 
     const engaged = dividerTipZ !== undefined ? distZ < 105 : distZ < ENGAGE_WAKE_DIST_Z;
-    const inDuelRange = distZ <= DUEL_HALT_DIST_Z + 0.35 && distZ > -2.5;
+    const inDuelRange = distZ <= effectiveDuelDist + 0.35 && distZ > -2.5;
     let smashEvent: BruteClubSmashEvent | null = null;
     let targetBodyYaw = 0;
 
-    if (engaged && !inDuelRange && distZ > DUEL_HALT_DIST_Z) {
+    if (engaged && !inDuelRange && distZ > effectiveDuelDist) {
       // Heavy stomping advance toward the squad until close-quarters duel range
       this.z += this.speed * dt;
-      this.stridePhase += dt * 5.8;
+      this.stridePhase += dt * (dividerTipZ !== undefined ? 7.4 : 5.8);
       const desiredX = Math.max(minAllowedX, Math.min(maxAllowedX, squadX));
       const dx = desiredX - this.x;
       this.x = Math.max(
         minAllowedX,
-        Math.min(maxAllowedX, this.x + Math.sign(dx) * Math.min(Math.abs(dx), 1.35 * dt))
+        Math.min(maxAllowedX, this.x + Math.sign(dx) * Math.min(Math.abs(dx), lateralPursueSpeed * dt))
       );
       targetBodyYaw = Math.max(-0.28, Math.min(0.28, Math.atan2(dx, Math.max(3.5, distZ))));
     } else if (inDuelRange) {
@@ -642,9 +644,10 @@ export class MidBridgeBrute {
         this.dangerZoneGroup.visible = false;
         const desiredX = Math.max(minAllowedX, Math.min(maxAllowedX, squadX));
         const dx = desiredX - this.x;
+        const duelLateral = dividerTipZ !== undefined ? 3.25 : 2.15;
         this.x = Math.max(
           minAllowedX,
-          Math.min(maxAllowedX, this.x + Math.sign(dx) * Math.min(Math.abs(dx), 2.15 * dt))
+          Math.min(maxAllowedX, this.x + Math.sign(dx) * Math.min(Math.abs(dx), duelLateral * dt))
         );
         targetBodyYaw = Math.max(-0.34, Math.min(0.34, Math.atan2(dx, Math.max(2.4, distZ))));
         this.clubArmPivot.rotation.x += (0 - this.clubArmPivot.rotation.x) * Math.min(1, dt * 8);

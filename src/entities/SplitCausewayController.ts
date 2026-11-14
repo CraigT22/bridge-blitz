@@ -109,6 +109,7 @@ export class SplitCausewayController {
   private queueDefs: ReadonlyArray<SplitBarrelNodeDefinition> = [];
   private readonly visualSlots: LeftQueueVisualSlot[] = [];
   private slideOffsetZ = 0;
+  private advanceLockTimer = 0;
   private spinClock = 0;
   private queueSinkY = 0;
 
@@ -394,6 +395,7 @@ export class SplitCausewayController {
     this.marchSpeed = Math.max(1.2, def.marchSpeed);
     this.marchPhase = 0;
     this.slideOffsetZ = 0;
+    this.advanceLockTimer = 0;
     this.queueSinkY = 0;
     this.celebrationTimer = 0;
     this.celebrationGroup.visible = false;
@@ -574,6 +576,10 @@ export class SplitCausewayController {
       }
     }
 
+    if (this.advanceLockTimer > 0) {
+      this.advanceLockTimer = Math.max(0, this.advanceLockTimer - dt);
+    }
+
     if (this.slideOffsetZ > 0.001) {
       this.slideOffsetZ *= Math.exp(-11.5 * dt);
       if (this.slideOffsetZ < 0.008) {
@@ -663,7 +669,7 @@ export class SplitCausewayController {
       return;
     }
 
-    // Find closest surviving right-lane trooper so empty gaps fast-forward smoothly
+    // Find closest surviving right-lane trooper so any cleared gap > 11.5m triggers an immediate reinforcement sprint!
     let closestAliveZ = -999999;
     for (let i = 0; i < this.totalTroopers; i++) {
       if (this.unitAlive[i] !== 0 && this.unitZ[i] > closestAliveZ) {
@@ -672,10 +678,10 @@ export class SplitCausewayController {
     }
 
     const gapAhead = squadZ - closestAliveZ;
-    const speedBoost = closestAliveZ > -900000 && gapAhead > 25.5 ? 2.35 : 1.0;
+    const speedBoost = closestAliveZ > -900000 && gapAhead > 13.5 ? 1.75 : 1.0;
     const stepSpeed = this.marchSpeed * speedBoost;
     this.siegeDistance = Math.min(this.siegeColumnSpan, this.siegeDistance + stepSpeed * dt);
-    this.marchPhase += dt * 8.6 * (speedBoost > 1 ? 1.25 : 1.0);
+    this.marchPhase += dt * 11.2 * (speedBoost > 1 ? 1.28 : 1.0);
 
     let alive = 0;
     for (let i = 0; i < this.totalTroopers; i++) {
@@ -686,18 +692,23 @@ export class SplitCausewayController {
         this.unitHitFlash[i] = Math.max(0, this.unitHitFlash[i] - dt * 6.8);
       }
 
-      const advance = stepSpeed * this.unitSpeedMul[i] * dt;
-      this.unitZ[i] += advance;
-
-      // Once a right-lane trooper marches past the nose of the Center Divider Wall (`dividerTipZ`),
-      // they enter the open Breach Zone and steer laterally into the player's squad!
-      if (this.unitZ[i] > this.dividerTipZ + 0.35) {
+      // Once a right-lane trooper clears the nose of the Center Divider Wall (`dividerTipZ`),
+      // they enter the open Breach Zone and sprint diagonally straight toward `(squadX, squadZ)`!
+      if (this.unitZ[i] > this.dividerTipZ + 0.25) {
         const dx = squadX - this.unitX[i];
-        const pursueRate = this.unitRank[i] === 2 ? 2.25 : 2.95;
+        const dz = Math.max(0.35, squadZ + 0.25 - this.unitZ[i]);
+        const dist = Math.hypot(dx, dz);
+        const breachMul = this.unitRank[i] === 2 ? 1.06 : 1.18;
+        const chargeStep = stepSpeed * this.unitSpeedMul[i] * breachMul * dt;
+        const inv = 1 / Math.max(0.001, dist);
         this.unitX[i] = Math.max(
           -4.35,
-          Math.min(4.35, this.unitX[i] + Math.sign(dx) * Math.min(Math.abs(dx), pursueRate * dt))
+          Math.min(4.35, this.unitX[i] + dx * inv * chargeStep)
         );
+        this.unitZ[i] += Math.max(stepSpeed * 0.45 * dt, dz * inv * chargeStep);
+      } else {
+        const advance = stepSpeed * this.unitSpeedMul[i] * dt;
+        this.unitZ[i] += advance;
       }
 
       alive++;
@@ -803,7 +814,7 @@ export class SplitCausewayController {
     }
 
     const frontSlot = this.visualSlots[0];
-    if (frontSlot.entityId === lastHitId) {
+    if (frontSlot.entityId === lastHitId || lastHitId === 699) {
       return _missResult;
     }
 
@@ -817,6 +828,16 @@ export class SplitCausewayController {
       return _missResult;
     }
 
+    // Absorb overkill volley bullets cleanly while the next barrel is sliding forward into the front slot!
+    if (this.advanceLockTimer > 0 || this.slideOffsetZ > 1.35) {
+      return {
+        type: 'BARREL_HIT',
+        entityId: 699,
+        hitX: bx,
+        hitZ: barrelZ + 0.85,
+      };
+    }
+
     this.frontBarrelHp -= damage;
     if (frontSlot.flashCooldown <= 0) {
       frontSlot.flashTimer = 1.0;
@@ -828,6 +849,7 @@ export class SplitCausewayController {
       const clearedEntityId = frontSlot.entityId;
       this.queueCursor++;
       this.slideOffsetZ += QUEUE_SLOT_SPACING_Z;
+      this.advanceLockTimer = 0.42;
       this.bindLeftQueueSlots(true);
       this.syncQueuePositions();
 

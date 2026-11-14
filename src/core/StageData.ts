@@ -145,79 +145,82 @@ function buildSplitCausewayDefinition(
   bruteCoins: number
 ): SplitCausewayDefinition {
   const d = DIFFICULTY_MULTIPLIER_V6;
-  const siegeColumnSpan = Math.round(340 + (stageIdx - 1) * 9);
-  const marchSpeed = Math.min(2.92, Math.max(2.26, enemyBaseSpeed * 0.56 + stageIdx * 0.032));
+  const siegeColumnSpan = Math.round(320 + (stageIdx - 1) * 8);
+  // Urgent, relentless right-lane charge speed (>2.15x faster than v6.0)!
+  const marchSpeed = Math.min(6.15, Math.max(4.85, enemyBaseSpeed * 2.52 + stageIdx * 0.10));
 
+  // Disciplined reward cadence: earned weapon & multiplier power spikes spaced across all 28 nodes!
   const rewardPattern: ReadonlyArray<SplitNodeReward> = [
     { kind: 'GATE', operator: 'MUL', value: 2 },
+    { kind: 'GATE', operator: 'ADD', value: 2 },
     { kind: 'WEAPON', weaponTier: 2 },
+    { kind: 'GATE', operator: 'MUL', value: 1.5 },
+    { kind: 'GATE', operator: 'ADD', value: 3 },
+    { kind: 'WEAPON', weaponTier: 3 },
+    { kind: 'COINS', coins: Math.round(85 * hpScale) },
     { kind: 'GATE', operator: 'ADD', value: 3 },
     { kind: 'GATE', operator: 'MUL', value: 1.5 },
-    { kind: 'WEAPON', weaponTier: 3 },
     { kind: 'GATE', operator: 'ADD', value: 4 },
-    { kind: 'COINS', coins: Math.round(75 * hpScale) },
-    { kind: 'GATE', operator: 'MUL', value: 2 },
-    { kind: 'GATE', operator: 'ADD', value: 5 },
     { kind: 'WEAPON', weaponTier: 4 },
+    { kind: 'COINS', coins: Math.round(145 * hpScale) },
+    { kind: 'GATE', operator: 'ADD', value: 4 },
     { kind: 'GATE', operator: 'MUL', value: 1.5 },
     { kind: 'GATE', operator: 'ADD', value: 5 },
-    { kind: 'COINS', coins: Math.round(135 * hpScale) },
-    { kind: 'GATE', operator: 'MUL', value: 2 },
-    { kind: 'WEAPON', weaponTier: stageIdx >= 3 ? 5 : 4 },
-    { kind: 'GATE', operator: 'ADD', value: 6 },
-    { kind: 'GATE', operator: 'MUL', value: 1.5 },
-    { kind: 'COINS', coins: Math.round(195 * hpScale) },
-    { kind: 'GATE', operator: 'ADD', value: 6 },
     { kind: 'WEAPON', weaponTier: 5 },
+    { kind: 'COINS', coins: Math.round(210 * hpScale) },
     { kind: 'GATE', operator: 'MUL', value: 2 },
-    { kind: 'GATE', operator: 'ADD', value: 7 },
-    { kind: 'COINS', coins: Math.round(260 * hpScale) },
+    { kind: 'GATE', operator: 'ADD', value: 5 },
     { kind: 'GATE', operator: 'MUL', value: 1.5 },
-    { kind: 'GATE', operator: 'ADD', value: 8 },
+    { kind: 'COINS', coins: Math.round(280 * hpScale) },
+    { kind: 'GATE', operator: 'ADD', value: 6 },
+    { kind: 'GATE', operator: 'MUL', value: 1.5 },
+    { kind: 'GATE', operator: 'ADD', value: 6 },
+    { kind: 'COINS', coins: Math.round(355 * hpScale) },
     { kind: 'GATE', operator: 'MUL', value: 2 },
-    { kind: 'COINS', coins: Math.round(340 * hpScale) },
+    { kind: 'GATE', operator: 'ADD', value: 8 },
     { kind: 'GATE', operator: 'MUL', value: 2 },
   ];
 
+  // Exponentially scaled barrel HP curve matching player squad + weapon DPS growth so boosts require multi-window chipping!
   const baseQueueHps = [
-    18, 44, 72, 115, 165, 215, 260, 340, 420, 540, 660, 790, 920, 1120,
-    1340, 1520, 1740, 1950, 2200, 2550, 2850, 3150, 3450, 3800, 4150, 4550, 4950, 5400,
+    52, 120, 260, 520, 880, 1400, 2100, 3100, 4500, 6400, 9000, 12400, 16800, 22500,
+    29500, 38500, 49000, 62000, 77000, 95000, 115000, 138000, 164000, 192000, 224000, 260000, 298000, 340000,
   ];
 
   const leftQueue: SplitBarrelNodeDefinition[] = [];
   for (let i = 0; i < rewardPattern.length; i++) {
-    // Keep opening barrel crisp & responsive while scaling full queue by +50% difficulty * stage hpScale
-    const stageFactor = i === 0 ? Math.pow(hpScale, 0.58) : Math.pow(hpScale, 0.85);
-    const barrelHp = Math.max(16, Math.round(baseQueueHps[i] * d * stageFactor));
+    const stageFactor = i === 0 ? Math.pow(hpScale, 0.72) : Math.pow(hpScale, 0.94);
+    const barrelHp = Math.max(45, Math.round(baseQueueHps[i] * d * stageFactor));
     leftQueue.push({
       barrelHp,
       reward: rewardPattern[i],
     });
   }
 
-  // 22 escalating Right-Lane Battalion Echelons: opening spearhead stacks Olive Raiders -> Crimson Troopers -> Dark Ironclad Juggernauts shoulder-to-shoulder!
+  // 22 fast-charging Right-Lane Battalion Echelons: nonlinear HP ramp punishes both Left-Campers AND unboosted Right-Campers!
   const rightEchelons: SplitHordeEchelonDefinition[] = [];
-  let cursorZ = 13.0;
+  let cursorZ = 18.5;
   const totalEchelons = 22;
   for (let e = 0; e < totalEchelons; e++) {
     const progress = e / (totalEchelons - 1);
     let rank: EnemyVisualRank = 1;
     if (e === 0 || (e >= 3 && e % 4 === 3)) {
-      rank = 0; // Olive-Moss Vanguard Raiders spearheading each battalion wave
+      rank = 0; // Fast Olive-Moss Vanguard Raiders spearheading each surge
     } else if (e === 2 || (e >= 6 && e % 4 === 2) || e >= 20) {
-      rank = 2; // Towering 1.65x Dark Ironclad Heavy Juggernauts backing each battalion
+      rank = 2; // Towering 1.65x Dark Ironclad Heavy Juggernauts anchoring each surge
     }
 
-    const cols = rank === 2 ? 4 : e === 0 ? 5 : 6;
-    const rows = rank === 2 ? 3 : e === 0 ? 2 : 3;
-    const echelonGrowth = 1 + progress * 2.85;
-    const rankHpMul = rank === 2 ? 3.5 : rank === 0 ? 0.88 : 1.15;
+    const cols = rank === 2 ? 4 : e === 0 ? 4 : e <= 5 ? 5 : 6;
+    const rows = rank === 2 ? (e <= 8 ? 2 : 3) : 3;
+    const echelonGrowth = 1 + Math.pow(progress, 1.35) * 4.85;
+    const rankHpMul =
+      rank === 2 ? 2.65 : rank === 0 ? (e === 0 ? 0.82 : 0.96) : 1.24;
     const hpPerUnit = Math.max(
-      6,
+      10,
       Math.round(enemyBaseHp * d * echelonGrowth * rankHpMul)
     );
     const unitSpeed =
-      rank === 2 ? marchSpeed * 0.96 : rank === 0 ? marchSpeed * 1.02 : marchSpeed;
+      rank === 2 ? marchSpeed * 0.93 : rank === 0 ? marchSpeed * 1.08 : marchSpeed;
     const coinPerKill =
       rank === 2 ? Math.round((coinBase + 2) * 3.0) : Math.max(3, coinBase + Math.floor(progress * 4));
 
@@ -231,36 +234,36 @@ function buildSplitCausewayDefinition(
       coinPerKill,
     });
 
-    const depthSpan = rows * (rank === 2 ? 1.48 : 1.08);
-    // Tight continuous column in opening 4 echelons, then sustained assault waves across the 340m-420m causeway
-    const gapZ = e < 3 ? 2.4 : 12.6 + (stageIdx - 1) * 0.42;
+    const depthSpan = rows * (rank === 2 ? 1.44 : 1.05);
+    const gapZ = e === 0 ? 8.2 : 11.2 + (stageIdx - 1) * 0.28;
     cursorZ += depthSpan + gapZ;
   }
 
+  const fastBruteSpeed = Math.min(4.25, Math.max(3.42, bruteSpeed * 1.82));
   const goliathSpawns: MidBridgeBruteDefinition[] = [
     {
-      z: -Math.round(siegeColumnSpan * 0.30),
+      z: -Math.round(siegeColumnSpan * 0.26),
       name: `${bruteName} Alpha`,
-      maxHp: Math.round(bruteMaxHp * 0.72),
-      speed: bruteSpeed,
+      maxHp: Math.round(bruteMaxHp * 0.22),
+      speed: Number(fastBruteSpeed.toFixed(2)),
       clubDamage: Math.max(6, bruteDamage - 1),
       coinReward: Math.round(bruteCoins * 0.8),
     },
     {
-      z: -Math.round(siegeColumnSpan * 0.62),
+      z: -Math.round(siegeColumnSpan * 0.56),
       name: bruteName,
-      maxHp: bruteMaxHp,
-      speed: Math.min(2.3, bruteSpeed + 0.06),
+      maxHp: Math.round(bruteMaxHp * 0.36),
+      speed: Number(Math.min(4.35, fastBruteSpeed + 0.14).toFixed(2)),
       clubDamage: bruteDamage,
       coinReward: bruteCoins,
     },
     {
-      z: -Math.round(siegeColumnSpan * 0.88),
+      z: -Math.round(siegeColumnSpan * 0.82),
       name: `${bruteName} Prime`,
-      maxHp: Math.round(bruteMaxHp * 1.18),
-      speed: Math.min(2.35, bruteSpeed + 0.10),
+      maxHp: Math.round(bruteMaxHp * 0.50),
+      speed: Number(Math.min(4.45, fastBruteSpeed + 0.26).toFixed(2)),
       clubDamage: bruteDamage + 2,
-      coinReward: Math.round(bruteCoins * 1.25),
+      coinReward: bruteCoins * 1.25 ? Math.round(bruteCoins * 1.25) : bruteCoins,
     },
   ];
 
@@ -862,7 +865,7 @@ const SPLIT_CAUSEWAY_TITLES: ReadonlyArray<string> = [
  */
 export function generateSplitCausewayStage(stageNumber: number): StageDefinition {
   const sNum = Math.max(1, Math.floor(stageNumber));
-  const scale = Math.pow(1.26, sNum - 1);
+  const scale = Math.pow(1.30, sNum - 1);
   const archetype = ENDLESS_CHASSIS_ROTATION[(sNum - 1) % ENDLESS_CHASSIS_ROTATION.length];
   const titleName = SPLIT_CAUSEWAY_TITLES[(sNum - 1) % SPLIT_CAUSEWAY_TITLES.length];
 
@@ -871,16 +874,16 @@ export function generateSplitCausewayStage(stageNumber: number): StageDefinition
     title: titleName,
     boardLayout: 'SPLIT_CAUSEWAY',
     baseSpan: Math.min(345, 286 + sNum * 6),
-    hpScale: scale,
+    hpScale: 1.0 * scale,
     gateK: scale,
     negGateBase: -(18 + sNum * 2),
     posGateBase: Math.min(8, 4 + Math.floor(sNum / 2)),
-    enemyBaseHp: 8.5 * scale,
-    enemyBaseSpeed: Math.min(2.35, 1.86 + sNum * 0.04),
+    enemyBaseHp: 7.8 * scale,
+    enemyBaseSpeed: Math.min(2.42, 1.92 + sNum * 0.045),
     coinBase: 3 + sNum * 2,
     bruteName: `Causeway-${sNum} Goliath`,
-    bruteMaxHp: Math.round(15800 * DIFFICULTY_MULTIPLIER_V6 * Math.pow(1.22, sNum - 1)),
-    bruteSpeed: Math.min(2.22, 1.85 + sNum * 0.03),
+    bruteMaxHp: Math.round(11200 * DIFFICULTY_MULTIPLIER_V6 * Math.pow(1.25, sNum - 1)),
+    bruteSpeed: Math.min(2.30, 1.94 + sNum * 0.035),
     bruteDamage: Math.min(15, 7 + Math.floor(sNum / 2)),
     bruteCoins: Math.round(310 * scale),
     boss: {
@@ -889,11 +892,11 @@ export function generateSplitCausewayStage(stageNumber: number): StageDefinition
       primaryHex: archetype.primaryHex,
       accentHex: archetype.accentHex,
       trimHex: archetype.trimHex,
-      maxHp: Math.round(13500 * DIFFICULTY_MULTIPLIER_V6 * Math.pow(1.30, sNum - 1)),
+      maxHp: Math.round(15500 * DIFFICULTY_MULTIPLIER_V6 * Math.pow(1.30, sNum - 1)),
       segments: Math.min(10, 5 + Math.floor(sNum / 2)),
-      advanceSpeed: Math.min(1.54, 1.24 + sNum * 0.025),
-      salvoLanes: sNum >= 4 ? 2 : 1,
-      salvoInterval: Math.max(1.88, 2.34 - sNum * 0.05),
+      advanceSpeed: Math.min(1.56, 1.28 + sNum * 0.025),
+      salvoLanes: sNum >= 3 ? 2 : 1,
+      salvoInterval: Math.max(1.85, 2.28 - sNum * 0.05),
       salvoDamage: Math.min(14, 7 + Math.floor(sNum / 2)),
       rewardCoins: Math.round(360 + sNum * 115 * scale),
     },

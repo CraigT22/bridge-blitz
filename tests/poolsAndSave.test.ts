@@ -144,6 +144,10 @@ describe('ObjectPool & Core State Integrity', () => {
         expect(stage.splitCauseway!.leftQueue.length).toBe(28);
         expect(stage.splitCauseway!.rightEchelons.length).toBe(22);
         expect(stage.splitCauseway!.goliathSpawns.length).toBe(3);
+        expect(stage.splitCauseway!.marchSpeed).toBeGreaterThanOrEqual(4.85);
+        expect(stage.splitCauseway!.leftQueue[0].barrelHp).toBeGreaterThanOrEqual(75);
+        expect(stage.splitCauseway!.leftQueue[27].barrelHp).toBeGreaterThanOrEqual(300000);
+        expect(stage.splitCauseway!.goliathSpawns[0].speed).toBeGreaterThanOrEqual(3.4);
       }
 
       seenChassis.add(stage.boss.chassis);
@@ -160,6 +164,8 @@ describe('ObjectPool & Core State Integrity', () => {
       operator: 'MUL',
       value: 2,
     });
+    expect(split1.splitCauseway!.marchSpeed).toBeGreaterThanOrEqual(4.85);
+    expect(split6.splitCauseway!.marchSpeed).toBeGreaterThan(split1.splitCauseway!.marchSpeed);
     expect(split6.boss.maxHp).toBeGreaterThan(split1.boss.maxHp);
 
     const wave1 = generateEndlessWaveStage(1);

@@ -535,10 +535,10 @@ export class BridgeBlitzGame {
         return;
       }
       const nextDef = goliaths[this.nextBruteCursor];
-      const triggerDist = Math.max(16, Math.abs(nextDef.z) - 64);
+      const triggerDist = Math.max(12, Math.abs(nextDef.z) - 38);
       const ready =
         this.splitCauseway.siegeDistance >= triggerDist ||
-        this.splitCauseway.rightAliveCount <= 12;
+        this.splitCauseway.rightAliveCount <= 14;
       if (!ready) {
         return;
       }
@@ -546,7 +546,7 @@ export class BridgeBlitzGame {
         const brute = this.midBrutes[i];
         if (!brute.active || brute.defeated) {
           const spawnZ =
-            this.splitCauseway.rightAliveCount <= 12 ? zBase - 34 : zBase - 64;
+            this.splitCauseway.rightAliveCount <= 14 ? zBase - 26 : zBase - 38;
           brute.configure({ ...nextDef, z: spawnZ }, RIGHT_LANE_CENTER_X);
           this.nextBruteCursor++;
           break;
