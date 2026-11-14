@@ -32,29 +32,47 @@ export function obstacleLaneToX(lane: ObstacleLane): number {
   }
 }
 
-function createMilitaryDrumTexture(): THREE.CanvasTexture {
+/**
+ * Brushed Carbon-Titanium Hexagonal Ordnance Pod Armor Texture
+ * (replaces oak wooden stave barrel planks while keeping SHARED_DRUM_TEX export).
+ */
+function createHexOrdnancePodTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 256;
   const ctx = canvas.getContext('2d')!;
 
-  // Warm sunlit oak stave planks along Lathe V (0..256 spans left head -> belly -> right head)
+  // Brushed metallic titanium-slate gradient from left bulkhead (0) -> center -> right bulkhead (256)
   const grad = ctx.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, '#755330');
-  grad.addColorStop(0.22, '#9c7344');
-  grad.addColorStop(0.5, '#b08450');
-  grad.addColorStop(0.78, '#9c7344');
-  grad.addColorStop(1, '#755330');
+  grad.addColorStop(0, '#2c3d52');
+  grad.addColorStop(0.20, '#465d78');
+  grad.addColorStop(0.50, '#5a7696');
+  grad.addColorStop(0.80, '#465d78');
+  grad.addColorStop(1, '#2c3d52');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 256, 256);
 
-  // Subtle alternating stave plank warmth & dark plank seams around circumference (U)
-  for (let i = 0; i < 16; i++) {
-    const x = i * 16;
-    ctx.fillStyle = i % 2 === 0 ? 'rgba(255, 226, 178, 0.08)' : 'rgba(30, 16, 6, 0.08)';
-    ctx.fillRect(x, 0, 16, 256);
-    ctx.fillStyle = 'rgba(28, 16, 8, 0.42)';
-    ctx.fillRect(x, 0, 2.5, 256);
+  // 6 armored facet panel seams + flush structural rivets around circumference (U)
+  const facetW = 256 / 6;
+  for (let i = 0; i < 6; i++) {
+    const x = i * facetW;
+    ctx.fillStyle = i % 2 === 0 ? 'rgba(180, 224, 255, 0.10)' : 'rgba(12, 20, 32, 0.10)';
+    ctx.fillRect(x, 0, facetW, 256);
+
+    // Deep facet seam
+    ctx.fillStyle = 'rgba(10, 16, 26, 0.72)';
+    ctx.fillRect(x, 0, 4, 256);
+
+    // Glowing cyan plasma seam accent along center of pod
+    ctx.fillStyle = 'rgba(64, 248, 224, 0.55)';
+    ctx.fillRect(x + 8, 124, facetW - 14, 8);
+
+    // Corner hex bolts
+    ctx.fillStyle = 'rgba(204, 232, 255, 0.65)';
+    ctx.fillRect(x + 10, 44, 5, 5);
+    ctx.fillRect(x + facetW - 14, 44, 5, 5);
+    ctx.fillRect(x + 10, 206, 5, 5);
+    ctx.fillRect(x + facetW - 14, 206, 5, 5);
   }
 
   const tex = new THREE.CanvasTexture(canvas);
@@ -64,81 +82,82 @@ function createMilitaryDrumTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-function createBulgedBarrelGeometries(): {
+/**
+ * Faceted 6-Sided Chamfered Hexagonal Ordnance Pod Geometries
+ * (replaces round bulged wooden barrel while preserving SHARED_BARREL_GEOS export).
+ */
+function createHexOrdnancePodGeometries(): {
   bodyGeo: THREE.BufferGeometry;
   outlineGeo: THREE.BufferGeometry;
 } {
-  const buildLathe = (inflate: number): THREE.BufferGeometry => {
+  const buildHexPod = (inflate: number): THREE.BufferGeometry => {
     const pts: THREE.Vector2[] = [
-      new THREE.Vector2(0.0, -1.12 - inflate),
-      new THREE.Vector2(0.76 + inflate, -1.12 - inflate),
-      new THREE.Vector2(0.83 + inflate, -1.04 - inflate * 0.4),
+      new THREE.Vector2(0.0, -1.14 - inflate),
+      new THREE.Vector2(0.74 + inflate, -1.14 - inflate),
+      new THREE.Vector2(0.96 + inflate, -0.94 - inflate * 0.35),
+      new THREE.Vector2(0.99 + inflate, -0.36),
+      new THREE.Vector2(1.02 + inflate, 0.0),
+      new THREE.Vector2(0.99 + inflate, 0.36),
+      new THREE.Vector2(0.96 + inflate, 0.94 + inflate * 0.35),
+      new THREE.Vector2(0.74 + inflate, 1.14 + inflate),
+      new THREE.Vector2(0.0, 1.14 + inflate),
     ];
-    const steps = 10;
-    for (let s = 0; s <= steps; s++) {
-      const t = s / steps; // 0..1 from left chime to right chime
-      const y = -1.02 + t * 2.04;
-      const arch = 1 - Math.pow(t * 2 - 1, 2); // parabolic stave bulge
-      const r = 0.84 + arch * 0.21 + inflate;
-      pts.push(new THREE.Vector2(r, y));
-    }
-    pts.push(
-      new THREE.Vector2(0.83 + inflate, 1.04 + inflate * 0.4),
-      new THREE.Vector2(0.76 + inflate, 1.12 + inflate),
-      new THREE.Vector2(0.0, 1.12 + inflate)
-    );
-    const geo = new THREE.LatheGeometry(pts, 22);
+    const geo = new THREE.LatheGeometry(pts, 6);
     geo.rotateZ(Math.PI / 2);
-    geo.scale(1.0, 1.04, 1.02);
+    geo.rotateX(Math.PI / 6); // Align crisp flat hex armor face directly toward camera!
+    geo.scale(1.0, 1.02, 1.0);
     geo.computeVertexNormals();
     return geo;
   };
 
   return {
-    bodyGeo: buildLathe(0),
-    outlineGeo: buildLathe(0.052),
+    bodyGeo: buildHexPod(0),
+    outlineGeo: buildHexPod(0.056),
   };
 }
 
-function createSunburstGlowTexture(): THREE.CanvasTexture {
+function createPlasmaHaloTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 128;
   canvas.height = 128;
   const ctx = canvas.getContext('2d')!;
   ctx.clearRect(0, 0, 128, 128);
 
-  const grad = ctx.createRadialGradient(64, 64, 5, 64, 64, 62);
-  grad.addColorStop(0, 'rgba(255, 250, 196, 0.96)');
-  grad.addColorStop(0.42, 'rgba(255, 210, 64, 0.52)');
-  grad.addColorStop(1, 'rgba(255, 180, 20, 0.0)');
+  const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 60);
+  grad.addColorStop(0, 'rgba(235, 255, 255, 0.95)');
+  grad.addColorStop(0.42, 'rgba(72, 238, 255, 0.48)');
+  grad.addColorStop(1, 'rgba(20, 160, 220, 0.0)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 128, 128);
 
-  // Subtle 8-ray starburst flare behind reward pickup
+  // Crisp 6-spoke hexagonal tech reticle behind reward pickup
   ctx.save();
   ctx.translate(64, 64);
-  ctx.fillStyle = 'rgba(255, 248, 205, 0.36)';
-  for (let r = 0; r < 8; r++) {
-    ctx.rotate(Math.PI / 4);
-    ctx.beginPath();
-    ctx.moveTo(-4, 0);
-    ctx.lineTo(0, -58);
-    ctx.lineTo(4, 0);
-    ctx.closePath();
-    ctx.fill();
+  ctx.strokeStyle = 'rgba(220, 252, 255, 0.48)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const ang = (i / 6) * Math.PI * 2;
+    const rx = Math.cos(ang) * 44;
+    const ry = Math.sin(ang) * 44;
+    if (i === 0) ctx.moveTo(rx, ry);
+    else ctx.lineTo(rx, ry);
   }
+  ctx.closePath();
+  ctx.stroke();
   ctx.restore();
 
   return new THREE.CanvasTexture(canvas);
 }
 
-export const SHARED_DRUM_TEX = createMilitaryDrumTexture();
-export const SHARED_BARREL_GEOS = createBulgedBarrelGeometries();
-export const SHARED_GLOW_TEX = createSunburstGlowTexture();
+export const SHARED_DRUM_TEX = createHexOrdnancePodTexture();
+export const SHARED_BARREL_GEOS = createHexOrdnancePodGeometries();
+export const SHARED_GLOW_TEX = createPlasmaHaloTexture();
 export const SHARED_HOOP_GEO = (() => {
-  const g = new THREE.CylinderGeometry(0.955, 0.955, 0.19, 22, 1, true);
+  const g = new THREE.CylinderGeometry(1.02, 1.02, 0.22, 6, 1, true);
   g.rotateZ(Math.PI / 2);
-  g.scale(1.0, 1.045, 1.025);
+  g.rotateX(Math.PI / 6);
+  g.scale(1.0, 1.025, 1.005);
   return g;
 })();
 
@@ -173,13 +192,13 @@ export class SupplyDrumSlot {
   constructor(slotIndex: number) {
     this.entityId = 300 + slotIndex;
 
-    // Grounded contact shadow
+    // Grounded hexagonal contact shadow
     const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(1.36, 20),
+      new THREE.CircleGeometry(1.38, 8),
       new THREE.MeshBasicMaterial({
         color: 0x05080d,
         transparent: true,
-        opacity: 0.44,
+        opacity: 0.48,
         depthWrite: false,
       })
     );
@@ -190,51 +209,51 @@ export class SupplyDrumSlot {
     this.drumMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       map: SHARED_DRUM_TEX,
-      roughness: 0.56,
-      metalness: 0.14,
+      roughness: 0.38,
+      metalness: 0.36,
       emissive: 0x000000,
     });
     this.hoopMat = new THREE.MeshStandardMaterial({
-      color: 0x7c8b9c,
-      roughness: 0.34,
+      color: 0x8aa4bf,
+      roughness: 0.28,
       metalness: 0.48,
       emissive: 0x000000,
     });
 
-    // Sculpted bulged stave barrel + raised 3D gunmetal steel hoops + watertight BackSide cel-outline!
-    const barrelMesh = new THREE.Mesh(SHARED_BARREL_GEOS.bodyGeo, this.drumMat);
-    barrelMesh.position.y = 1.04;
-    this.drumBodyGroup.add(barrelMesh);
+    // Faceted 6-sided Armored Hexagonal Ordnance Pod + Bolted Titanium Collars + Cel-Outline!
+    const podMesh = new THREE.Mesh(SHARED_BARREL_GEOS.bodyGeo, this.drumMat);
+    podMesh.position.y = 1.02;
+    this.drumBodyGroup.add(podMesh);
 
-    for (const hoopX of [-0.66, 0.66]) {
+    for (const hoopX of [-0.68, 0.68]) {
       const hoop = new THREE.Mesh(SHARED_HOOP_GEO, this.hoopMat);
-      hoop.position.set(hoopX, 1.04, 0);
+      hoop.position.set(hoopX, 1.02, 0);
       this.drumBodyGroup.add(hoop);
     }
 
     const outlineMesh = new THREE.Mesh(
       SHARED_BARREL_GEOS.outlineGeo,
-      new THREE.MeshBasicMaterial({ color: 0x140d07, side: THREE.BackSide })
+      new THREE.MeshBasicMaterial({ color: 0x070c14, side: THREE.BackSide })
     );
-    outlineMesh.position.y = 1.04;
+    outlineMesh.position.y = 1.02;
     this.drumBodyGroup.add(outlineMesh);
 
     this.root.add(this.drumBodyGroup);
 
-    // Giant front-facing orange-outlined white HP digits right across the drum belly
+    // Chamfered Dark-Glass Tactical HUD HP Plaque on front face
     this.hpLabelTex = new EditableArcadeHpTexture();
     this.hpLabelMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.28, 1.34),
+      new THREE.PlaneGeometry(2.26, 1.32),
       new THREE.MeshBasicMaterial({
         map: this.hpLabelTex.texture,
         transparent: true,
         depthWrite: false,
       })
     );
-    this.hpLabelMesh.position.set(0, 0.98, 1.14);
+    this.hpLabelMesh.position.set(0, 1.00, 1.12);
     this.root.add(this.hpLabelMesh);
 
-    // Perched Top Reward Pivot (Gold Coin, 3D Weapon, or +1 Recruit Helmet)
+    // Perched Top Reward Pivot (Octagonal Bullion, 3D Weapon, or Stealth Helm)
     this.pickupPivot.position.set(0, 2.56, 0);
     this.root.add(this.pickupPivot);
 
@@ -306,16 +325,16 @@ export class SupplyDrumSlot {
     const isRecruit = def.rewardType === 'RECRUIT';
     const isWeapon = def.rewardType === 'WEAPON';
 
-    // Distinct barrel wood/hoop color-coding so reward value reads at a glance
+    // Distinct Armored Hex Pod color-coding (zero oak-wood brown!)
     if (isWeapon) {
-      this.drumMat.color.setHex(0xe87b6e); // Rich crimson-mahogany ordnance barrel
-      this.hoopMat.color.setHex(0xd4a24c); // Brass ordnance hoops
+      this.drumMat.color.setHex(0xe2567c); // Crimson-magenta ordnance pod
+      this.hoopMat.color.setHex(0xffbe3b); // Volt-gold tactical collars
     } else if (isRecruit) {
-      this.drumMat.color.setHex(0xcbe2f8); // Cool tactical slate-oak barrel
-      this.hoopMat.color.setHex(0x4ea4ff); // Cobalt squad-reinforcement hoops
+      this.drumMat.color.setHex(0x6ceef0); // Electric-teal vanguard pod
+      this.hoopMat.color.setHex(0x8ec8ff); // Ice-titanium collars
     } else {
-      this.drumMat.color.setHex(0xffebd2); // Warm golden-oak War Chest barrel
-      this.hoopMat.color.setHex(0x7c8b9c); // Brushed gunmetal hoops
+      this.drumMat.color.setHex(0xa8c6e4); // Brushed slate-titanium credit pod
+      this.hoopMat.color.setHex(0xffb830); // Cyber-amber bullion collars
     }
 
     this.coinGroup.visible = isCoins;
@@ -334,9 +353,9 @@ export class SupplyDrumSlot {
         WEAPON_SPECS[wTier].colorHex
       );
     } else if (isRecruit) {
-      (this.glowHaloMesh.material as THREE.MeshBasicMaterial).color.setHex(0x45d9ff);
+      (this.glowHaloMesh.material as THREE.MeshBasicMaterial).color.setHex(0x28f8dc);
     } else {
-      (this.glowHaloMesh.material as THREE.MeshBasicMaterial).color.setHex(0xffe066);
+      (this.glowHaloMesh.material as THREE.MeshBasicMaterial).color.setHex(0xffcf48);
     }
 
     this.hpLabelTex.redrawIfDirty(this.remainingHp, 0);
@@ -357,7 +376,6 @@ export class SupplyDrumSlot {
       return;
     }
     this.root.visible = true;
-    // Keep unbroken sibling barrels physically standing on the bridge until well behind the elevated camera!
     if (squadZ < this.z - 12.5) {
       this.root.position.y -= dt * 16.0;
       if (this.root.position.y <= -3.5 || squadZ < this.z - 15.2) {
@@ -378,7 +396,6 @@ export class SupplyDrumSlot {
     } else {
       const wTier = Math.max(1, Math.min(5, Math.round(this.rewardValue))) as WeaponTierId;
       const rig = this.weaponRigs[wTier];
-      // Crisp side-profile hover (+/- 16 deg) so the full weapon silhouette reads unmistakably!
       rig.root.rotation.y = Math.sin(this.spinAngle * 0.85) * 0.28;
       if (rig.spinCluster) {
         rig.spinCluster.rotation.x += dt * 12;
@@ -391,8 +408,8 @@ export class SupplyDrumSlot {
 
     if (this.flashTimer > 0) {
       this.flashTimer = Math.max(0, this.flashTimer - dt * 9.5);
-      this.drumMat.emissive.setRGB(this.flashTimer * 0.52, this.flashTimer * 0.14, 0.02);
-      this.hoopMat.emissive.setRGB(this.flashTimer * 0.32, this.flashTimer * 0.10, 0.01);
+      this.drumMat.emissive.setRGB(this.flashTimer * 0.12, this.flashTimer * 0.42, this.flashTimer * 0.48);
+      this.hoopMat.emissive.setRGB(this.flashTimer * 0.36, this.flashTimer * 0.28, 0.05);
       const pop = 1 + this.flashTimer * 0.05;
       this.drumBodyGroup.scale.set(pop, 1 - this.flashTimer * 0.03, pop);
     } else {
@@ -441,10 +458,6 @@ export class SupplyDrumSlot {
     return 'HIT';
   }
 
-  /**
-   * Checks if the squad's core lane slams head-on into an unbroken Supply Drum.
-   * Leaves the barrel standing & visible on the bridge so the Run-End card displays right in front of it!
-   */
   public checkCoreLaneCrash(squadX: number, squadZ: number): boolean {
     if (!this.active || this.broken) {
       return false;

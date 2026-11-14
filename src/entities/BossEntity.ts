@@ -6,9 +6,9 @@ import {
 } from '../rendering/BossRigFactory';
 
 export const BOSS_SALVO_LANE_CENTERS = [-3.1, 0.0, 3.1] as const;
-export const BOSS_SALVO_HIT_HALF_WIDTH = 1.35;
-export const BOSS_TELEGRAPH_DURATION = 0.95;
-const BOSS_WARHEAD_SPEED = 25.0;
+export const BOSS_SALVO_HIT_HALF_WIDTH = 1.38;
+export const BOSS_TELEGRAPH_DURATION = 0.76;
+const BOSS_WARHEAD_SPEED = 30.5;
 const MAX_BOSS_WARHEADS = 8;
 
 type LaneMask3 = readonly [boolean, boolean, boolean];
@@ -318,7 +318,7 @@ export class BossEntity {
     this.barrelSpin = 0;
 
     this.clearSalvoVisuals();
-    this.salvoCooldown = 0.85;
+    this.salvoCooldown = 0.55;
     this.salvoCycleIndex = 0;
 
     for (const key of Object.keys(this.rigs) as BossChassisId[]) {
@@ -718,5 +718,44 @@ export class BossEntity {
     }
 
     return 'HIT';
+  }
+
+  public getRecommendedSafeLaneX(squadX: number): number | null {
+    if (!this.active || this.defeated) {
+      return null;
+    }
+    let danger0 = false;
+    let danger1 = false;
+    let danger2 = false;
+    if (this.telegraphTimer > 0) {
+      danger0 = this.lockedLaneMask[0];
+      danger1 = this.lockedLaneMask[1];
+      danger2 = this.lockedLaneMask[2];
+    }
+    for (let i = 0; i < MAX_BOSS_WARHEADS; i++) {
+      const w = this.warheads[i];
+      if (w.active) {
+        if (w.laneIndex === 0) danger0 = true;
+        else if (w.laneIndex === 1) danger1 = true;
+        else if (w.laneIndex === 2) danger2 = true;
+      }
+    }
+    if (!danger0 && !danger1 && !danger2) {
+      return null;
+    }
+    let bestX: number | null = null;
+    let bestDist = 999;
+    const flags = [danger0, danger1, danger2];
+    for (let idx = 0; idx < 3; idx++) {
+      if (!flags[idx]) {
+        const cx = BOSS_SALVO_LANE_CENTERS[idx];
+        const d = Math.abs(squadX - cx);
+        if (d < bestDist) {
+          bestDist = d;
+          bestX = cx;
+        }
+      }
+    }
+    return bestX;
   }
 }

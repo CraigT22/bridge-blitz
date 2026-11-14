@@ -11,35 +11,47 @@ import {
   type ShowcaseWeaponRig,
 } from '../rendering/WeaponRigFactory';
 
-const MAX_TIRE_LAYERS = 5;
-const TIRE_HIT_RADIUS_X = 1.56;
+const MAX_BARRICADE_TIERS = 5;
+const BARRICADE_HIT_RADIUS_X = 1.56;
 
-function createOffRoadTireTexture(): THREE.CanvasTexture {
+function createHexBlastArmorTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 128;
   const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#14171c';
+  ctx.fillStyle = '#243448';
   ctx.fillRect(0, 0, 256, 128);
 
-  ctx.fillStyle = '#2d3540';
-  for (let x = 0; x < 256; x += 16) {
-    ctx.fillRect(x + 2, 6, 10, 50);
-    ctx.fillRect(x + 8, 70, 10, 50);
+  // Beveled reactive armor cassette blocks + caution chevrons
+  for (let x = 0; x < 256; x += 32) {
+    ctx.fillStyle = '#3c526e';
+    ctx.fillRect(x + 3, 6, 26, 48);
+    ctx.fillRect(x + 3, 74, 26, 48);
+    ctx.fillStyle = 'rgba(180, 224, 255, 0.38)';
+    ctx.fillRect(x + 3, 6, 26, 3);
+    ctx.fillRect(x + 3, 74, 26, 3);
   }
-  ctx.fillStyle = '#0d0f13';
-  ctx.fillRect(0, 60, 256, 8);
+  ctx.fillStyle = '#111a26';
+  ctx.fillRect(0, 58, 256, 12);
+  ctx.fillStyle = '#ffb42e';
+  for (let hx = 0; hx < 256; hx += 32) {
+    ctx.fillRect(hx + 4, 61, 14, 6);
+  }
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(6, 2);
+  tex.repeat.set(3, 1);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
 
-const _sharedTreadTex = createOffRoadTireTexture();
+const _sharedBlastArmorTex = createHexBlastArmorTexture();
 
+/**
+ * Modular Hex-Chevron Reactive Blast Barricade (replaces rubber off-road tire stacks while
+ * keeping `TireWeaponStackSlot` class signature for drop-in StageData/BridgeBlitzGame compatibility).
+ */
 export class TireWeaponStackSlot {
   public readonly entityId: number;
   public readonly root = new THREE.Group();
@@ -52,8 +64,9 @@ export class TireWeaponStackSlot {
   public weaponTier: WeaponTierId | null = null;
   public coinReward = 40;
 
-  private readonly tireMeshes: THREE.Group[] = [];
-  private readonly rubberMat: THREE.MeshStandardMaterial;
+  private readonly tierGroups: THREE.Group[] = [];
+  private readonly armorMat: THREE.MeshStandardMaterial;
+  private readonly coreGlowMat: THREE.MeshBasicMaterial;
   private readonly holoBeamMat: THREE.MeshBasicMaterial;
   private readonly outerHoloRing: THREE.Mesh;
   private readonly plaqueMesh: THREE.Mesh;
@@ -70,32 +83,35 @@ export class TireWeaponStackSlot {
   constructor(slotIndex: number) {
     this.entityId = 500 + slotIndex;
 
-    this.rubberMat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      map: _sharedTreadTex,
-      bumpMap: _sharedTreadTex,
-      bumpScale: 0.04,
-      roughness: 0.80,
-      metalness: 0.10,
+    this.armorMat = new THREE.MeshStandardMaterial({
+      color: 0xd8e8f8,
+      map: _sharedBlastArmorTex,
+      bumpMap: _sharedBlastArmorTex,
+      bumpScale: 0.035,
+      roughness: 0.38,
+      metalness: 0.42,
       emissive: 0x000000,
     });
-    const rimMat = new THREE.MeshStandardMaterial({
-      color: 0x586778,
-      roughness: 0.34,
-      metalness: 0.46,
+    const capSteelMat = new THREE.MeshStandardMaterial({
+      color: 0x526a86,
+      roughness: 0.30,
+      metalness: 0.48,
+    });
+    this.coreGlowMat = new THREE.MeshBasicMaterial({
+      color: 0x24f2d2,
     });
     const outlineMat = new THREE.MeshBasicMaterial({
-      color: 0x080a0e,
+      color: 0x070b12,
       side: THREE.BackSide,
     });
 
-    // Grounded AO shadow disc beneath wide tire barricade
+    // Grounded hexagonal AO shadow beneath blast barricade
     const stackShadow = new THREE.Mesh(
-      new THREE.CircleGeometry(1.58, 20),
+      new THREE.CircleGeometry(1.58, 6),
       new THREE.MeshBasicMaterial({
         color: 0x05080d,
         transparent: true,
-        opacity: 0.52,
+        opacity: 0.54,
         depthWrite: false,
       })
     );
@@ -103,25 +119,26 @@ export class TireWeaponStackSlot {
     stackShadow.position.set(0, 0.02, 0.08);
     this.root.add(stackShadow);
 
-    // Wide heavy-duty barricade tires leaving clean breached-lane funnel corridors when 1 stack is shattered!
-    const tireGeo = new THREE.TorusGeometry(1.04, 0.31, 12, 24);
-    tireGeo.rotateX(Math.PI / 2);
-    const tireOutlineGeo = new THREE.TorusGeometry(1.04, 0.36, 10, 24);
-    tireOutlineGeo.rotateX(Math.PI / 2);
-    const hubGeo = new THREE.CylinderGeometry(0.78, 0.78, 0.45, 16);
+    // 5-tier stacked 6-sided reactive blast armor cassettes (zero rubber tires!)
+    const tierBodyGeo = new THREE.CylinderGeometry(1.18, 1.28, 0.44, 6);
+    const tierOutlineGeo = new THREE.CylinderGeometry(1.25, 1.35, 0.50, 6);
+    const tierCoreBandGeo = new THREE.CylinderGeometry(1.25, 1.25, 0.08, 6);
+    const topDeckCapGeo = new THREE.CylinderGeometry(0.96, 1.12, 0.08, 6);
 
-    for (let i = 0; i < MAX_TIRE_LAYERS; i++) {
+    for (let i = 0; i < MAX_BARRICADE_TIERS; i++) {
       const layerGroup = new THREE.Group();
-      const offsetX = i % 2 === 0 ? 0.02 : -0.025;
-      layerGroup.position.set(offsetX, 0.30 + i * 0.50, 0);
-      layerGroup.rotation.y = i * 0.45;
+      layerGroup.position.set(0, 0.26 + i * 0.49, 0);
+      // Slight alternating hex facet lock
+      layerGroup.rotation.y = (i % 2) * (Math.PI / 6);
 
-      const tire = new THREE.Mesh(tireGeo, this.rubberMat);
-      const outline = new THREE.Mesh(tireOutlineGeo, outlineMat);
-      const hub = new THREE.Mesh(hubGeo, rimMat);
-      layerGroup.add(tire, outline, hub);
+      const casing = new THREE.Mesh(tierBodyGeo, this.armorMat);
+      const outline = new THREE.Mesh(tierOutlineGeo, outlineMat);
+      const coreBand = new THREE.Mesh(tierCoreBandGeo, this.coreGlowMat);
+      const cap = new THREE.Mesh(topDeckCapGeo, capSteelMat);
+      cap.position.y = 0.23;
+      layerGroup.add(casing, outline, coreBand, cap);
 
-      this.tireMeshes.push(layerGroup);
+      this.tierGroups.push(layerGroup);
       this.root.add(layerGroup);
     }
 
@@ -131,28 +148,28 @@ export class TireWeaponStackSlot {
       transparent: true,
       depthWrite: false,
     });
-    this.plaqueMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.58, 1.48), plaqueMat);
-    this.plaqueMesh.position.set(0, 1.12, 1.46);
+    this.plaqueMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.56, 1.46), plaqueMat);
+    this.plaqueMesh.position.set(0, 1.12, 1.44);
     this.root.add(this.plaqueMesh);
 
     this.root.add(this.pickupPivot);
     this.holoBeamMat = new THREE.MeshBasicMaterial({
-      color: 0xffd447,
+      color: 0x28f2d4,
       transparent: true,
-      opacity: 0.22,
+      opacity: 0.24,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
     const holoCone = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.92, 0.56, 1.05, 18, 1, true),
+      new THREE.CylinderGeometry(0.92, 0.56, 1.05, 6, 1, true),
       this.holoBeamMat
     );
     holoCone.position.set(0, 0.02, 0);
     this.pickupPivot.add(holoCone);
 
     this.outerHoloRing = new THREE.Mesh(
-      new THREE.TorusGeometry(0.84, 0.028, 8, 24),
+      new THREE.RingGeometry(0.76, 0.88, 6),
       this.holoBeamMat
     );
     this.outerHoloRing.rotation.x = Math.PI / 2.2;
@@ -212,9 +229,12 @@ export class TireWeaponStackSlot {
     this.coinPickupGroup.visible = hasCoin;
 
     if (this.weaponTier) {
-      this.holoBeamMat.color.setHex(WEAPON_SPECS[this.weaponTier].colorHex);
+      const wHex = WEAPON_SPECS[this.weaponTier].colorHex;
+      this.holoBeamMat.color.setHex(wHex);
+      this.coreGlowMat.color.setHex(wHex);
     } else {
-      this.holoBeamMat.color.setHex(0xffd447);
+      this.holoBeamMat.color.setHex(0xffcf48);
+      this.coreGlowMat.color.setHex(0x28f2d4);
     }
 
     for (const t of [1, 2, 3, 4, 5] as const) {
@@ -236,14 +256,14 @@ export class TireWeaponStackSlot {
   private syncStackHeight(): void {
     const ratio = Math.max(0, this.remainingBreakCount / this.initialBreakCount);
     const totalLayers =
-      this.initialBreakCount >= 1400 ? 5 : this.initialBreakCount >= 500 ? 4 : 3;
+      this.initialBreakCount >= 1200 ? 5 : this.initialBreakCount >= 450 ? 4 : 3;
     const visibleLayers = Math.max(1, Math.ceil(ratio * totalLayers));
 
-    for (let i = 0; i < MAX_TIRE_LAYERS; i++) {
-      this.tireMeshes[i].visible = i < visibleLayers;
+    for (let i = 0; i < MAX_BARRICADE_TIERS; i++) {
+      this.tierGroups[i].visible = i < visibleLayers;
     }
 
-    const topY = 0.40 + visibleLayers * 0.50;
+    const topY = 0.36 + visibleLayers * 0.49;
     this.pickupPivot.position.set(0, topY + 0.72, 0);
     this.plaqueMesh.position.y = Math.max(0.75, topY * 0.52);
   }
@@ -257,7 +277,6 @@ export class TireWeaponStackSlot {
       return;
     }
     this.root.visible = true;
-    // Keep unbroken sibling Tire Stacks physically standing on the bridge until well behind the elevated camera!
     if (this.retiring || squadZ < this.z - 12.5) {
       this.retiring = true;
       this.root.position.y -= dt * 16.0;
@@ -272,7 +291,6 @@ export class TireWeaponStackSlot {
     if (this.weaponTier) {
       const activeRig = this.weaponRigs[this.weaponTier];
       if (activeRig.root.visible) {
-        // Broadside profile (+/- 16 deg) so Rifle/Minigun/Plasma silhouette reads clearly!
         activeRig.root.rotation.y = Math.sin(this.spinAngle * 0.85) * 0.28;
         activeRig.root.position.y = 0.10 + Math.sin(this.spinAngle * 1.6) * 0.09;
         if (activeRig.spinCluster) {
@@ -290,10 +308,10 @@ export class TireWeaponStackSlot {
 
     if (this.flashTimer > 0) {
       this.flashTimer = Math.max(0, this.flashTimer - dt * 10.5);
-      const g = this.flashTimer * 0.18;
-      this.rubberMat.emissive.setRGB(g, g * 0.88, g * 0.78);
+      const g = this.flashTimer * 0.26;
+      this.armorMat.emissive.setRGB(g * 0.45, g * 0.92, g);
     } else {
-      this.rubberMat.emissive.setRGB(0, 0, 0);
+      this.armorMat.emissive.setRGB(0, 0, 0);
     }
 
     this.plaqueTex.redrawIfDirty(this.remainingBreakCount, this.flashTimer);
@@ -314,7 +332,7 @@ export class TireWeaponStackSlot {
     if (this.z < minZ || this.z > maxZ) {
       return 'NONE';
     }
-    if (Math.abs(bx - this.x) > TIRE_HIT_RADIUS_X) {
+    if (Math.abs(bx - this.x) > BARRICADE_HIT_RADIUS_X) {
       return 'NONE';
     }
 
@@ -337,11 +355,6 @@ export class TireWeaponStackSlot {
     return 'HIT';
   }
 
-  /**
-   * Checks if the squad's core lane slams head-on into an unbreached Tire Wall stack.
-   * Preserves the standing Tire Stack (`broken = false`, `visible = true`) so the Run-End card
-   * displays right over the frozen intact barricade!
-   */
   public checkCoreLaneCrash(squadX: number, squadZ: number): boolean {
     if (!this.active || this.broken || this.retiring) {
       return false;

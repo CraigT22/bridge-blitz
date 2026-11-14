@@ -27,9 +27,9 @@ import {
 
 export const LEFT_LANE_CENTER_X = -2.58;
 export const RIGHT_LANE_CENTER_X = 2.58;
-const VISIBLE_QUEUE_SLOTS = 6;
+const VISIBLE_QUEUE_SLOTS = 4;
 const QUEUE_FRONT_OFFSET_Z = 9.8;
-const QUEUE_SLOT_SPACING_Z = 5.45;
+const QUEUE_SLOT_SPACING_Z = 6.45;
 const BARREL_HIT_HALF_WIDTH_X = 1.72;
 const LEFT_GATE_PANEL_WIDTH = 4.24;
 const LEFT_GATE_PANEL_HEIGHT = 2.62;
@@ -124,29 +124,29 @@ export class SplitCausewayController {
 
   constructor() {
     const pylonMat = new THREE.MeshStandardMaterial({
-      color: 0x20d8ff,
-      emissive: 0x074d6e,
+      color: 0x18f2c8,
+      emissive: 0x065448,
       roughness: 0.28,
-      metalness: 0.24,
+      metalness: 0.34,
     });
     const outlineMat = new THREE.MeshBasicMaterial({
-      color: 0x090e16,
+      color: 0x070c14,
       side: THREE.BackSide,
     });
     const barrelOutlineMat = new THREE.MeshBasicMaterial({
-      color: 0x140d07,
+      color: 0x070c14,
       side: THREE.BackSide,
     });
 
-    const postGeo = new THREE.CylinderGeometry(0.135, 0.155, 3.36, 12);
-    const postOutlineGeo = new THREE.CylinderGeometry(0.18, 0.20, 3.42, 12);
-    const capGeo = new THREE.SphereGeometry(0.165, 10, 8);
-    const capOutlineGeo = new THREE.SphereGeometry(0.21, 10, 8);
-    const shadowGeo = new THREE.CircleGeometry(1.62, 20);
+    const postGeo = new THREE.CylinderGeometry(0.135, 0.175, 3.36, 6);
+    const postOutlineGeo = new THREE.CylinderGeometry(0.18, 0.22, 3.42, 6);
+    const capGeo = new THREE.OctahedronGeometry(0.19, 0);
+    const capOutlineGeo = new THREE.OctahedronGeometry(0.24, 0);
+    const shadowGeo = new THREE.CircleGeometry(1.62, 8);
     const shadowMat = new THREE.MeshBasicMaterial({
       color: 0x05080d,
       transparent: true,
-      opacity: 0.44,
+      opacity: 0.48,
       depthWrite: false,
     });
 
@@ -159,20 +159,20 @@ export class SplitCausewayController {
       shadow.position.set(0, 0.022, 0.06);
       group.add(shadow);
 
-      // Plump horizontal stave barrel calibrated so paired gate numerals sit cleanly above rim
+      // Faceted 6-sided Armored Hexagonal Ordnance Pod calibrated so paired holo-gate numerals sit cleanly above rim
       const barrelPivot = new THREE.Group();
       barrelPivot.scale.set(1.25, 0.94, 0.94);
 
       const barrelMat = new THREE.MeshStandardMaterial({
-        color: 0xffebd2,
+        color: 0x7ceef2,
         map: SHARED_DRUM_TEX,
-        roughness: 0.54,
-        metalness: 0.14,
+        roughness: 0.38,
+        metalness: 0.36,
         emissive: 0x000000,
       });
       const hoopMat = new THREE.MeshStandardMaterial({
-        color: 0x7c8b9c,
-        roughness: 0.34,
+        color: 0x8cc8ff,
+        roughness: 0.28,
         metalness: 0.48,
         emissive: 0x000000,
       });
@@ -181,7 +181,7 @@ export class SplitCausewayController {
       barrelMesh.position.y = 0.96;
       barrelPivot.add(barrelMesh);
 
-      for (const hx of [-0.66, 0.66]) {
+      for (const hx of [-0.68, 0.68]) {
         const hoop = new THREE.Mesh(SHARED_HOOP_GEO, hoopMat);
         hoop.position.set(hx, 0.96, 0);
         barrelPivot.add(hoop);
@@ -192,10 +192,10 @@ export class SplitCausewayController {
       barrelPivot.add(barrelOutline);
       group.add(barrelPivot);
 
-      // Crisp front-facing arcade HP digits on barrel belly
+      // Chamfered Dark-Glass Tactical HUD HP Plaque on pod front face
       const hpTex = new EditableArcadeHpTexture();
       const hpMesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(2.52, 1.42),
+        new THREE.PlaneGeometry(2.48, 1.40),
         new THREE.MeshBasicMaterial({
           map: hpTex.texture,
           transparent: true,
@@ -205,7 +205,7 @@ export class SplitCausewayController {
       hpMesh.position.set(0, 0.98, 1.15);
       group.add(hpMesh);
 
-      // Paired Half-Bridge Cyan Gate Arch directly behind barrel (`z = -1.92`) with elevated numeral band
+      // Paired Half-Bridge Hex-Grid Holo-Gate Arch directly behind pod (`z = -1.92`)
       const gateArchGroup = new THREE.Group();
       gateArchGroup.position.set(0, 0, -1.92);
 
@@ -215,9 +215,9 @@ export class SplitCausewayController {
         const postOutline = new THREE.Mesh(postOutlineGeo, outlineMat);
         postOutline.position.set(px, 1.68, 0);
         const cap = new THREE.Mesh(capGeo, pylonMat);
-        cap.position.set(px, 3.38, 0);
+        cap.position.set(px, 3.42, 0);
         const capOutline = new THREE.Mesh(capOutlineGeo, outlineMat);
-        capOutline.position.set(px, 3.38, 0);
+        capOutline.position.set(px, 3.42, 0);
         gateArchGroup.add(post, postOutline, cap, capOutline);
       }
 
@@ -237,7 +237,7 @@ export class SplitCausewayController {
 
       // Paired 3D Weapon / Coin Pedestal behind barrel (`z = -1.82`)
       const rewardPedestalGroup = new THREE.Group();
-      rewardPedestalGroup.position.set(0, 2.38, -1.82);
+      rewardPedestalGroup.position.set(0, 2.12, -1.82);
 
       const glowHaloMat = new THREE.MeshBasicMaterial({
         map: SHARED_GLOW_TEX,
@@ -498,8 +498,8 @@ export class SplitCausewayController {
 
       const reward = nodeDef.reward;
       if (reward.kind === 'GATE') {
-        slot.barrelMat.color.setHex(0xffebd2);
-        slot.hoopMat.color.setHex(0x7c8b9c);
+        slot.barrelMat.color.setHex(0x6ceef0);
+        slot.hoopMat.color.setHex(0x8ec8ff);
         slot.gateArchGroup.visible = true;
         slot.rewardPedestalGroup.visible = false;
         slot.gateTex.redrawIfDirty(
@@ -511,8 +511,8 @@ export class SplitCausewayController {
           LEFT_GATE_PANEL_WIDTH
         );
       } else if (reward.kind === 'WEAPON') {
-        slot.barrelMat.color.setHex(0xea7e6e);
-        slot.hoopMat.color.setHex(0xd8a64c);
+        slot.barrelMat.color.setHex(0xe2567c);
+        slot.hoopMat.color.setHex(0xffbe3b);
         slot.gateArchGroup.visible = false;
         slot.rewardPedestalGroup.visible = true;
         slot.coinGroup.visible = false;
@@ -523,12 +523,12 @@ export class SplitCausewayController {
           slot.weaponBadges[t].visible = match;
         }
       } else {
-        slot.barrelMat.color.setHex(0xffdf8e);
-        slot.hoopMat.color.setHex(0xf5bd38);
+        slot.barrelMat.color.setHex(0xa8c6e4);
+        slot.hoopMat.color.setHex(0xffb830);
         slot.gateArchGroup.visible = false;
         slot.rewardPedestalGroup.visible = true;
         slot.coinGroup.visible = true;
-        slot.glowHaloMat.color.setHex(0xffe066);
+        slot.glowHaloMat.color.setHex(0xffcf48);
         for (const t of [1, 2, 3, 4, 5] as const) {
           slot.weaponRigs[t].root.visible = false;
           slot.weaponBadges[t].visible = false;
@@ -587,7 +587,7 @@ export class SplitCausewayController {
       }
     }
 
-    // Animate visible left-lane barrels & weapon/coin pedestals
+    // Animate visible left-lane armored hex pods & weapon/bullion pedestals
     for (let s = 0; s < VISIBLE_QUEUE_SLOTS; s++) {
       const slot = this.visualSlots[s];
       if (slot.boundNodeIndex < 0 || !slot.group.visible) {
@@ -599,8 +599,8 @@ export class SplitCausewayController {
       }
       if (slot.flashTimer > 0) {
         slot.flashTimer = Math.max(0, slot.flashTimer - dt * 9.5);
-        slot.barrelMat.emissive.setRGB(slot.flashTimer * 0.54, slot.flashTimer * 0.15, 0.02);
-        slot.hoopMat.emissive.setRGB(slot.flashTimer * 0.34, slot.flashTimer * 0.10, 0.01);
+        slot.barrelMat.emissive.setRGB(slot.flashTimer * 0.14, slot.flashTimer * 0.44, slot.flashTimer * 0.50);
+        slot.hoopMat.emissive.setRGB(slot.flashTimer * 0.36, slot.flashTimer * 0.28, 0.06);
         const pop = 1 + slot.flashTimer * 0.055;
         slot.barrelPivot.scale.set(1.25 * pop, 0.94 * (1 - slot.flashTimer * 0.03), 0.94 * pop);
       } else {
@@ -615,7 +615,7 @@ export class SplitCausewayController {
 
       if (slot.rewardPedestalGroup.visible) {
         const phase = this.spinClock + s * 0.65;
-        slot.rewardPedestalGroup.position.y = 2.38 + Math.sin(phase * 1.5) * 0.08;
+        slot.rewardPedestalGroup.position.y = 2.12 + Math.sin(phase * 1.5) * 0.08;
         slot.glowHaloMesh.rotation.z = phase * 0.45;
         if (slot.coinGroup.visible) {
           slot.coinGroup.rotation.y = Math.sin(phase * 1.2) * 0.55;
@@ -635,7 +635,7 @@ export class SplitCausewayController {
 
     this.syncQueuePositions();
 
-    // Animate Golden Squad Celebration Ring
+    // Animate Squad Celebration Ring
     if (this.celebrationTimer > 0) {
       this.celebrationTimer = Math.max(0, this.celebrationTimer - dt);
       const t = 1 - this.celebrationTimer / 0.72;
@@ -669,7 +669,7 @@ export class SplitCausewayController {
       return;
     }
 
-    // Find closest surviving right-lane trooper so any cleared gap > 11.5m triggers an immediate reinforcement sprint!
+    // Punishing Tactical reinforcement sprint whenever gap > 13.5m so right lane never goes quiet!
     let closestAliveZ = -999999;
     for (let i = 0; i < this.totalTroopers; i++) {
       if (this.unitAlive[i] !== 0 && this.unitZ[i] > closestAliveZ) {
@@ -678,10 +678,11 @@ export class SplitCausewayController {
     }
 
     const gapAhead = squadZ - closestAliveZ;
-    const speedBoost = closestAliveZ > -900000 && gapAhead > 13.5 ? 1.75 : 1.0;
+    const speedBoost =
+      this.siegeDistance > 20.0 && closestAliveZ > -900000 && gapAhead > 16.5 ? 1.58 : 1.0;
     const stepSpeed = this.marchSpeed * speedBoost;
     this.siegeDistance = Math.min(this.siegeColumnSpan, this.siegeDistance + stepSpeed * dt);
-    this.marchPhase += dt * 11.2 * (speedBoost > 1 ? 1.28 : 1.0);
+    this.marchPhase += dt * 11.6 * (speedBoost > 1 ? 1.28 : 1.0);
 
     let alive = 0;
     for (let i = 0; i < this.totalTroopers; i++) {
@@ -693,19 +694,19 @@ export class SplitCausewayController {
       }
 
       // Once a right-lane trooper clears the nose of the Center Divider Wall (`dividerTipZ`),
-      // they enter the open Breach Zone and sprint diagonally straight toward `(squadX, squadZ)`!
+      // they charge aggressively into the open Breach Zone toward `(squadX, squadZ)`!
       if (this.unitZ[i] > this.dividerTipZ + 0.25) {
         const dx = squadX - this.unitX[i];
         const dz = Math.max(0.35, squadZ + 0.25 - this.unitZ[i]);
         const dist = Math.hypot(dx, dz);
-        const breachMul = this.unitRank[i] === 2 ? 1.06 : 1.18;
+        const breachMul = this.unitRank[i] === 2 ? 1.12 : 1.26;
         const chargeStep = stepSpeed * this.unitSpeedMul[i] * breachMul * dt;
         const inv = 1 / Math.max(0.001, dist);
         this.unitX[i] = Math.max(
           -4.35,
           Math.min(4.35, this.unitX[i] + dx * inv * chargeStep)
         );
-        this.unitZ[i] += Math.max(stepSpeed * 0.45 * dt, dz * inv * chargeStep);
+        this.unitZ[i] += Math.max(stepSpeed * 0.50 * dt, dz * inv * chargeStep);
       } else {
         const advance = stepSpeed * this.unitSpeedMul[i] * dt;
         this.unitZ[i] += advance;
@@ -968,7 +969,7 @@ export class SplitCausewayController {
       const breachedDefenseLine = uz > squadZ + 1.35;
 
       if (directClash || breachedDefenseLine) {
-        const dmg = isHeavy ? 3 : 1;
+        const dmg = isHeavy ? 4 : 2;
         totalLosses += dmg;
         impactX = directClash ? ux : squadX;
         impactZ = directClash ? uz : squadZ;

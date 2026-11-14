@@ -217,10 +217,12 @@ export interface TelemetrySnapshot {
   bruteHp: number;
   bruteMaxHp: number;
   marchHaltedByBrute: boolean;
+  recommendedDodgeX: number | null;
   bossHp: number;
   bossMaxHp: number;
   splitQueueRemaining: number;
   splitRightAlive: number;
+  splitClosestThreatZ: number | null;
   drumsBrokenThisRun: number;
   gatesFlippedThisRun: number;
   tiresBrokenThisRun: number;

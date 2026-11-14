@@ -185,19 +185,19 @@ function applyCommandoShader(
           enableRankTint
             ? `
         if (vRankTint < 0.5 && vLocalY < 0.78 && vLocalY > 0.09) {
-          vec3 oliveFatigue = gl_FragColor.rgb * vec3(0.42, 0.92, 0.34) + vec3(0.03, 0.14, 0.02);
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, oliveFatigue, 0.84);
+          vec3 voltSyndicate = gl_FragColor.rgb * vec3(1.18, 0.82, 0.22) + vec3(0.14, 0.07, 0.0);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, voltSyndicate, 0.84);
         }
         `
             : ''
         }
         {
-          // Crisp stylized 2-band cel-saturation lift + sky rim so characters stay vivid in shadow!
+          // Crisp stylized 2-band cel-saturation lift + moonlit cyan sky rim so characters pop!
           vec3 wn = vToonWorldNormal / max(0.0001, length(vToonWorldNormal));
           float topBand = smoothstep(-0.22, 0.35, wn.y * 0.72 - wn.z * 0.38 - wn.x * 0.25);
           gl_FragColor.rgb *= mix(0.92, 1.18, topBand);
           float skyRim = smoothstep(0.55, 0.92, wn.y);
-          gl_FragColor.rgb += vec3(0.05, 0.07, 0.10) * skyRim;
+          gl_FragColor.rgb += vec3(0.04, 0.09, 0.12) * skyRim;
         }
         ${
           enableHitFlash
@@ -462,7 +462,7 @@ export class InstancedBatchRenderer {
       roughness: 0.40,
       metalness: 0.14,
     });
-    applyCommandoShader(playerMat, this.playerUniforms, 'commando-player-v53', false, false);
+    applyCommandoShader(playerMat, this.playerUniforms, 'commando-player-v70', false, false);
 
     this.playerMesh = new THREE.InstancedMesh(playerGeo, playerMat, MAX_VISUAL_SOLDIERS);
     this.playerMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -473,7 +473,7 @@ export class InstancedBatchRenderer {
     const playerOutlineMat = createCommandoCelOutlineMaterial(
       this.playerUniforms,
       0.023,
-      'commando-player-outline-v53',
+      'commando-player-outline-v70',
       false
     );
     this.playerOutlineMesh = new THREE.InstancedMesh(
@@ -492,11 +492,11 @@ export class InstancedBatchRenderer {
       roughness: 0.28,
       metalness: 0.42,
     });
-    applyEquippedWeaponShader(weaponMat, this.weaponUniforms, 'commando-weapon-v50');
+    applyEquippedWeaponShader(weaponMat, this.weaponUniforms, 'commando-weapon-v70');
     const weaponOutlineMat = createEquippedWeaponOutlineMaterial(
       this.weaponUniforms,
       0.017,
-      'commando-weapon-outline-v50'
+      'commando-weapon-outline-v70'
     );
 
     const wMeshes = {} as Record<WeaponTierId, THREE.InstancedMesh>;
@@ -546,9 +546,9 @@ export class InstancedBatchRenderer {
     const enemyMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.40,
-      metalness: 0.14,
+      metalness: 0.18,
     });
-    applyCommandoShader(enemyMat, this.enemyUniforms, 'commando-enemy-v60', true, true, true);
+    applyCommandoShader(enemyMat, this.enemyUniforms, 'commando-enemy-v70', true, true, true);
 
     this.enemyMesh = new THREE.InstancedMesh(enemyGeo, enemyMat, MAX_ENEMY_INSTANCES);
     this.enemyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -559,7 +559,7 @@ export class InstancedBatchRenderer {
     const enemyOutlineMat = createCommandoCelOutlineMaterial(
       this.enemyUniforms,
       0.023,
-      'commando-enemy-outline-v53',
+      'commando-enemy-outline-v70',
       true
     );
     this.enemyOutlineMesh = new THREE.InstancedMesh(
@@ -589,10 +589,10 @@ export class InstancedBatchRenderer {
 
     const heavyMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.38,
-      metalness: 0.20,
+      roughness: 0.36,
+      metalness: 0.24,
     });
-    applyCommandoShader(heavyMat, this.enemyUniforms, 'commando-heavy-v53', true, true);
+    applyCommandoShader(heavyMat, this.enemyUniforms, 'commando-heavy-v70', true, true);
 
     this.heavyEnemyMesh = new THREE.InstancedMesh(
       heavyGeo,
@@ -607,7 +607,7 @@ export class InstancedBatchRenderer {
     const heavyOutlineMat = createCommandoCelOutlineMaterial(
       this.enemyUniforms,
       0.026,
-      'commando-heavy-outline-v53',
+      'commando-heavy-outline-v70',
       true
     );
     this.heavyEnemyOutlineMesh = new THREE.InstancedMesh(

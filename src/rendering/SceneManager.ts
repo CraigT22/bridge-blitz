@@ -64,8 +64,8 @@ export class SceneManager {
 
   constructor(canvasContainer: HTMLElement) {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x181924);
-    this.scene.fog = new THREE.FogExp2(0x6d4236, 0.0038);
+    this.scene.background = new THREE.Color(0x091322);
+    this.scene.fog = new THREE.FogExp2(0x11273d, 0.0033);
 
     const initW = Math.max(1, window.innerWidth);
     const initH = Math.max(1, window.innerHeight);
@@ -86,33 +86,33 @@ export class SceneManager {
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(initW, initH);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.20;
     this.renderer.domElement.addEventListener('webglcontextlost', (e) => {
       e.preventDefault();
     });
     canvasContainer.appendChild(this.renderer.domElement);
 
-    // Golden-Hour Sunset Sky Dome with Mountains & Clouds
+    // Midnight Storm Sky Dome with Moonlit Clouds & Naval Fortress Headlands
     const sky = createGoldenHourSkyDome();
     this.skyDome = sky.mesh;
     this.skyUniforms = sky.uniforms;
     this.scene.add(this.skyDome);
 
-    // 4-Light Golden-Hour Tactical Rig
-    const hemi = new THREE.HemisphereLight(0xffd4a6, 0x2e3c50, 1.48);
+    // 4-Light Moonlit Tactical Storm Rig (bright crisp silver-cyan readability + electric-teal rim)
+    const hemi = new THREE.HemisphereLight(0x94d8ff, 0x1d2c40, 1.58);
     this.scene.add(hemi);
 
-    this.sunLight = new THREE.DirectionalLight(0xffb469, 2.8);
-    this.sunLight.position.set(-19, 17, -24);
+    this.sunLight = new THREE.DirectionalLight(0xe2f3ff, 2.82);
+    this.sunLight.position.set(-18, 18, -24);
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
-    this.rimLight = new THREE.DirectionalLight(0x7cb8f2, 1.55);
+    this.rimLight = new THREE.DirectionalLight(0x2ef5dc, 1.68);
     this.rimLight.position.set(18, 13, 18);
     this.scene.add(this.rimLight);
     this.scene.add(this.rimLight.target);
 
-    const frontalFill = new THREE.DirectionalLight(0xffe4c4, 1.02);
+    const frontalFill = new THREE.DirectionalLight(0xcfe6ff, 1.12);
     frontalFill.position.set(0, 10, 22);
     this.scene.add(frontalFill);
 
@@ -121,32 +121,32 @@ export class SceneManager {
     this.armoryRoot.visible = false;
 
     const hangarApron = new THREE.Mesh(
-      new THREE.CylinderGeometry(5.4, 5.8, 0.34, 36),
+      new THREE.CylinderGeometry(5.4, 5.8, 0.34, 8),
       new THREE.MeshStandardMaterial({
-        color: 0x141b24,
-        roughness: 0.48,
-        metalness: 0.42,
+        color: 0x0f1826,
+        roughness: 0.44,
+        metalness: 0.44,
       })
     );
     hangarApron.position.set(0, -1.04, -0.4);
     this.armoryRoot.add(hangarApron);
 
     const daisMat = new THREE.MeshStandardMaterial({
-      color: 0x1f2937,
+      color: 0x1a2738,
       roughness: 0.34,
       metalness: 0.46,
     });
     const daisBase = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.75, 1.98, 0.28, 28),
+      new THREE.CylinderGeometry(1.75, 1.98, 0.28, 8),
       daisMat
     );
     daisBase.position.set(0, -0.78, 0);
     this.armoryRoot.add(daisBase);
 
     const daisInner = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.32, 1.44, 0.14, 28),
+      new THREE.CylinderGeometry(1.32, 1.44, 0.14, 8),
       new THREE.MeshStandardMaterial({
-        color: 0x2f3d50,
+        color: 0x293b52,
         roughness: 0.28,
         metalness: 0.48,
       })
@@ -155,9 +155,9 @@ export class SceneManager {
     this.armoryRoot.add(daisInner);
 
     this.armoryRingMat = new THREE.MeshBasicMaterial({
-      color: 0xffd85a,
+      color: 0x28f2d4,
       transparent: true,
-      opacity: 0.68,
+      opacity: 0.74,
       blending: THREE.AdditiveBlending,
       side: THREE.DoubleSide,
       depthWrite: false,

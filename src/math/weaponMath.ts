@@ -7,7 +7,7 @@ export const MAX_VISUAL_SOLDIERS = 40;
 export const MAX_ACTIVE_VOLLEY_EMITTERS = 26;
 export const OVERFLOW_SQUAD_COIN_BONUS = 10;
 export const COMMANDO_MODEL_SCALE = 1.02;
-export const BASE_SOLDIER_BULLET_DAMAGE = 5.2;
+export const BASE_SOLDIER_BULLET_DAMAGE = 4.4;
 export const FOCAL_CONVERGENCE_DISTANCE = 23.5;
 
 export interface ConvergingShotTrajectory {
@@ -45,12 +45,12 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Sidearm Pistol',
     shortBadge: 'Lv1 PISTOL',
     pattern: 'SINGLE',
-    fireRate: 3.6,
+    fireRate: 3.4,
     damageMultiplier: 1.0,
     projectileSpeed: 31,
     pierceCount: 1,
     spreadRadians: 0.03,
-    colorHex: 0x1ee6ff,
+    colorHex: 0x28f8dc,
     bossArmorFactor: 1.0,
   },
   2: {
@@ -58,12 +58,12 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Tactical SMG',
     shortBadge: 'Lv2 SMG',
     pattern: 'SINGLE',
-    fireRate: 6.5,
-    damageMultiplier: 1.12,
+    fireRate: 5.5,
+    damageMultiplier: 1.06,
     projectileSpeed: 35,
     pierceCount: 1,
-    spreadRadians: 0.045,
-    colorHex: 0x08dcff,
+    spreadRadians: 0.042,
+    colorHex: 0x18dcff,
     bossArmorFactor: 1.0,
   },
   3: {
@@ -71,12 +71,12 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Assault Rifle',
     shortBadge: 'Lv3 RIFLE',
     pattern: 'BURST_2',
-    fireRate: 4.8,
-    damageMultiplier: 1.88,
+    fireRate: 4.5,
+    damageMultiplier: 1.68,
     projectileSpeed: 38,
     pierceCount: 1,
-    spreadRadians: 0.04,
-    colorHex: 0xff7d24,
+    spreadRadians: 0.038,
+    colorHex: 0xff922b,
     bossArmorFactor: 1.0,
   },
   4: {
@@ -84,12 +84,12 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Rotary Minigun',
     shortBadge: 'Lv4 MINIGUN',
     pattern: 'TWIN_CONVERGE',
-    fireRate: 7.6,
-    damageMultiplier: 1.82,
+    fireRate: 6.6,
+    damageMultiplier: 1.62,
     projectileSpeed: 40,
     pierceCount: 1,
-    spreadRadians: 0.04,
-    colorHex: 0xff6614,
+    spreadRadians: 0.038,
+    colorHex: 0xff4d6d,
     bossArmorFactor: 1.0,
   },
   5: {
@@ -97,13 +97,13 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Plasma Pulse Rifle',
     shortBadge: 'Lv5 PLASMA',
     pattern: 'PIERCING',
-    fireRate: 5.5,
-    damageMultiplier: 3.25,
+    fireRate: 5.0,
+    damageMultiplier: 2.55,
     projectileSpeed: 44,
     pierceCount: 2,
-    spreadRadians: 0.03,
-    colorHex: 0x18f4ff,
-    bossArmorFactor: 1.35,
+    spreadRadians: 0.028,
+    colorHex: 0x38f6ff,
+    bossArmorFactor: 1.25,
   },
 };
 
@@ -118,7 +118,7 @@ export interface WeaponPickupResolution {
 
 /**
  * Mandatory Weapon Lock Rule:
- * Breaking a crate/tire stack with a lower or equal tier weapon NEVER downgrades the player's weapon;
+ * Breaking an ordnance pod or blast barricade with a lower or equal tier weapon NEVER downgrades the player's weapon;
  * instead it keeps their higher-tier weapon and grants +25 coins and +1 elite commando.
  */
 export function resolveWeaponPickup(
@@ -156,22 +156,22 @@ export interface VolleyDamagePlan {
 }
 
 /**
- * Crowd-scale firing curve for 1..40 commandos:
- * - 1..8 front-cluster commandos fire at 1.0x efficiency
- * - 9..24 mid-cluster commandos fire at 0.85x efficiency
- * - 25..40 rear-cluster commandos fire at 0.72x efficiency
+ * Disciplined crowd-scale firing curve for 1..40 commandos:
+ * - 1..6 front-cluster commandos fire at 1.0x efficiency
+ * - 7..20 mid-cluster commandos fire at 0.78x efficiency
+ * - 21..40 rear-cluster commandos fire at 0.58x efficiency
  */
 export function computeEffectiveFiringSquad(logicalSquad: number): number {
   if (logicalSquad <= 0) {
     return 0;
   }
-  if (logicalSquad <= 8) {
+  if (logicalSquad <= 6) {
     return logicalSquad;
   }
-  if (logicalSquad <= 24) {
-    return 8 + (logicalSquad - 8) * 0.85;
+  if (logicalSquad <= 20) {
+    return 6 + (logicalSquad - 6) * 0.78;
   }
-  return 8 + 16 * 0.85 + (logicalSquad - 24) * 0.72;
+  return 6 + 14 * 0.78 + (logicalSquad - 20) * 0.58;
 }
 
 /**

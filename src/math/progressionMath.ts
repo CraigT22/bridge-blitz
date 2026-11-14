@@ -10,43 +10,43 @@ export interface UpgradeSpec {
   readonly description: string;
 }
 
-export const UPGRADE_COST_GROWTH = 1.28;
-export const MAX_STARTING_SQUAD_LEVEL = 12;
+export const UPGRADE_COST_GROWTH = 1.34;
+export const MAX_STARTING_SQUAD_LEVEL = 8;
 
 export const UPGRADE_SPECS: Readonly<Record<UpgradeKey, UpgradeSpec>> = {
   fireRate: {
     key: 'fireRate',
     title: 'Fire Rate',
     shortcutKey: '1',
-    baseCost: 22,
-    costGrowth: 1.28,
+    baseCost: 30,
+    costGrowth: 1.34,
     maxLevel: 999,
-    description: '+10% volley speed',
+    description: '+6% volley speed',
   },
   bulletPower: {
     key: 'bulletPower',
-    title: 'Damage',
+    title: 'Ordnance',
     shortcutKey: '2',
-    baseCost: 25,
-    costGrowth: 1.28,
+    baseCost: 35,
+    costGrowth: 1.35,
     maxLevel: 999,
-    description: '+18% bullet damage',
+    description: '+10% bullet damage',
   },
   warChest: {
     key: 'warChest',
-    title: 'Revenue',
+    title: 'Bounty',
     shortcutKey: '3',
-    baseCost: 25,
-    costGrowth: 1.28,
+    baseCost: 35,
+    costGrowth: 1.34,
     maxLevel: 999,
-    description: '+15% coin bounty',
+    description: '+10% coin bounty',
   },
   startingSquad: {
     key: 'startingSquad',
-    title: 'Add Soldier',
+    title: 'Vanguard',
     shortcutKey: '4',
-    baseCost: 65,
-    costGrowth: 1.55,
+    baseCost: 85,
+    costGrowth: 1.65,
     maxLevel: MAX_STARTING_SQUAD_LEVEL,
     description: '+1 starting commando',
   },
@@ -69,11 +69,11 @@ export function computeUpgradeCost(key: UpgradeKey, currentLevel: number): numbe
 }
 
 export function getFireRateMultiplier(level: number): number {
-  return 1 + 0.10 * Math.max(0, level);
+  return 1 + 0.06 * Math.max(0, level);
 }
 
 export function getBulletPowerMultiplier(level: number): number {
-  return 1 + 0.18 * Math.max(0, level);
+  return 1 + 0.10 * Math.max(0, level);
 }
 
 export function getStartingSquadCount(level: number): number {
@@ -81,7 +81,7 @@ export function getStartingSquadCount(level: number): number {
 }
 
 export function getWarChestMultiplier(level: number): number {
-  return 1 + 0.15 * Math.max(0, level);
+  return 1 + 0.10 * Math.max(0, level);
 }
 
 export function formatUpgradeStatPreview(key: UpgradeKey, level: number): {
@@ -91,13 +91,13 @@ export function formatUpgradeStatPreview(key: UpgradeKey, level: number): {
   switch (key) {
     case 'fireRate':
       return {
-        currentLabel: `+${Math.round(level * 10)}%`,
-        nextLabel: `+${Math.round((level + 1) * 10)}%`,
+        currentLabel: `+${Math.round(level * 6)}%`,
+        nextLabel: `+${Math.round((level + 1) * 6)}%`,
       };
     case 'bulletPower':
       return {
-        currentLabel: `+${Math.round(level * 18)}%`,
-        nextLabel: `+${Math.round((level + 1) * 18)}%`,
+        currentLabel: `+${Math.round(level * 10)}%`,
+        nextLabel: `+${Math.round((level + 1) * 10)}%`,
       };
     case 'startingSquad': {
       const cur = getStartingSquadCount(level);
@@ -110,7 +110,7 @@ export function formatUpgradeStatPreview(key: UpgradeKey, level: number): {
     case 'warChest':
       return {
         currentLabel: `x${getWarChestMultiplier(level).toFixed(2)}`,
-        nextLabel: `x${getWarChestMultiplier(level + 1).toFixed(2)}`,
+        nextLabel: `x${getWarChestMultiplier(level + 1) * 1 === getWarChestMultiplier(level + 1) ? getWarChestMultiplier(level + 1).toFixed(2) : '1.00'}`,
       };
   }
 }

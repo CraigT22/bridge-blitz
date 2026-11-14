@@ -130,13 +130,12 @@ jobs:
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v6.1.0
-          name: Bridge Blitz v6.1.0 — Competitive Split Causeway Tug-of-War Balance Overhaul APK
+          tag_name: v7.0.0
+          name: Bridge Blitz v7.0.0 — Midnight Storm Viaduct & Punishing Tactical Overhaul APK
           body: |
-            ### Bridge Blitz v6.1.0 — Competitive Split Causeway Tug-of-War Balance Overhaul (`versionCode 14`)
-            - **Direct Chrome Download (installs cleanly over v6.0 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=14)
-            - **What's New in v6.1**:
-              - **>2.15x Faster Right-Lane Battalions (`4.85 – 6.75 m/s`)**: Vanguard Raiders (`1.08x` sprint), Crimson Shock Troopers, and Heavy Juggernauts now surge down the right lane from `-11.2m` (`3.0m` behind the divider nose) with `2.0m–6.8m` inter-echelon gaps and `1.95x` reinforcement catch-up sprints whenever gaps exceed `11.5m`.
-              - **Aggressive Breach-Zone Flank Intercept & Faster Goliaths (`3.42 – 4.45 m/s`)**: Enemies clearing the divider tip (`z > -7.95`) accelerate (`1.18x`) along a direct diagonal intercept vector into left-camping squads, and Breacher Riot Goliaths advance clear past the divider nose (`z = -6.3`) with `3.25 m/s` cross-lane pursuit.
-              - **Exponentially Matched Left-Lane Barrel HP & `0.42s` Slide-In Lock**: Barrel HP now scales exponentially (`78 → 309,000+` HP) alongside squad DPS growth, paired with a `0.42s` slide-in overkill lock and spaced boost cadence so every left-lane boost must be earned in tight `1.2s–2.0s` chipping windows between right-lane defenses.
+            ### Bridge Blitz v7.0.0 — Midnight Storm Viaduct & Punishing Tactical Overhaul (`versionCode 15`)
+            - **Direct Chrome Download (installs cleanly over v6.1 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=15)
+            - **What's New in v7.0**:
+              - **100% Original Midnight Storm Viaduct Visual Overhaul**: Brushed slate-titanium armored viaduct & hex-plate Split Causeway with glowing electric-teal & crimson lane telemetry chevrons, storm-navy ocean & moonlit sky dome, obsidian naval truss towers, faceted stealth-visor commandos, horned Syndicate Raider/Enforcer mechs, 6-sided Hexagonal Ordnance Pods, 5-tier Modular Hex-Chevron Blast Barricades, Hex-Grid Holo-Pylon gates, Syndicate Siege Goliaths wielding Twin-Bladed Plasma Breaching Greataxes, and an angular chamfered military telemetry HUD.
+              - **Punishing Tactical Difficulty & Balance Overhaul**: Tamed permanent upgrade & top-tier weapon DPS curves, removed cheap opening handouts (`-17.5m` SMG & Split Node #0 `X2`), added armored center-lane traps that defeat AFK/passive runs, raised enemy wave wake range (`46m`) & march speed, sharpened Siege Goliath greataxe slams (`0.80s` windup), and unlocked `2`-lane telegraphed Boss salvos (`0.76s` telegraph, `30.5 m/s` warheads) starting from Sector 2+ / Stage 2+ / Wave 2+.
           files: BridgeBlitz-Pixel10XL.apk

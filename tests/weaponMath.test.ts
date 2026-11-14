@@ -32,9 +32,9 @@ describe('weaponMath', () => {
   it('scales crowd DPS smoothly across 1..40 commandos while capping emitters at MAX_ACTIVE_VOLLEY_EMITTERS', () => {
     expect(MAX_SQUAD_COUNT).toBe(40);
     expect(computeEffectiveFiringSquad(1)).toBe(1);
-    expect(computeEffectiveFiringSquad(4)).toBe(4);
-    expect(computeEffectiveFiringSquad(16)).toBeGreaterThan(13);
-    expect(computeEffectiveFiringSquad(40)).toBeGreaterThan(30);
+    expect(computeEffectiveFiringSquad(6)).toBe(6);
+    expect(computeEffectiveFiringSquad(16)).toBeCloseTo(6 + 10 * 0.78, 4);
+    expect(computeEffectiveFiringSquad(40)).toBeCloseTo(6 + 14 * 0.78 + 20 * 0.58, 4);
 
     const plan1 = computeSquadVolleyPlan(1, 2, 1.0, 1.0);
     const plan40 = computeSquadVolleyPlan(40, 2, 1.0, 1.0);

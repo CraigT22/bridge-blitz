@@ -6,11 +6,11 @@ import { attachWeldedOutlineNormals } from '../rendering/ProceduralGeometries';
 
 const BRUTE_ENTITY_ID = 777;
 const DUEL_HALT_DIST_Z = 8.4;
-const ENGAGE_WAKE_DIST_Z = 21.5;
-const CLUB_WINDUP_DURATION = 1.02;
-const CLUB_RECOVER_DURATION = 0.42;
-const CLUB_COOLDOWN_DURATION = 1.15;
-const CLUB_SMASH_RADIUS_X = 1.72;
+const ENGAGE_WAKE_DIST_Z = 34.0;
+const CLUB_WINDUP_DURATION = 0.80;
+const CLUB_RECOVER_DURATION = 0.36;
+const CLUB_COOLDOWN_DURATION = 0.72;
+const CLUB_SMASH_RADIUS_X = 1.84;
 
 export interface BruteClubSmashEvent {
   readonly impactX: number;
@@ -18,12 +18,32 @@ export interface BruteClubSmashEvent {
   readonly playerLosses: number;
 }
 
+function traceChamferRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  cut: number
+): void {
+  ctx.beginPath();
+  ctx.moveTo(x + cut, y);
+  ctx.lineTo(x + w - cut, y);
+  ctx.lineTo(x + w, y + cut);
+  ctx.lineTo(x + w, y + h - cut);
+  ctx.lineTo(x + w - cut, y + h);
+  ctx.lineTo(x + cut, y + h);
+  ctx.lineTo(x, y + h - cut);
+  ctx.lineTo(x, y + cut);
+  ctx.closePath();
+}
+
 function createBruteOutlineMaterial(): THREE.MeshBasicMaterial {
   const mat = new THREE.MeshBasicMaterial({
-    color: 0x080c12,
+    color: 0x070b12,
     side: THREE.BackSide,
   });
-  mat.customProgramCacheKey = () => 'brute-goliath-outline-v50';
+  mat.customProgramCacheKey = () => 'brute-goliath-outline-v70';
   mat.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -109,53 +129,50 @@ class EditableBruteChestBarTexture {
     ctx.clearRect(0, 0, w, h);
 
     const barX = 28;
-    const barY = 38;
+    const barY = 36;
     const barW = w - 56;
-    const barH = 68;
-    const rad = 22;
+    const barH = 72;
 
-    // Outer thick dark cartoon capsule track
-    ctx.beginPath();
-    ctx.roundRect(barX - 6, barY - 6, barW + 12, barH + 12, rad + 4);
-    ctx.fillStyle = '#090e16';
+    // Chamfered Obsidian-Glass Tactical HP Frame (zero cartoon roundRect pill!)
+    traceChamferRect(ctx, barX - 6, barY - 6, barW + 12, barH + 12, 18);
+    ctx.fillStyle = '#060b14';
     ctx.fill();
 
-    ctx.beginPath();
-    ctx.roundRect(barX, barY, barW, barH, rad);
-    ctx.fillStyle = 'rgba(22, 30, 42, 0.94)';
+    traceChamferRect(ctx, barX, barY, barW, barH, 14);
+    ctx.fillStyle = 'rgba(14, 22, 36, 0.95)';
     ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = flashFlag ? '#ffd86b' : '#ff3366';
+    ctx.stroke();
 
-    // Vibrant orange fill bar matching reference Goliath HP gauge
-    const fillW = Math.max(0, Math.round((barW - 8) * (ratioBucket / 100)));
+    const fillW = Math.max(0, Math.round((barW - 10) * (ratioBucket / 100)));
     if (fillW > 6) {
       ctx.save();
-      ctx.beginPath();
-      ctx.roundRect(barX + 4, barY + 4, barW - 8, barH - 8, rad - 4);
+      traceChamferRect(ctx, barX + 5, barY + 5, barW - 10, barH - 10, 10);
       ctx.clip();
 
       const grad = ctx.createLinearGradient(0, barY, 0, barY + barH);
-      grad.addColorStop(0, flashFlag ? '#ffd27d' : '#ffb838');
-      grad.addColorStop(0.55, flashFlag ? '#ff9824' : '#ff8412');
-      grad.addColorStop(1, '#d95608');
+      grad.addColorStop(0, flashFlag ? '#ffe082' : '#ff5277');
+      grad.addColorStop(0.55, flashFlag ? '#ff9f2e' : '#e01e50');
+      grad.addColorStop(1, '#9c0f38');
       ctx.fillStyle = grad;
-      ctx.fillRect(barX + 4, barY + 4, fillW, barH - 8);
+      ctx.fillRect(barX + 5, barY + 5, fillW, barH - 10);
 
-      // Glossy top highlight
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.28)';
-      ctx.fillRect(barX + 8, barY + 7, Math.max(0, fillW - 8), 14);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.24)';
+      ctx.fillRect(barX + 8, barY + 7, Math.max(0, fillW - 8), 12);
       ctx.restore();
     }
 
-    // Giant bold white black-outlined HP number centered across chest bar (e.g. 8508 -> 3718)
     const label = formatObstacleHp(shown);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '900 72px system-ui, -apple-system, sans-serif';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = 18;
-    ctx.strokeStyle = '#090e16';
+    ctx.font = '900 68px "Segoe UI", Roboto, system-ui, sans-serif';
+    ctx.lineJoin = 'miter';
+    ctx.miterLimit = 3;
+    ctx.lineWidth = 16;
+    ctx.strokeStyle = '#050912';
     ctx.strokeText(label, w / 2, barY + barH / 2 + 2);
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#f6fcff';
     ctx.fillText(label, w / 2, barY + barH / 2 + 2);
 
     this.texture.needsUpdate = true;
@@ -163,10 +180,10 @@ class EditableBruteChestBarTexture {
 }
 
 /**
- * Towering Mid-Bridge Riot Goliath Brute (`~3.45m` tall):
- * - Oversized crimson siege helmet, heavy olive-charcoal riot armor, and spiked breaching maul!
- * - Halts forward squad march at close-quarters range (`8.4m`) while stalking laterally and swinging
- *   telegraphed lane-smashing club blows so players weave left/right while stray shots chip obstacles behind him!
+ * Towering Syndicate Siege Goliath Mecha (`~3.55m` tall):
+ * - Hulking obsidian-violet & royal-crimson heavy mecha chassis (zero olive-green, zero bare skin!)
+ * - Faceted 6-sided horned siege battle-helm + molten-amber chest reactor core
+ * - Twin-Bladed Plasma Breaching Greataxe with faster Punishing Tactical windup (`0.80s`) & wake (`34m`)!
  */
 export class MidBridgeBrute {
   public readonly entityId: number;
@@ -177,10 +194,10 @@ export class MidBridgeBrute {
   public z = 0;
   public maxHp = 6500;
   public hp = 6500;
-  public speed = 1.75;
-  public clubDamage = 7;
+  public speed = 2.05;
+  public clubDamage = 9;
   public coinReward = 450;
-  public name = 'RIOT GOLIATH';
+  public name = 'SIEGE GOLIATH';
 
   private readonly bodyRig = new THREE.Group();
   private readonly leftLegPivot = new THREE.Group();
@@ -200,18 +217,17 @@ export class MidBridgeBrute {
   private hitFlash = 0;
   private hitFlashCooldown = 0;
   private attackState: 'COOLDOWN' | 'WINDUP' | 'RECOVER' = 'COOLDOWN';
-  private stateTimer = 1.0;
+  private stateTimer = 0.7;
   private lockedSmashX = 0;
 
   constructor(slotIndex = 0) {
     this.entityId = BRUTE_ENTITY_ID + slotIndex;
-    // Grounded contact shadow under Goliath
     const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(1.75, 24),
+      new THREE.CircleGeometry(1.82, 8),
       new THREE.MeshBasicMaterial({
         color: 0x05080d,
         transparent: true,
-        opacity: 0.56,
+        opacity: 0.58,
         depthWrite: false,
       })
     );
@@ -219,262 +235,279 @@ export class MidBridgeBrute {
     shadow.position.set(0, 0.024, 0.05);
     this.root.add(shadow);
 
-    const crimsonMat = new THREE.MeshStandardMaterial({
-      color: 0xe8263d,
-      roughness: 0.30,
-      metalness: 0.16,
-      emissive: 0x260308,
-    });
-    const armorSlateMat = new THREE.MeshStandardMaterial({
-      color: 0x3b4754,
-      roughness: 0.42,
-      metalness: 0.28,
-    });
-    const olivePlateMat = new THREE.MeshStandardMaterial({
-      color: 0x587834,
-      roughness: 0.40,
-      metalness: 0.20,
-    });
-    const skinBrawnMat = new THREE.MeshStandardMaterial({
-      color: 0xe2a882,
-      roughness: 0.48,
-      metalness: 0.08,
-    });
-    const hazardGoldMat = new THREE.MeshStandardMaterial({
-      color: 0xf6b426,
-      roughness: 0.30,
+    const crimsonMechaMat = new THREE.MeshStandardMaterial({
+      color: 0xdc1e56,
+      roughness: 0.28,
       metalness: 0.34,
+      emissive: 0x240410,
     });
-    const darkIronMat = new THREE.MeshStandardMaterial({
-      color: 0x1d242e,
-      roughness: 0.36,
+    const obsidianVioletMat = new THREE.MeshStandardMaterial({
+      color: 0x251d3a,
+      roughness: 0.38,
+      metalness: 0.38,
+    });
+    const titaniumArmorMat = new THREE.MeshStandardMaterial({
+      color: 0x5c7491,
+      roughness: 0.32,
       metalness: 0.44,
     });
-    const visorGlowMat = new THREE.MeshBasicMaterial({ color: 0xffd04d });
+    const voltGoldMat = new THREE.MeshStandardMaterial({
+      color: 0xffb428,
+      roughness: 0.26,
+      metalness: 0.42,
+    });
+    const darkIronMat = new THREE.MeshStandardMaterial({
+      color: 0x141926,
+      roughness: 0.34,
+      metalness: 0.46,
+    });
+    const plasmaBladeMat = new THREE.MeshStandardMaterial({
+      color: 0xff3b6b,
+      emissive: 0xd91648,
+      emissiveIntensity: 1.45,
+      roughness: 0.20,
+      metalness: 0.30,
+    });
+    const visorGlowMat = new THREE.MeshBasicMaterial({ color: 0xffbe32 });
 
-    // Keep crimsonMat helmet/pauldrons rich crimson under sustained crowd fire (comp parity!)
     this.flashMaterials.push(
-      armorSlateMat,
-      olivePlateMat,
-      skinBrawnMat,
-      hazardGoldMat
+      obsidianVioletMat,
+      titaniumArmorMat,
+      voltGoldMat
     );
 
-    // --- HEAVY ARTICULATED LEGS ---
+    // --- HEAVY FACETED MECHA LEGS ---
     for (const [sideSign, legPivot] of [
       [-1, this.leftLegPivot],
       [1, this.rightLegPivot],
     ] as const) {
-      legPivot.position.set(sideSign * 0.46, 1.18, 0);
+      legPivot.position.set(sideSign * 0.48, 1.18, 0);
       const thigh = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.28, 0.46, 8, 14),
-        armorSlateMat
+        new THREE.BoxGeometry(0.50, 0.68, 0.52),
+        obsidianVioletMat
       );
       thigh.position.set(0, -0.34, 0);
 
-      const kneeGuard = new THREE.Mesh(
-        new THREE.BoxGeometry(0.46, 0.32, 0.44),
-        crimsonMat
+      const kneeSpike = new THREE.Mesh(
+        new THREE.ConeGeometry(0.26, 0.44, 4),
+        crimsonMechaMat
       );
-      kneeGuard.position.set(0, -0.58, 0.14);
+      kneeSpike.rotation.x = Math.PI / 2;
+      kneeSpike.position.set(0, -0.58, 0.28);
 
       const shin = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.26, 0.23, 0.56, 14),
-        olivePlateMat
+        new THREE.CylinderGeometry(0.28, 0.24, 0.58, 6),
+        crimsonMechaMat
       );
       shin.position.set(0, -0.86, 0);
 
       const boot = new THREE.Mesh(
-        new THREE.BoxGeometry(0.52, 0.30, 0.74),
+        new THREE.BoxGeometry(0.54, 0.30, 0.78),
         darkIronMat
       );
       boot.position.set(0, -1.05, 0.12);
 
-      legPivot.add(thigh, kneeGuard, shin, boot);
+      legPivot.add(thigh, kneeSpike, shin, boot);
       this.bodyRig.add(legPivot);
     }
 
-    // --- HULKING TORSO, RIOT PLATING & PAULDRONS ---
+    // --- HULKING MECHA TORSO, REACTOR CORE & SPIKED PAULDRONS ---
     const pelvis = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.68, 0.58, 0.44, 16),
+      new THREE.CylinderGeometry(0.70, 0.60, 0.44, 6),
       darkIronMat
     );
-    pelvis.scale.set(1.16, 1, 0.88);
+    pelvis.scale.set(1.18, 1, 0.90);
     pelvis.position.set(0, 1.28, 0);
     this.bodyRig.add(pelvis);
 
-    const beltBuckle = new THREE.Mesh(
-      new THREE.BoxGeometry(0.48, 0.22, 0.18),
-      hazardGoldMat
+    const beltCore = new THREE.Mesh(
+      new THREE.BoxGeometry(0.50, 0.22, 0.20),
+      voltGoldMat
     );
-    beltBuckle.position.set(0, 1.32, 0.58);
-    this.bodyRig.add(beltBuckle);
+    beltCore.position.set(0, 1.32, 0.58);
+    this.bodyRig.add(beltCore);
 
     const torso = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.96, 0.68, 1.24, 18),
-      olivePlateMat
+      new THREE.CylinderGeometry(0.98, 0.70, 1.26, 6),
+      obsidianVioletMat
     );
-    torso.scale.set(1.22, 1, 0.88);
+    torso.scale.set(1.24, 1, 0.90);
     torso.position.set(0, 2.02, 0);
     this.bodyRig.add(torso);
 
-    const riotChestPlate = new THREE.Mesh(
-      new THREE.BoxGeometry(1.56, 0.92, 0.62),
-      armorSlateMat
+    const siegeChestPlate = new THREE.Mesh(
+      new THREE.BoxGeometry(1.62, 0.94, 0.64),
+      crimsonMechaMat
     );
-    riotChestPlate.position.set(0, 2.08, 0.24);
-    this.bodyRig.add(riotChestPlate);
+    siegeChestPlate.position.set(0, 2.08, 0.24);
+    this.bodyRig.add(siegeChestPlate);
 
-    for (const sx of [-0.52, 0.52]) {
-      const strap = new THREE.Mesh(
-        new THREE.BoxGeometry(0.20, 1.02, 0.72),
-        hazardGoldMat
-      );
-      strap.position.set(sx, 2.12, 0.20);
-      this.bodyRig.add(strap);
-    }
+    const chestReactor = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.24, 0.24, 0.14, 6),
+      visorGlowMat
+    );
+    chestReactor.rotation.x = Math.PI / 2;
+    chestReactor.position.set(0, 2.38, 0.56);
+    this.bodyRig.add(chestReactor);
 
     for (const sideSign of [-1, 1]) {
       const pauldron = new THREE.Mesh(
-        new THREE.SphereGeometry(0.54, 16, 12),
-        crimsonMat
+        new THREE.BoxGeometry(0.84, 0.64, 0.88),
+        obsidianVioletMat
       );
-      pauldron.scale.set(1.12, 0.92, 1.08);
-      pauldron.position.set(sideSign * 1.18, 2.48, 0.04);
+      pauldron.rotation.z = -sideSign * 0.20;
+      pauldron.position.set(sideSign * 1.22, 2.48, 0.04);
       this.bodyRig.add(pauldron);
 
-      const spike = new THREE.Mesh(
-        new THREE.ConeGeometry(0.13, 0.34, 8),
-        hazardGoldMat
+      const pauldronTrim = new THREE.Mesh(
+        new THREE.BoxGeometry(0.88, 0.14, 0.92),
+        crimsonMechaMat
       );
-      spike.rotation.z = -sideSign * 0.45;
-      spike.position.set(sideSign * 1.36, 2.88, 0.04);
+      pauldronTrim.rotation.z = -sideSign * 0.20;
+      pauldronTrim.position.set(sideSign * 1.24, 2.76, 0.04);
+      this.bodyRig.add(pauldronTrim);
+
+      const spike = new THREE.Mesh(
+        new THREE.ConeGeometry(0.16, 0.52, 5),
+        titaniumArmorMat
+      );
+      spike.rotation.z = -sideSign * 0.42;
+      spike.position.set(sideSign * 1.42, 3.04, 0.04);
       this.bodyRig.add(spike);
     }
 
-    // --- OVERSIZED GLOSSY CRIMSON RIOT SIEGE HELMET ---
+    // --- FACETED 6-SIDED HORNED SIEGE BATTLE-HELM ---
     const blastCollar = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.62, 0.72, 0.26, 16),
+      new THREE.CylinderGeometry(0.66, 0.76, 0.28, 6),
       darkIronMat
     );
     blastCollar.position.set(0, 2.66, 0.06);
     this.bodyRig.add(blastCollar);
 
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(0.48, 18, 14),
-      skinBrawnMat
+    const helmShell = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.56, 0.68, 0.68, 6),
+      crimsonMechaMat
     );
-    head.position.set(0, 2.98, 0.08);
-    this.bodyRig.add(head);
+    helmShell.scale.set(1.08, 1.0, 1.12);
+    helmShell.position.set(0, 3.04, 0.06);
+    this.bodyRig.add(helmShell);
 
-    const helmetDome = new THREE.Mesh(
-      new THREE.SphereGeometry(0.66, 22, 16, 0, Math.PI * 2, 0, Math.PI * 0.64),
-      crimsonMat
+    const helmCrest = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.28, 0.88),
+      titaniumArmorMat
     );
-    helmetDome.scale.set(1.10, 1.02, 1.12);
-    helmetDome.position.set(0, 3.08, 0.04);
-    this.bodyRig.add(helmetDome);
+    helmCrest.position.set(0, 3.42, 0.04);
+    this.bodyRig.add(helmCrest);
 
-    const helmetBrim = new THREE.Mesh(
-      new THREE.TorusGeometry(0.64, 0.085, 10, 22),
-      darkIronMat
-    );
-    helmetBrim.rotation.x = Math.PI / 2 + 0.08;
-    helmetBrim.position.set(0, 2.96, 0.06);
-    this.bodyRig.add(helmetBrim);
+    for (const sideSign of [-1, 1]) {
+      const horn = new THREE.Mesh(
+        new THREE.ConeGeometry(0.15, 0.78, 5),
+        titaniumArmorMat
+      );
+      horn.rotation.z = -sideSign * 0.52;
+      horn.rotation.x = -0.18;
+      horn.position.set(sideSign * 0.68, 3.48, -0.02);
+      this.bodyRig.add(horn);
+    }
 
     const visorSlit = new THREE.Mesh(
-      new THREE.BoxGeometry(0.76, 0.16, 0.18),
+      new THREE.BoxGeometry(0.82, 0.16, 0.20),
       visorGlowMat
     );
-    visorSlit.position.set(0, 2.95, 0.62);
+    visorSlit.position.set(0, 2.98, 0.66);
     this.bodyRig.add(visorSlit);
 
-    // --- LEFT BRAWLER FIST ARM ---
-    this.leftArmPivot.position.set(-1.26, 2.38, 0.06);
+    // --- LEFT ARMORED SHIELD-GAUNTLET ARM ---
+    this.leftArmPivot.position.set(-1.28, 2.38, 0.06);
     const lUpper = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.24, 0.46, 8, 12),
-      skinBrawnMat
+      new THREE.BoxGeometry(0.42, 0.66, 0.42),
+      titaniumArmorMat
     );
     lUpper.position.set(-0.12, -0.34, 0.12);
     lUpper.rotation.x = -0.38;
     const lGauntlet = new THREE.Mesh(
-      new THREE.BoxGeometry(0.46, 0.54, 0.48),
-      armorSlateMat
+      new THREE.BoxGeometry(0.50, 0.58, 0.52),
+      obsidianVioletMat
     );
     lGauntlet.position.set(-0.16, -0.78, 0.38);
     lGauntlet.rotation.x = -0.55;
     this.leftArmPivot.add(lUpper, lGauntlet);
     this.bodyRig.add(this.leftArmPivot);
 
-    // --- RIGHT ARTICULATED SPIKED BREACHING MAUL / WAR-CLUB ARM ---
+    // --- RIGHT TWIN-BLADED PLASMA BREACHING GREATAXE ARM ---
     this.clubArmPivot.position.set(1.28, 2.42, 0.08);
     const rUpper = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.26, 0.48, 8, 12),
-      skinBrawnMat
+      new THREE.BoxGeometry(0.44, 0.68, 0.44),
+      titaniumArmorMat
     );
     rUpper.position.set(0.14, -0.32, 0.16);
     rUpper.rotation.x = -0.45;
 
     const rGauntlet = new THREE.Mesh(
-      new THREE.BoxGeometry(0.48, 0.52, 0.48),
-      crimsonMat
+      new THREE.BoxGeometry(0.50, 0.54, 0.50),
+      crimsonMechaMat
     );
     rGauntlet.position.set(0.18, -0.74, 0.46);
     rGauntlet.rotation.x = -0.65;
 
-    // Massive Spiked Breaching Maul extending forward/upward from fist
-    const clubGroup = new THREE.Group();
-    clubGroup.position.set(0.18, -0.82, 0.64);
-    clubGroup.rotation.x = 0.88; // Angled menacingly upward at rest
+    const axeGroup = new THREE.Group();
+    axeGroup.position.set(0.18, -0.82, 0.64);
+    axeGroup.rotation.x = 0.88;
 
     const shaft = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.095, 0.08, 2.35, 12),
+      new THREE.CylinderGeometry(0.095, 0.085, 2.55, 6),
       darkIronMat
     );
-    shaft.position.set(0, 0.92, 0);
-    clubGroup.add(shaft);
+    shaft.position.set(0, 1.02, 0);
+    axeGroup.add(shaft);
 
     const gripWrap = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.11, 0.11, 0.58, 12),
-      hazardGoldMat
+      new THREE.CylinderGeometry(0.115, 0.115, 0.58, 6),
+      voltGoldMat
     );
     gripWrap.position.set(0, 0.15, 0);
-    clubGroup.add(gripWrap);
+    axeGroup.add(gripWrap);
 
-    const maulHead = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.42, 0.34, 1.05, 8),
-      armorSlateMat
+    const axeHub = new THREE.Mesh(
+      new THREE.BoxGeometry(0.36, 0.68, 0.42),
+      obsidianVioletMat
     );
-    maulHead.position.set(0, 1.72, 0);
-    clubGroup.add(maulHead);
+    axeHub.position.set(0, 1.88, 0);
+    axeGroup.add(axeHub);
 
-    const maulCap = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.45, 0.45, 0.16, 8),
-      crimsonMat
-    );
-    maulCap.position.set(0, 2.20, 0);
-    clubGroup.add(maulCap);
-
-    for (let k = 0; k < 8; k++) {
-      const ang = (k / 8) * Math.PI * 2;
-      const stud = new THREE.Mesh(
-        new THREE.ConeGeometry(0.10, 0.30, 6),
-        hazardGoldMat
+    // Fore & aft glowing plasma crescent/wedge blades!
+    for (const zSign of [-1, 1]) {
+      const bladeBack = new THREE.Mesh(
+        new THREE.BoxGeometry(0.14, 0.88, 0.58),
+        titaniumArmorMat
       );
-      stud.position.set(Math.cos(ang) * 0.46, 1.78, Math.sin(ang) * 0.46);
-      stud.rotation.z = -Math.PI / 2;
-      stud.rotation.y = -ang;
-      clubGroup.add(stud);
+      bladeBack.position.set(0, 1.88, zSign * 0.42);
+      axeGroup.add(bladeBack);
+
+      const plasmaEdge = new THREE.Mesh(
+        new THREE.ConeGeometry(0.56, 0.52, 4),
+        plasmaBladeMat
+      );
+      plasmaEdge.scale.set(0.18, 1.0, 1.25);
+      plasmaEdge.rotation.x = zSign * (Math.PI / 2);
+      plasmaEdge.position.set(0, 1.88, zSign * 0.78);
+      axeGroup.add(plasmaEdge);
     }
 
-    this.clubArmPivot.add(rUpper, rGauntlet, clubGroup);
+    const topSpike = new THREE.Mesh(
+      new THREE.ConeGeometry(0.14, 0.46, 5),
+      voltGoldMat
+    );
+    topSpike.position.set(0, 2.46, 0);
+    axeGroup.add(topSpike);
+
+    this.clubArmPivot.add(rUpper, rGauntlet, axeGroup);
     this.bodyRig.add(this.clubArmPivot);
 
     attachBruteCelOutlines(this.bodyRig);
     this.root.add(this.bodyRig);
 
-    // --- WORLD-SPACE CHEST ORANGE HP BAR (e.g. 8508) ---
+    // --- WORLD-SPACE CHAMFERED TACTICAL CHEST HP BAR ---
     this.chestBarMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(2.75, 0.78),
       new THREE.MeshBasicMaterial({
@@ -488,42 +521,41 @@ export class MidBridgeBrute {
     this.chestBarMesh.position.set(0, 1.92, 0.96);
     this.root.add(this.chestBarMesh);
 
-    // --- TELEGRAPHED GROUND CLUB SMASH DANGER ZONE ---
+    // --- TELEGRAPHED HEXAGONAL PLASMA AXE SMASH ZONE ---
     this.dangerFillMat = new THREE.MeshBasicMaterial({
-      color: 0xff2942,
+      color: 0xff245c,
       transparent: true,
-      opacity: 0.20,
+      opacity: 0.22,
       depthWrite: false,
     });
     const dangerDisc = new THREE.Mesh(
-      new THREE.CircleGeometry(CLUB_SMASH_RADIUS_X, 28),
+      new THREE.CircleGeometry(CLUB_SMASH_RADIUS_X, 6),
       this.dangerFillMat
     );
     dangerDisc.rotation.x = -Math.PI / 2;
     dangerDisc.position.y = 0.034;
 
     this.dangerTimingMat = new THREE.MeshBasicMaterial({
-      color: 0xff5a36,
+      color: 0xff6238,
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.44,
       depthWrite: false,
     });
     this.dangerTimingDisc = new THREE.Mesh(
-      new THREE.CircleGeometry(CLUB_SMASH_RADIUS_X - 0.12, 28),
+      new THREE.CircleGeometry(CLUB_SMASH_RADIUS_X - 0.12, 6),
       this.dangerTimingMat
     );
-    this.dangerTimingDisc.rotation.x = -Math.PI / 2;
-    this.dangerTimingDisc.position.y = 0.036;
+    dangerTimingDiscSetPos(this.dangerTimingDisc);
 
     this.dangerRingMat = new THREE.MeshBasicMaterial({
-      color: 0xff9438,
+      color: 0xffb830,
       transparent: true,
-      opacity: 0.94,
+      opacity: 0.95,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
     const dangerRing = new THREE.Mesh(
-      new THREE.RingGeometry(CLUB_SMASH_RADIUS_X - 0.16, CLUB_SMASH_RADIUS_X, 28),
+      new THREE.RingGeometry(CLUB_SMASH_RADIUS_X - 0.16, CLUB_SMASH_RADIUS_X, 6),
       this.dangerRingMat
     );
     dangerRing.rotation.x = -Math.PI / 2;
@@ -555,7 +587,7 @@ export class MidBridgeBrute {
     this.hitFlash = 0;
     this.hitFlashCooldown = 0;
     this.attackState = 'COOLDOWN';
-    this.stateTimer = 0.45;
+    this.stateTimer = 0.35;
     this.lockedSmashX = initialX;
 
     this.root.position.set(this.x, 0, this.z);
@@ -605,9 +637,9 @@ export class MidBridgeBrute {
 
     if (this.hitFlash > 0) {
       this.hitFlash = Math.max(0, this.hitFlash - dt * 10.0);
-      const em = this.hitFlash * 0.22;
+      const em = this.hitFlash * 0.24;
       for (let i = 0; i < this.flashMaterials.length; i++) {
-        this.flashMaterials[i].emissive.setRGB(em, em * 0.86, em * 0.74);
+        this.flashMaterials[i].emissive.setRGB(em * 0.5, em * 0.88, em);
       }
     } else {
       for (let i = 0; i < this.flashMaterials.length; i++) {
@@ -616,10 +648,10 @@ export class MidBridgeBrute {
     }
 
     const insideRightCorridor = dividerTipZ !== undefined && this.z <= dividerTipZ + 0.55;
-    const minAllowedX = insideRightCorridor ? 1.48 : -3.05;
-    const maxAllowedX = insideRightCorridor ? 3.42 : 3.05;
+    const minAllowedX = insideRightCorridor ? 1.48 : -3.15;
+    const maxAllowedX = insideRightCorridor ? 3.42 : 3.15;
     const effectiveDuelDist = dividerTipZ !== undefined ? 6.3 : DUEL_HALT_DIST_Z;
-    const lateralPursueSpeed = dividerTipZ !== undefined && !insideRightCorridor ? 3.15 : 1.35;
+    const lateralPursueSpeed = dividerTipZ !== undefined && !insideRightCorridor ? 3.35 : 1.95;
 
     const engaged = dividerTipZ !== undefined ? distZ < 105 : distZ < ENGAGE_WAKE_DIST_Z;
     const inDuelRange = distZ <= effectiveDuelDist + 0.35 && distZ > -2.5;
@@ -627,9 +659,8 @@ export class MidBridgeBrute {
     let targetBodyYaw = 0;
 
     if (engaged && !inDuelRange && distZ > effectiveDuelDist) {
-      // Heavy stomping advance toward the squad until close-quarters duel range
       this.z += this.speed * dt;
-      this.stridePhase += dt * (dividerTipZ !== undefined ? 7.4 : 5.8);
+      this.stridePhase += dt * (dividerTipZ !== undefined ? 7.6 : 6.4);
       const desiredX = Math.max(minAllowedX, Math.min(maxAllowedX, squadX));
       const dx = desiredX - this.x;
       this.x = Math.max(
@@ -638,19 +669,19 @@ export class MidBridgeBrute {
       );
       targetBodyYaw = Math.max(-0.28, Math.min(0.28, Math.atan2(dx, Math.max(3.5, distZ))));
     } else if (inDuelRange) {
-      this.stridePhase += dt * 3.4;
+      this.stridePhase += dt * 3.8;
 
       if (this.attackState === 'COOLDOWN') {
         this.dangerZoneGroup.visible = false;
         const desiredX = Math.max(minAllowedX, Math.min(maxAllowedX, squadX));
         const dx = desiredX - this.x;
-        const duelLateral = dividerTipZ !== undefined ? 3.25 : 2.15;
+        const duelLateral = dividerTipZ !== undefined ? 3.45 : 2.65;
         this.x = Math.max(
           minAllowedX,
           Math.min(maxAllowedX, this.x + Math.sign(dx) * Math.min(Math.abs(dx), duelLateral * dt))
         );
         targetBodyYaw = Math.max(-0.34, Math.min(0.34, Math.atan2(dx, Math.max(2.4, distZ))));
-        this.clubArmPivot.rotation.x += (0 - this.clubArmPivot.rotation.x) * Math.min(1, dt * 8);
+        this.clubArmPivot.rotation.x += (0 - this.clubArmPivot.rotation.x) * Math.min(1, dt * 9);
         this.stateTimer -= dt;
         if (this.stateTimer <= 0) {
           this.attackState = 'WINDUP';
@@ -659,22 +690,20 @@ export class MidBridgeBrute {
         }
       } else if (this.attackState === 'WINDUP') {
         const progress = 1 - this.stateTimer / CLUB_WINDUP_DURATION;
-        // Track softly only in first 35% of windup, then lock lane so player can dodge cleanly!
-        if (progress < 0.35) {
+        if (progress < 0.36) {
           const desiredX = Math.max(minAllowedX, Math.min(maxAllowedX, squadX));
           const dx = desiredX - this.x;
           this.x = Math.max(
             minAllowedX,
-            Math.min(maxAllowedX, this.x + Math.sign(dx) * Math.min(Math.abs(dx), 1.65 * dt))
+            Math.min(maxAllowedX, this.x + Math.sign(dx) * Math.min(Math.abs(dx), 1.95 * dt))
           );
-          this.lockedSmashX = Math.max(-3.35, Math.min(3.35, this.x + (squadX - this.x) * 0.5));
+          this.lockedSmashX = Math.max(-3.35, Math.min(3.35, this.x + (squadX - this.x) * 0.58));
         }
 
         const aimDx = this.lockedSmashX - this.x;
         targetBodyYaw = Math.max(-0.52, Math.min(0.52, Math.atan2(aimDx, Math.max(2.2, distZ))));
 
-        // Raise massive spiked club high overhead (`rotation.x` -> +1.18 rad)
-        this.clubArmPivot.rotation.x = progress * 1.18;
+        this.clubArmPivot.rotation.x = progress * 1.24;
         this.clubArmPivot.rotation.z = -progress * 0.18;
 
         this.dangerZoneGroup.visible = true;
@@ -686,14 +715,13 @@ export class MidBridgeBrute {
         const pulse = 0.65 + 0.35 * Math.sin(progress * Math.PI * 6);
         const timingScale = 0.14 + Math.max(0, Math.min(1, progress)) * 0.86;
         this.dangerTimingDisc.scale.set(timingScale, timingScale, 1);
-        this.dangerTimingMat.opacity = 0.24 + progress * 0.36;
-        this.dangerFillMat.opacity = 0.14 + progress * 0.16;
-        this.dangerRingMat.opacity = 0.68 + pulse * 0.30;
+        this.dangerTimingMat.opacity = 0.26 + progress * 0.38;
+        this.dangerFillMat.opacity = 0.16 + progress * 0.18;
+        this.dangerRingMat.opacity = 0.72 + pulse * 0.28;
 
         this.stateTimer -= dt;
         if (this.stateTimer <= 0) {
-          // SLAM DOWN!
-          this.clubArmPivot.rotation.x = -1.32;
+          this.clubArmPivot.rotation.x = -1.35;
           this.clubArmPivot.rotation.z = 0.08;
           this.dangerZoneGroup.visible = false;
           this.attackState = 'RECOVER';
@@ -704,7 +732,7 @@ export class MidBridgeBrute {
           const squadHalfW = computeSquadOuterRadius(playerLogicalSquad);
           const hitSquad =
             playerLogicalSquad > 0 &&
-            Math.abs(squadX - impactWorldX) < CLUB_SMASH_RADIUS_X + squadHalfW * 0.22;
+            Math.abs(squadX - impactWorldX) < CLUB_SMASH_RADIUS_X + squadHalfW * 0.24;
 
           smashEvent = {
             impactX: impactWorldX,
@@ -713,12 +741,11 @@ export class MidBridgeBrute {
           };
         }
       } else {
-        // RECOVER
         const aimDx = this.lockedSmashX - this.x;
         targetBodyYaw = Math.max(-0.52, Math.min(0.52, Math.atan2(aimDx, Math.max(2.2, distZ))));
         this.stateTimer -= dt;
         const recT = 1 - Math.max(0, this.stateTimer / CLUB_RECOVER_DURATION);
-        this.clubArmPivot.rotation.x = -1.32 * (1 - recT * 0.85);
+        this.clubArmPivot.rotation.x = -1.35 * (1 - recT * 0.85);
         this.clubArmPivot.rotation.z = 0.08 * (1 - recT);
         if (this.stateTimer <= 0) {
           this.attackState = 'COOLDOWN';
@@ -727,7 +754,6 @@ export class MidBridgeBrute {
       }
     }
 
-    // Heavy stomping leg & torso animation + smooth aim yaw toward smash lane
     const legSwing = engaged ? Math.sin(this.stridePhase) * 0.34 : 0;
     this.leftLegPivot.rotation.x = legSwing;
     this.rightLegPivot.rotation.x = -legSwing;
@@ -783,4 +809,16 @@ export class MidBridgeBrute {
     this.chestBarTex.redrawIfDirty(this.hp, this.maxHp, this.hitFlash);
     return 'HIT';
   }
+
+  public getActiveDangerSmashX(): number | null {
+    if (!this.active || this.defeated || this.hp <= 0 || this.attackState !== 'WINDUP') {
+      return null;
+    }
+    return this.lockedSmashX;
+  }
+}
+
+function dangerTimingDiscSetPos(mesh: THREE.Mesh): void {
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.036;
 }

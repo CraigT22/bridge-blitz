@@ -48,47 +48,47 @@ const WATER_FRAGMENT_SHADER = /* glsl */ `
     float NoV = clamp(dot(N, V), 0.02, 0.9999);
     float fresnel = pow(max(0.0001, 1.0 - NoV), 4.0);
 
-    vec3 deepTrough = vec3(0.028, 0.068, 0.105);
-    vec3 seaBody = vec3(0.055, 0.145, 0.195);
-    vec3 skyReflect = mix(vec3(0.22, 0.26, 0.36), vec3(0.88, 0.44, 0.21), smoothstep(-0.2, 0.85, -V.z));
+    vec3 deepTrough = vec3(0.014, 0.042, 0.088);
+    vec3 seaBody = vec3(0.036, 0.125, 0.215);
+    vec3 skyReflect = mix(vec3(0.08, 0.19, 0.32), vec3(0.16, 0.52, 0.68), smoothstep(-0.2, 0.85, -V.z));
 
     float crestMix = smoothstep(-0.38, 0.42, vWaveElev);
     vec3 col = mix(deepTrough, seaBody, crestMix);
     col = mix(col, skyReflect, clamp(fresnel * 0.78 + 0.08, 0.0, 0.88));
 
-    // Golden-Hour Sun Specular Glitter Path across the bay
-    vec3 sunDir = normalize(vec3(-0.38, 0.21, -0.90));
-    vec3 H = normalize(sunDir + V);
+    // Moonlit Ice-Cyan Specular Glitter Path across the storm bay
+    vec3 moonDir = normalize(vec3(-0.36, 0.25, -0.89));
+    vec3 H = normalize(moonDir + V);
     float NoH = max(0.0001, dot(N, H));
     float specTight = pow(NoH, 96.0);
     float specBroad = pow(NoH, 18.0);
-    col += vec3(1.55, 0.86, 0.38) * specTight * 1.35;
-    col += vec3(0.55, 0.26, 0.10) * specBroad * 0.42;
+    col += vec3(0.95, 1.42, 1.65) * specTight * 1.35;
+    col += vec3(0.12, 0.44, 0.58) * specBroad * 0.42;
 
-    // Subtle whitecap foam streaks on high wave crests
-    float chop = sin(p.x * 0.63 + p.y * 0.39 + uTime * 2.1) * cos(p.x * -0.49 + p.y * 0.71 - uTime * 1.6);
-    float whitecap = smoothstep(0.32, 0.56, vWaveElev + chop * 0.22);
-    col = mix(col, vec3(0.76, 0.72, 0.68), whitecap * 0.28);
+    // Storm-chop whitecap foam streaks on high wave crests
+    float chop = sin(p.x * 0.63 + p.y * 0.39 + uTime * 2.3) * cos(p.x * -0.49 + p.y * 0.71 - uTime * 1.8);
+    float whitecap = smoothstep(0.29, 0.54, vWaveElev + chop * 0.24);
+    col = mix(col, vec3(0.72, 0.88, 0.96), whitecap * 0.34);
 
-    // Bridge deck shadow band directly beneath roadway (X in [-5.8, +5.8])
+    // Viaduct shadow band directly beneath roadway (X in [-5.8, +5.8])
     float underBridge = 1.0 - smoothstep(5.2, 10.5, abs(p.x));
-    col *= (1.0 - underBridge * 0.44);
+    col *= (1.0 - underBridge * 0.46);
 
-    // Distance atmospheric golden-haze blend
+    // Distance atmospheric storm-slate blend
     float dist = length(uCamPos.xz - p);
-    float dNorm = dist * 0.0046;
+    float dNorm = dist * 0.0044;
     float fogFactor = 1.0 - exp(-(dNorm * dNorm));
-    col = mix(col, vec3(0.56, 0.31, 0.22), clamp(fogFactor, 0.0, 0.92));
+    col = mix(col, vec3(0.068, 0.155, 0.245), clamp(fogFactor, 0.0, 0.92));
 
     gl_FragColor = vec4(col, 1.0);
   }
 `;
 
 const CHUNK_LENGTH = 40;
-const CHUNK_COUNT = 10; // 5 seamless 80m suspension catenary spans!
+const CHUNK_COUNT = 10; // 5 seamless 80m cable-stayed naval viaduct spans!
 
 /**
- * Exact catenary height for each half of an 80m suspension span:
+ * Exact catenary height for each half of an 80m viaduct span:
  * - phase 0: descends from tower saddle (17.4m at localZ=0) to mid-span trough (3.65m at localZ=-40)
  * - phase 1: ascends symmetrically from mid-span trough (3.65m at localZ=0) to next tower saddle (17.4m at localZ=-40)
  */
@@ -132,7 +132,7 @@ export class BridgeEnvironment {
   constructor() {
     this.textures = createProceduralSurfaceTextures();
 
-    // 1. Realistic Golden-Hour Fresnel & Specular Ocean Water
+    // 1. Midnight Storm Fresnel & Moonlit Specular Ocean Water
     this.waterUniforms = {
       uTime: { value: 0 },
       uCamPos: { value: new THREE.Vector3(0, 9, 14) },
@@ -148,63 +148,66 @@ export class BridgeEnvironment {
     this.waterMesh.position.set(0, -4.6, -140);
     this.root.add(this.waterMesh);
 
-    // Shared Gritty Tactical PBR Bridge Materials (tuned for direct 4-light forward pass)
+    // Shared Midnight Storm PBR Viaduct Materials (tuned for direct 4-light forward pass, metalness <= 0.48)
     const deckMat = new THREE.MeshStandardMaterial({
       map: this.textures.albedo,
       bumpMap: this.textures.bump,
       bumpScale: 0.045,
       roughnessMap: this.textures.roughness,
-      roughness: 0.86,
-      metalness: 0.12,
+      roughness: 0.76,
+      metalness: 0.24,
     });
     this.deckMat = deckMat;
 
     const concreteBarrierMat = new THREE.MeshStandardMaterial({
-      color: 0x656c76,
+      color: 0x38485c,
       bumpMap: this.textures.bump,
       bumpScale: 0.03,
-      roughness: 0.82,
-      metalness: 0.08,
+      roughness: 0.68,
+      metalness: 0.22,
     });
 
     const curbMat = new THREE.MeshStandardMaterial({
       map: this.textures.hazardCurb,
-      roughness: 0.56,
-      metalness: 0.16,
+      roughness: 0.48,
+      metalness: 0.22,
     });
 
     const gunmetalMat = new THREE.MeshStandardMaterial({
-      color: 0x56616e,
+      color: 0x485c74,
       bumpMap: this.textures.steelPlate,
       bumpScale: 0.025,
-      roughness: 0.36,
-      metalness: 0.42,
+      roughness: 0.34,
+      metalness: 0.44,
     });
 
     const cableSteelMat = new THREE.MeshStandardMaterial({
-      color: 0x828f9d,
-      roughness: 0.3,
-      metalness: 0.46,
+      color: 0x7a96b2,
+      roughness: 0.28,
+      metalness: 0.48,
     });
 
+    // Obsidian-Titanium Naval Truss Towers (zero Golden-Gate red!)
     const towerMat = new THREE.MeshStandardMaterial({
-      color: 0xa83829,
+      color: 0x243447,
       bumpMap: this.textures.steelPlate,
       bumpScale: 0.035,
-      roughness: 0.44,
-      metalness: 0.32,
+      roughness: 0.38,
+      metalness: 0.44,
     });
 
+    // Crisp Ice-Cyan Viaduct Arc-LED Floodlights
     const lampGlowMat = new THREE.MeshStandardMaterial({
-      color: 0xffd28a,
-      emissive: 0xff9b38,
-      emissiveIntensity: 2.1,
-      roughness: 0.2,
+      color: 0x74f8ff,
+      emissive: 0x1ad8ff,
+      emissiveIntensity: 2.3,
+      roughness: 0.18,
     });
 
+    // High-Voltage Volt-Amber / Crimson Naval Warning Strobes
     const beaconGlowMat = new THREE.MeshStandardMaterial({
-      color: 0xff4d4d,
-      emissive: 0xff1e26,
+      color: 0xffa438,
+      emissive: 0xff6218,
       emissiveIntensity: 2.6,
       roughness: 0.2,
     });
@@ -215,7 +218,7 @@ export class BridgeEnvironment {
       1: [createCatenaryCableGeometry(1, -6.05), createCatenaryCableGeometry(1, 6.05)],
     };
 
-    // 2. Modular Recycling 80m-Paired Suspension Bridge Chunks
+    // 2. Modular Recycling 80m-Paired Naval Viaduct Chunks
     for (let i = 0; i < CHUNK_COUNT; i++) {
       const spanPhase: 0 | 1 = (i % 2) as 0 | 1;
       const chunk = this.createBridgeChunk(
@@ -247,7 +250,7 @@ export class BridgeEnvironment {
     );
     this.root.add(this.bossPlatform);
 
-    // 3.5 Sculpted Split-Causeway Armored Ballistic Center Divider Wall
+    // 3.5 Sculpted Split-Causeway Armored Naval Bulkhead Wall
     this.splitDividerGroup = this.createSplitDividerWall(
       concreteBarrierMat,
       curbMat,
@@ -257,33 +260,34 @@ export class BridgeEnvironment {
     this.splitDividerGroup.visible = false;
     this.root.add(this.splitDividerGroup);
 
-    // 4. Drifting Golden-Hour Battle Embers & Ash Motes
+    // 4. Wind-Driven Cyan Plasma Sparks & Storm Spray Motes
     this.motePositions = new Float32Array(this.moteCount * 3);
     const moteColors = new Float32Array(this.moteCount * 3);
-    const cEmber = new THREE.Color();
+    const cMote = new THREE.Color();
     for (let i = 0; i < this.moteCount; i++) {
       this.motePositions[i * 3] = ((i * 37) % 36) - 18;
       this.motePositions[i * 3 + 1] = 0.4 + ((i * 19) % 11) * 0.85;
       this.motePositions[i * 3 + 2] = -((i * 29) % 140) + 15;
 
       if (i % 3 === 0) {
-        cEmber.setHex(0xff9f43); // Glowing ember spark
+        cMote.setHex(0x2ef5dc); // Electric-teal plasma spark
+      } else if (i % 5 === 0) {
+        cMote.setHex(0xff9f38); // Distant ordnance spark
       } else {
-        cEmber.setHex(0xdcc6b4); // Warm sunlit dust/ash
+        cMote.setHex(0x9ed8ff); // Moonlit storm mist
       }
-      moteColors[i * 3] = cEmber.r;
-      moteColors[i * 3 + 1] = cEmber.g;
-      moteColors[i * 3 + 2] = cEmber.b;
+      moteColors[i * 3] = cMote.r;
+      moteColors[i * 3 + 1] = cMote.g;
+      moteColors[i * 3 + 2] = cMote.b;
     }
-    // Soft circular bokeh sprite so atmosphere motes never render as harsh square pixels
     const moteSpriteCanvas = document.createElement('canvas');
     moteSpriteCanvas.width = 64;
     moteSpriteCanvas.height = 64;
     const mCtx = moteSpriteCanvas.getContext('2d')!;
     const mGrad = mCtx.createRadialGradient(32, 32, 2, 32, 32, 30);
     mGrad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
-    mGrad.addColorStop(0.38, 'rgba(255, 236, 198, 0.65)');
-    mGrad.addColorStop(1, 'rgba(255, 200, 140, 0.0)');
+    mGrad.addColorStop(0.38, 'rgba(130, 238, 255, 0.68)');
+    mGrad.addColorStop(1, 'rgba(32, 200, 240, 0.0)');
     mCtx.fillStyle = mGrad;
     mCtx.fillRect(0, 0, 64, 64);
     const moteTex = new THREE.CanvasTexture(moteSpriteCanvas);
@@ -296,7 +300,7 @@ export class BridgeEnvironment {
       map: moteTex,
       vertexColors: true,
       transparent: true,
-      opacity: 0.76,
+      opacity: 0.78,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -653,6 +657,15 @@ export class BridgeEnvironment {
     wallOutline.position.set(0, 1.38, -len / 2);
     group.add(wallOutline);
 
+    // Glowing Asymmetric Plasma Telemetry Conduits (Teal on Left Ordnance side, Crimson-Amber on Right Breach side)
+    const leftConduitMat = new THREE.MeshBasicMaterial({ color: 0x24f2d2 });
+    const rightConduitMat = new THREE.MeshBasicMaterial({ color: 0xff3b6b });
+    const leftConduit = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.09, len - 0.6), leftConduitMat);
+    leftConduit.position.set(-0.135, 1.82, -len / 2);
+    const rightConduit = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.09, len - 0.6), rightConduitMat);
+    rightConduit.position.set(0.135, 1.82, -len / 2);
+    group.add(leftConduit, rightConduit);
+
     // Top gunmetal coping rail + repeating vertical steel H-beam ribs
     const topCap = new THREE.Mesh(
       new THREE.BoxGeometry(0.32, 0.12, len + 0.1),
@@ -668,16 +681,16 @@ export class BridgeEnvironment {
       group.add(rib);
     }
 
-    // Front Armored Breach-Line Nose Prow + Warning Beacon at localZ = 0
+    // Front Faceted Hexagonal Breach-Line Nose Prow + Warning Beacon at localZ = 0
     const noseProw = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.18, 0.28, 2.72, 8),
+      new THREE.CylinderGeometry(0.20, 0.30, 2.72, 6),
       gunmetalMat
     );
     noseProw.position.set(0, 1.36, 0.05);
     group.add(noseProw);
 
     const noseOutline = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.23, 0.33, 2.78, 8),
+      new THREE.CylinderGeometry(0.25, 0.35, 2.78, 6),
       outlineMat
     );
     noseOutline.position.set(0, 1.36, 0.05);
@@ -691,10 +704,10 @@ export class BridgeEnvironment {
     group.add(noseHazard);
 
     const prowBeacon = new THREE.Mesh(
-      new THREE.SphereGeometry(0.15, 10, 8),
+      new THREE.OctahedronGeometry(0.17, 0),
       beaconGlowMat
     );
-    prowBeacon.position.set(0, 2.86, 0.05);
+    prowBeacon.position.set(0, 2.88, 0.05);
     group.add(prowBeacon);
 
     return group;

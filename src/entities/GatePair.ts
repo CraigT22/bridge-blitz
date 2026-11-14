@@ -113,7 +113,7 @@ export class GatePairSlot {
     gantryShadow.position.set(0, 0.018, 0.06);
     this.root.add(gantryShadow);
 
-    // Cel-outlined polarity-colored cylindrical side posts & sliding center divider post!
+    // Faceted 6-sided Hexagonal Holo-Pylons & Octahedron Emitter Finials!
     const pylonDefs: ReadonlyArray<readonly [number, THREE.MeshStandardMaterial]> = [
       [-4.90, this.leftPylonMat],
       [0, this.centerPylonMat],
@@ -123,19 +123,19 @@ export class GatePairSlot {
       const holder = px === 0 ? this.centerPostGroup : this.root;
       const localX = px === 0 ? 0 : px;
       const post = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.145, 0.165, 2.72, 14),
+        new THREE.CylinderGeometry(0.14, 0.185, 2.72, 6),
         pMat
       );
       post.position.set(localX, 1.36, 0);
       const postOutline = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.19, 0.21, 2.78, 14),
+        new THREE.CylinderGeometry(0.188, 0.232, 2.78, 6),
         outlineMat
       );
       postOutline.position.set(localX, 1.36, 0);
-      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.175, 12, 10), pMat);
-      cap.position.set(localX, 2.73, 0);
-      const capOutline = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), outlineMat);
-      capOutline.position.set(localX, 2.73, 0);
+      const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.20, 0), pMat);
+      cap.position.set(localX, 2.78, 0);
+      const capOutline = new THREE.Mesh(new THREE.OctahedronGeometry(0.25, 0), outlineMat);
+      capOutline.position.set(localX, 2.78, 0);
       holder.add(post, postOutline, cap, capOutline);
     }
     this.root.add(this.centerPostGroup);
@@ -242,11 +242,11 @@ export class GatePairSlot {
 
   private applyPylonPolarity(mat: THREE.MeshStandardMaterial, isNeg: boolean): void {
     if (isNeg) {
-      mat.color.setHex(0xee2c44);
-      mat.emissive.setHex(0x520814);
+      mat.color.setHex(0xff245c);
+      mat.emissive.setHex(0x5c0822);
     } else {
-      mat.color.setHex(0x20d8ff);
-      mat.emissive.setHex(0x064866);
+      mat.color.setHex(0x18f2c8);
+      mat.emissive.setHex(0x065448);
     }
   }
 

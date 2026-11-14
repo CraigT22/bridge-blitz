@@ -144,10 +144,10 @@ describe('ObjectPool & Core State Integrity', () => {
         expect(stage.splitCauseway!.leftQueue.length).toBe(28);
         expect(stage.splitCauseway!.rightEchelons.length).toBe(22);
         expect(stage.splitCauseway!.goliathSpawns.length).toBe(3);
-        expect(stage.splitCauseway!.marchSpeed).toBeGreaterThanOrEqual(4.85);
-        expect(stage.splitCauseway!.leftQueue[0].barrelHp).toBeGreaterThanOrEqual(75);
-        expect(stage.splitCauseway!.leftQueue[27].barrelHp).toBeGreaterThanOrEqual(300000);
-        expect(stage.splitCauseway!.goliathSpawns[0].speed).toBeGreaterThanOrEqual(3.4);
+        expect(stage.splitCauseway!.marchSpeed).toBeGreaterThanOrEqual(5.25);
+        expect(stage.splitCauseway!.leftQueue[0].barrelHp).toBeGreaterThanOrEqual(26);
+        expect(stage.splitCauseway!.leftQueue[27].barrelHp).toBeGreaterThanOrEqual(90000);
+        expect(stage.splitCauseway!.goliathSpawns[0].speed).toBeGreaterThanOrEqual(3.55);
       }
 
       seenChassis.add(stage.boss.chassis);
@@ -157,14 +157,17 @@ describe('ObjectPool & Core State Integrity', () => {
     );
 
     const split1 = generateSplitCausewayStage(1);
+    const split2 = generateSplitCausewayStage(2);
     const split6 = generateSplitCausewayStage(6);
     expect(split1.boardLayout).toBe('SPLIT_CAUSEWAY');
     expect(split1.splitCauseway?.leftQueue[0].reward).toEqual({
       kind: 'GATE',
-      operator: 'MUL',
+      operator: 'ADD',
       value: 2,
     });
-    expect(split1.splitCauseway!.marchSpeed).toBeGreaterThanOrEqual(4.85);
+    expect(split1.boss.salvoLanes).toBe(1);
+    expect(split2.boss.salvoLanes).toBe(2);
+    expect(split1.splitCauseway!.marchSpeed).toBeGreaterThanOrEqual(5.25);
     expect(split6.splitCauseway!.marchSpeed).toBeGreaterThan(split1.splitCauseway!.marchSpeed);
     expect(split6.boss.maxHp).toBeGreaterThan(split1.boss.maxHp);
 
@@ -179,6 +182,7 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(wave1.midBrute).toBeDefined();
     expect(wave5.boss.maxHp).toBeGreaterThan(wave1.boss.maxHp);
     expect(wave1.boss.salvoLanes).toBe(1);
+    expect(wave2.boss.salvoLanes).toBe(2);
     expect(wave5.boss.salvoLanes).toBe(2);
     expect(wave4.boss.chassis).toBe('SOVEREIGN_TITAN');
   });

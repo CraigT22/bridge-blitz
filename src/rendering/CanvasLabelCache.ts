@@ -74,63 +74,73 @@ export class EditableGateTexture {
     ctx.save();
     ctx.scale(w / virtW, 1);
 
-    // Frameless-top translucent energy glass curtain:
-    // Fades smoothly to open air at the top, rich translucent cyan/crimson through the body,
-    // and terminates in a crisp glowing baseline along the bridge deck!
-    const grad = ctx.createLinearGradient(0, 4, 0, h - 6);
+    // Hex-Grid Tactical Holo-Shield Field:
+    // Emerald-Teal (#18f2c8) positive polarity vs Crimson-Magenta (#ff245c) breach hazard polarity
+    const grad = ctx.createLinearGradient(0, 6, 0, h - 6);
     if (isNeg) {
-      grad.addColorStop(0.0, 'rgba(244, 48, 72, 0.03)');
-      grad.addColorStop(0.18, 'rgba(238, 42, 64, 0.24)');
-      grad.addColorStop(0.55, 'rgba(220, 30, 52, 0.46)');
-      grad.addColorStop(0.90, 'rgba(182, 16, 36, 0.64)');
-      grad.addColorStop(1.0, 'rgba(255, 76, 98, 0.84)');
+      grad.addColorStop(0.0, 'rgba(255, 36, 92, 0.22)');
+      grad.addColorStop(0.22, 'rgba(232, 24, 78, 0.34)');
+      grad.addColorStop(0.65, 'rgba(184, 16, 62, 0.50)');
+      grad.addColorStop(0.92, 'rgba(142, 10, 48, 0.68)');
+      grad.addColorStop(1.0, 'rgba(255, 72, 118, 0.88)');
     } else {
-      grad.addColorStop(0.0, 'rgba(42, 220, 255, 0.03)');
-      grad.addColorStop(0.18, 'rgba(26, 202, 255, 0.24)');
-      grad.addColorStop(0.55, 'rgba(14, 168, 246, 0.44)');
-      grad.addColorStop(0.90, 'rgba(10, 126, 224, 0.62)');
-      grad.addColorStop(1.0, 'rgba(68, 236, 255, 0.82)');
+      grad.addColorStop(0.0, 'rgba(24, 242, 200, 0.22)');
+      grad.addColorStop(0.22, 'rgba(18, 208, 212, 0.34)');
+      grad.addColorStop(0.65, 'rgba(12, 152, 198, 0.48)');
+      grad.addColorStop(0.92, 'rgba(8, 108, 168, 0.66)');
+      grad.addColorStop(1.0, 'rgba(64, 250, 224, 0.88)');
     }
     ctx.fillStyle = grad;
-    ctx.fillRect(2, 4, virtW - 4, h - 10);
+    ctx.fillRect(3, 8, virtW - 6, h - 14);
 
-    // Subtle vertical glass sheen columns
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.07)';
-    ctx.fillRect(virtW * 0.14, 28, Math.max(14, virtW * 0.08), h - 42);
-    ctx.fillRect(virtW * 0.76, 36, Math.max(10, virtW * 0.05), h - 50);
-
-    if (flashFlag) {
-      const flashGrad = ctx.createLinearGradient(0, 18, 0, h - 6);
-      flashGrad.addColorStop(0, 'rgba(255, 255, 255, 0.05)');
-      flashGrad.addColorStop(0.45, 'rgba(255, 255, 255, 0.36)');
-      flashGrad.addColorStop(1, 'rgba(255, 255, 255, 0.48)');
-      ctx.fillStyle = flashGrad;
-      ctx.fillRect(2, 14, virtW - 4, h - 20);
+    // Subtle tactical diagonal holo-grid scanlines
+    ctx.strokeStyle = isNeg ? 'rgba(255, 130, 160, 0.16)' : 'rgba(130, 255, 236, 0.16)';
+    ctx.lineWidth = 2;
+    for (let gx = -h; gx < virtW + h; gx += 44) {
+      ctx.beginPath();
+      ctx.moveTo(gx, 10);
+      ctx.lineTo(gx + h * 0.45, h - 10);
+      ctx.stroke();
     }
 
-    // Bright glowing ground-contact baseline strip
-    ctx.fillStyle = isNeg ? 'rgba(255, 166, 178, 0.96)' : 'rgba(164, 250, 255, 0.96)';
-    ctx.fillRect(2, h - 11, virtW - 4, 6);
-    ctx.fillStyle = isNeg ? 'rgba(255, 68, 92, 0.45)' : 'rgba(42, 220, 255, 0.45)';
-    ctx.fillRect(2, h - 19, virtW - 4, 8);
+    // Crisp top laser emitter bar + bottom deck projector rail
+    ctx.fillStyle = isNeg ? 'rgba(255, 128, 158, 0.92)' : 'rgba(138, 255, 236, 0.92)';
+    ctx.fillRect(3, 6, virtW - 6, 4);
+    ctx.fillRect(3, h - 11, virtW - 6, 6);
 
-    // Giant Bold White Black-Outlined Arcade Label (centered cleanly with no bottom charge bar!)
+    // Chamfered corner telemetry ticks
+    const tickCol = isNeg ? '#ff8ca8' : '#8cffeb';
+    ctx.fillStyle = tickCol;
+    ctx.fillRect(6, 14, 18, 3);
+    ctx.fillRect(virtW - 24, 14, 18, 3);
+
+    if (flashFlag) {
+      const flashGrad = ctx.createLinearGradient(0, 10, 0, h - 6);
+      flashGrad.addColorStop(0, 'rgba(255, 255, 255, 0.18)');
+      flashGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.42)');
+      flashGrad.addColorStop(1, 'rgba(255, 255, 255, 0.54)');
+      ctx.fillStyle = flashGrad;
+      ctx.fillRect(3, 8, virtW - 6, h - 14);
+    }
+
+    // Crisp Geometric Tactical Gate Numeral (zero cartoon bubble look!)
     const label = formatGateLabel(operator, value, isLocked);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    let fontPx = Math.round(Math.max(112, Math.min(162, 102 + virtW * 0.082)));
-    ctx.font = `900 ${fontPx}px system-ui, -apple-system, sans-serif`;
+    let fontPx = Math.round(Math.max(108, Math.min(156, 98 + virtW * 0.080)));
+    ctx.font = `900 ${fontPx}px "Segoe UI", Roboto, system-ui, sans-serif`;
     const maxTextW = Math.max(124, virtW - 38);
     const measuredW = ctx.measureText(label).width;
     if (measuredW > maxTextW) {
-      fontPx = Math.max(74, Math.floor(fontPx * (maxTextW / measuredW)));
-      ctx.font = `900 ${fontPx}px system-ui, -apple-system, sans-serif`;
+      fontPx = Math.max(72, Math.floor(fontPx * (maxTextW / measuredW)));
+      ctx.font = `900 ${fontPx}px "Segoe UI", Roboto, system-ui, sans-serif`;
     }
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = Math.max(16, Math.round(fontPx * 0.165));
-    ctx.strokeStyle = '#09111c';
+    ctx.lineJoin = 'miter';
+    ctx.miterLimit = 3;
+    ctx.lineWidth = Math.max(14, Math.round(fontPx * 0.145));
+    ctx.strokeStyle = '#070d16';
     ctx.strokeText(label, virtW / 2, h * 0.54);
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#f4fcff';
     ctx.fillText(label, virtW / 2, h * 0.54);
 
     ctx.restore();
@@ -139,8 +149,10 @@ export class EditableGateTexture {
 }
 
 /**
- * Giant Punchy Arcade HP Number Texture (used on front of Supply Drums & 3-Lane Tire Walls):
- * Bold white digits with thick fiery-orange + dark cartoon ink outline on a 100% transparent background!
+ * Chamfered Dark-Glass Tactical HUD HP Plaque (replaces fiery-orange cartoon bubble digits
+ * on Armored Hex Ordnance Pods & Modular Blast Barricades):
+ * Translucent obsidian-slate oct-plate + glowing electric-teal / volt-amber corner bracket frame
+ * + razor-sharp white/cyan numerals!
  */
 export class EditableArcadeHpTexture {
   public readonly canvas: HTMLCanvasElement;
@@ -179,26 +191,38 @@ export class EditableArcadeHpTexture {
 
     const text = formatObstacleHp(shown);
     const fontSize =
-      text.length >= 5 ? 104 : text.length === 4 ? 124 : text.length === 3 ? 148 : 168;
+      text.length >= 5 ? 96 : text.length === 4 ? 114 : text.length === 3 ? 132 : 146;
+
+    // Chamfered Dark-Glass Tactical Telemetry Plate
+    const padX = 28;
+    const padY = 26;
+    const pw = w - padX * 2;
+    const ph = h - padY * 2;
+    traceChamferRect(ctx, padX, padY, pw, ph, 24);
+    ctx.fillStyle = flashFlag ? 'rgba(32, 62, 88, 0.90)' : 'rgba(8, 16, 28, 0.86)';
+    ctx.fill();
+
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = flashFlag ? '#ffd25a' : '#28f2d4';
+    ctx.stroke();
+
+    // Inner volt-amber / cyan corner accents
+    ctx.fillStyle = flashFlag ? '#ffffff' : '#ffb838';
+    ctx.fillRect(padX + 26, padY + 6, 44, 4);
+    ctx.fillRect(padX + pw - 70, padY + ph - 10, 44, 4);
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `900 ${fontSize}px system-ui, -apple-system, sans-serif`;
-    ctx.lineJoin = 'round';
+    ctx.font = `900 ${fontSize}px "Segoe UI", Roboto, system-ui, sans-serif`;
+    ctx.lineJoin = 'miter';
+    ctx.miterLimit = 3;
 
-    // Outer dark cartoon drop-stroke
-    ctx.lineWidth = 34;
-    ctx.strokeStyle = 'rgba(14, 8, 4, 0.92)';
-    ctx.strokeText(text, w / 2, h / 2 + 6);
+    ctx.lineWidth = 16;
+    ctx.strokeStyle = '#050a12';
+    ctx.strokeText(text, w / 2, h / 2 + 4);
 
-    // Mid fiery orange arcade stroke
-    ctx.lineWidth = 22;
-    ctx.strokeStyle = flashFlag ? '#ff3b1f' : '#ea5212';
-    ctx.strokeText(text, w / 2, h / 2 + 2);
-
-    // Crisp bright white fill
-    ctx.fillStyle = flashFlag ? '#fff4d6' : '#ffffff';
-    ctx.fillText(text, w / 2, h / 2 + 2);
+    ctx.fillStyle = flashFlag ? '#fff6c8' : '#eefcff';
+    ctx.fillText(text, w / 2, h / 2 + 4);
 
     this.texture.needsUpdate = true;
   }
@@ -218,8 +242,8 @@ export function createStaticWeaponBadgeTexture(tier: WeaponTierId): THREE.Canvas
   const spec = WEAPON_SPECS[tier];
   const hex = `#${spec.colorHex.toString(16).padStart(6, '0')}`;
 
-  traceChamferRect(ctx, 8, 10, 304, 76, 14);
-  ctx.fillStyle = 'rgba(13, 18, 25, 0.94)';
+  traceChamferRect(ctx, 8, 10, 304, 76, 16);
+  ctx.fillStyle = 'rgba(8, 15, 26, 0.94)';
   ctx.fill();
   ctx.lineWidth = 5;
   ctx.strokeStyle = hex;
@@ -227,7 +251,7 @@ export function createStaticWeaponBadgeTexture(tier: WeaponTierId): THREE.Canvas
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = '900 36px system-ui, -apple-system, sans-serif';
+  ctx.font = '900 35px "Segoe UI", Roboto, system-ui, sans-serif';
   ctx.fillStyle = hex;
   ctx.fillText(spec.shortBadge.toUpperCase(), 160, 49);
 

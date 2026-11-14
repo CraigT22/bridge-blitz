@@ -131,11 +131,11 @@ export class EnemyWaveSlot {
       return;
     }
 
-    const withinEngage = squadZ - this.z < 33;
+    const withinEngage = squadZ - this.z < 46;
     this.isMarching = withinEngage;
     if (withinEngage) {
       this.z += this.speed * dt;
-      this.marchPhase += dt * 8.8;
+      this.marchPhase += dt * 9.8;
     }
 
     let alive = 0;
@@ -151,14 +151,20 @@ export class EnemyWaveSlot {
       }
 
       if (withinEngage) {
-        const speedMul = this.unitIsHeavy[i] === 1 ? 0.86 : 1.0;
+        const speedMul =
+          this.unitIsHeavy[i] === 1
+            ? 0.90
+            : this.unitIsVanguard[i] === 1
+              ? 1.14
+              : 1.0;
         this.unitZ[i] += this.speed * speedMul * dt;
 
-        // Subtle close-range tracking (< 8.5m) preserves carved open lanes when front troopers are eliminated!
+        // Controlled close-range flank pinch (< 10.5m): pressures center campers while keeping carved breach lanes passable!
         const distZ = squadZ - this.unitZ[i];
-        if (distZ < 8.5 && distZ > -1.0) {
+        if (distZ < 10.5 && distZ > -1.0) {
           const dx = squadX - this.unitX[i];
-          this.unitX[i] += Math.sign(dx) * Math.min(Math.abs(dx), 0.25 * dt);
+          const lateralRate = this.unitIsVanguard[i] === 1 ? 0.34 : 0.24;
+          this.unitX[i] += Math.sign(dx) * Math.min(Math.abs(dx), lateralRate * dt);
         }
       }
 
@@ -306,7 +312,7 @@ export class EnemyWaveSlot {
       }
       const unitRad = this.unitIsHeavy[i] === 1 ? 0.56 : 0.40;
       if (
-        Math.abs(this.unitZ[i] - squadZ) <= 0.72 + unitRad * 0.4 &&
+        Math.abs(this.unitZ[i] - squadZ) <= 0.74 + unitRad * 0.42 &&
         Math.abs(this.unitX[i] - squadX) <= squadHalfW + unitRad
       ) {
         const dmg = this.unitIsHeavy[i] === 1 ? 2 : 1;

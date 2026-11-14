@@ -456,7 +456,7 @@ export class HudController {
     const launchTextEl = this.btnStartMarch.querySelector<HTMLElement>('.drag-launch-pill__text');
     if (launchTextEl) {
       launchTextEl.textContent =
-        boardLayout === 'SPLIT_CAUSEWAY' ? 'DRAG TO DEFEND CAUSEWAY' : 'DRAG BRIDGE TO MARCH';
+        boardLayout === 'SPLIT_CAUSEWAY' ? 'SLIDE TO DEFEND CAUSEWAY' : 'SLIDE VIADUCT TO DEPLOY';
     }
 
     const muteLabel = save.settings.muted ? 'OFF' : 'ON';
@@ -557,10 +557,10 @@ export class HudController {
       const shotsPerVolley =
         spec.pattern === 'BURST_2' || spec.pattern === 'TWIN_CONVERGE' ? 2 : 1;
       const effRate = spec.fireRate * shotsPerVolley;
-      const ratePct = Math.min(100, Math.round((effRate / 15.2) * 100));
-      const dmgPct = Math.min(100, Math.round((spec.damageMultiplier / 3.25) * 100));
+      const ratePct = Math.min(100, Math.round((effRate / 13.2) * 100));
+      const dmgPct = Math.min(100, Math.round((spec.damageMultiplier / 2.55) * 100));
       const velPct = Math.min(100, Math.round((spec.projectileSpeed / 44) * 100));
-      const armorPct = Math.min(100, Math.round((spec.bossArmorFactor / 1.35) * 100));
+      const armorPct = Math.min(100, Math.round((spec.bossArmorFactor / 1.25) * 100));
 
       this.armoryStatBars.innerHTML = `
         <div class="stat-meter">
@@ -582,7 +582,7 @@ export class HudController {
       `;
       this.armoryItemNote.textContent =
         spec.tier === 1
-          ? 'Standard sidearm equipped at launch. Shatter Supply Drums & Tire Walls on the bridge to upgrade live!'
+          ? 'Standard sidearm equipped at launch. Breach Hex Ordnance Pods & Blast Barricades on the viaduct to upgrade live!'
           : `Weapon Lock Rule: Breaking lower/equal weapon drops keeps this gun and awards +${WEAPON_LOCK_BONUS_COINS} Coins & +${WEAPON_LOCK_BONUS_SQUAD} Commando (overflow >40 converts to +${OVERFLOW_SQUAD_COIN_BONUS} Coins).`;
     } else {
       for (const stage of CAMPAIGN_STAGES) {
@@ -603,12 +603,12 @@ export class HudController {
       this.armoryItemKicker.textContent = `SECTOR ${st.stageNumber} // ${CHASSIS_LABELS[boss.chassis]}`;
       this.armoryItemName.textContent = boss.name.toUpperCase();
 
-      const hpPct = Math.min(100, Math.max(10, Math.round((boss.maxHp / 114000) * 100)));
+      const hpPct = Math.min(100, Math.max(10, Math.round((boss.maxHp / 138000) * 100)));
       const segPct = Math.round((boss.segments / 10) * 100);
-      const spdPct = Math.round((boss.advanceSpeed / 1.55) * 100);
+      const spdPct = Math.min(100, Math.round((boss.advanceSpeed / 1.72) * 100));
       const rewPct = Math.min(100, Math.round((boss.rewardCoins / 2800) * 100));
       const layoutTag =
-        st.boardLayout === 'SPLIT_CAUSEWAY' ? 'Split Causeway Siege' : `${st.trackLength}m Bridge`;
+        st.boardLayout === 'SPLIT_CAUSEWAY' ? 'Split Causeway Siege' : `${st.trackLength}m Viaduct`;
 
       this.armoryStatBars.innerHTML = `
         <div class="stat-meter">
@@ -628,7 +628,7 @@ export class HudController {
           <div class="stat-meter__track"><div class="stat-meter__fill" style="width:${rewPct}%"></div></div>
         </div>
       `;
-      this.armoryItemNote.textContent = `Guarding ${st.title} (${layoutTag}). Fires ${boss.salvoLanes}-lane telegraphed plasma salvos every ${boss.salvoInterval.toFixed(1)}s — steer into the open lane!`;
+      this.armoryItemNote.textContent = `Guarding ${st.title} (${layoutTag}). Fires ${boss.salvoLanes}-lane telegraphed plasma salvos every ${boss.salvoInterval.toFixed(2)}s — steer into the open lane!`;
     }
   }
 
@@ -643,7 +643,7 @@ export class HudController {
       <div class="sector-node__num">⇄</div>
       <div class="sector-node__info">
         <span class="sector-node__title">SPLIT CAUSEWAY SIEGE</span>
-        <span class="sector-node__sub">Left Barrel+Gate Queue vs Right Battalions • Stage ${save.splitCausewayStage} (Best: S${save.bestSplitStage})</span>
+        <span class="sector-node__sub">Left Ordnance Pod Queue vs Right Battalions • Stage ${save.splitCausewayStage} (Best: S${save.bestSplitStage})</span>
       </div>
       <span class="sector-node__status">${splitSelected ? 'ACTIVE' : 'DEPLOY'}</span>
     `;
