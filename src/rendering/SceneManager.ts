@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getBossVisualProfile } from '../core/StageData';
 import type { BossChassisId, BossDefinition, SkinThemeId, WeaponTierId } from '../core/types';
 import { getWeaponDisplaySpec } from '../math/weaponMath';
 import {
@@ -6,6 +7,7 @@ import {
   type BossChassisRig,
 } from './BossRigFactory';
 import { createGoldenHourSkyDome } from './ProceduralTextures';
+import { createAllUnicornBossChassisRigs } from './UnicornBossRigFactory';
 import {
   createShowcaseWeaponGroup,
   type ShowcaseWeaponRig,
@@ -40,13 +42,14 @@ export class SceneManager {
   private readonly skyUniforms: { uTime: { value: number } };
 
   // Self-contained 3D Armory Showcase Stage (single-pass forward rendered!)
-  private skinTheme: SkinThemeId = 'TACTICAL';
+  private skinTheme: SkinThemeId = 'UNICORN';
   private readonly armoryRoot = new THREE.Group();
   private readonly armoryTurntable = new THREE.Group();
   private readonly armoryRingMat: THREE.MeshBasicMaterial;
   private readonly armoryOuterRing: THREE.Mesh;
   private readonly armoryWeaponsByTheme: Record<SkinThemeId, Record<WeaponTierId, ShowcaseWeaponRig>>;
-  private readonly armoryBosses: Record<BossChassisId, BossChassisRig>;
+  private readonly armoryBossesByTheme: Record<SkinThemeId, Record<BossChassisId, BossChassisRig>>;
+  private latestArmoryBossDef: BossDefinition | null = null;
   private armoryMode: 'WEAPONS' | 'BOSSES' = 'WEAPONS';
   private armoryWeaponTier: WeaponTierId = 1;
   private armoryBossChassis: BossChassisId = 'WARDEN_MECH';
@@ -227,14 +230,27 @@ export class SceneManager {
       }
     }
 
-    this.armoryBosses = createAllBossChassisRigs();
-    for (const key of Object.keys(this.armoryBosses) as BossChassisId[]) {
-      const b = this.armoryBosses[key];
-      const bScale = key === 'SOVEREIGN_TITAN' ? 0.42 : 0.46;
-      b.root.scale.setScalar(bScale);
-      b.root.position.set(0, -0.52, 0);
-      b.root.visible = false;
-      this.armoryTurntable.add(b.root);
+    this.armoryBossesByTheme = {
+      TACTICAL: createAllBossChassisRigs(),
+      UNICORN: createAllUnicornBossChassisRigs(),
+    };
+    for (const theme of ['TACTICAL', 'UNICORN'] as const) {
+      const set = this.armoryBossesByTheme[theme];
+      for (const key of Object.keys(set) as BossChassisId[]) {
+        const b = set[key];
+        const bScale =
+          theme === 'UNICORN'
+            ? key === 'SOVEREIGN_TITAN'
+              ? 0.36
+              : 0.40
+            : key === 'SOVEREIGN_TITAN'
+              ? 0.42
+              : 0.46;
+        b.root.scale.setScalar(bScale);
+        b.root.position.set(0, -0.52, 0);
+        b.root.visible = false;
+        this.armoryTurntable.add(b.root);
+      }
     }
 
     this.scene.add(this.armoryRoot);
@@ -265,6 +281,16 @@ export class SceneManager {
     this.applyViewportFraming();
   };
 
+  private applyArmoryBossColors(def: BossDefinition): void {
+    const profile = getBossVisualProfile(def, this.skinTheme);
+    const rig = this.armoryBossesByTheme[this.skinTheme][def.chassis];
+    rig.primaryMat.color.setHex(profile.primaryHex);
+    rig.accentMat.color.setHex(profile.accentHex);
+    rig.trimMat.color.setHex(profile.trimHex);
+    rig.glowMat.color.setHex(profile.trimHex);
+    this.armoryRingMat.color.setHex(profile.trimHex);
+  }
+
   public setSkinTheme(theme: SkinThemeId): void {
     if (this.skinTheme === theme) {
       return;
@@ -274,6 +300,8 @@ export class SceneManager {
       this.armoryRingMat.color.setHex(
         getWeaponDisplaySpec(this.armoryWeaponTier, this.skinTheme).colorHex
       );
+    } else if (this.latestArmoryBossDef) {
+      this.applyArmoryBossColors(this.latestArmoryBossDef);
     }
     this.syncArmoryVisibility();
   }
@@ -288,14 +316,10 @@ export class SceneManager {
 
   public configureArmoryBoss(def: BossDefinition): void {
     this.armoryMode = 'BOSSES';
+    this.latestArmoryBossDef = def;
     this.armoryBossChassis = def.chassis;
     this.armoryYaw = -0.44;
-    const rig = this.armoryBosses[def.chassis];
-    rig.primaryMat.color.setHex(def.primaryHex);
-    rig.accentMat.color.setHex(def.accentHex);
-    rig.trimMat.color.setHex(def.trimHex);
-    rig.glowMat.color.setHex(def.trimHex);
-    this.armoryRingMat.color.setHex(def.trimHex);
+    this.applyArmoryBossColors(def);
     this.syncArmoryVisibility();
   }
 
@@ -312,10 +336,13 @@ export class SceneManager {
           theme === this.skinTheme &&
           t === this.armoryWeaponTier;
       }
-    }
-    for (const key of Object.keys(this.armoryBosses) as BossChassisId[]) {
-      this.armoryBosses[key].root.visible =
-        this.armoryMode === 'BOSSES' && key === this.armoryBossChassis;
+      const bossSet = this.armoryBossesByTheme[theme];
+      for (const key of Object.keys(bossSet) as BossChassisId[]) {
+        bossSet[key].root.visible =
+          this.armoryMode === 'BOSSES' &&
+          theme === this.skinTheme &&
+          key === this.armoryBossChassis;
+      }
     }
   }
 
@@ -359,13 +386,19 @@ export class SceneManager {
           wRig.spinCluster.rotation.x += dt * 12.0;
         }
       } else {
-        const bRig = this.armoryBosses[this.armoryBossChassis];
+        const bRig = this.armoryBossesByTheme[this.skinTheme][this.armoryBossChassis];
+        const isUnicorn = this.skinTheme === 'UNICORN';
         for (let s = 0; s < bRig.spinClusters.length; s++) {
-          if (this.armoryBossChassis === 'KRAKEN_WALKER') {
+          if (!isUnicorn && this.armoryBossChassis === 'KRAKEN_WALKER') {
             bRig.spinClusters[s].rotation.y += dt * 3.5;
           } else {
             bRig.spinClusters[s].rotation.z += dt * 9.0;
           }
+        }
+        if (bRig.wingPylons) {
+          const flap = Math.sin(this.elapsedSkyTime * 2.2) * (isUnicorn ? 0.11 : 0.06);
+          bRig.wingPylons[0].rotation.z = 0.42 + flap;
+          bRig.wingPylons[1].rotation.z = -0.42 - flap;
         }
       }
 

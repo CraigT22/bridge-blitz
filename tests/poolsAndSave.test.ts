@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { GameStateMachine, WIPEOUT_SLOWMO_DURATION } from '../src/core/GameStateMachine';
 import { BulletPool, ParticlePool, RagdollPool } from '../src/core/ObjectPool';
-import { sanitizeSaveData } from '../src/core/SaveManager';
+import { createDefaultSaveData, sanitizeSaveData } from '../src/core/SaveManager';
 import {
   CAMPAIGN_STAGES,
   generateEndlessWaveStage,
   generateSplitCausewayStage,
+  getBossVisualProfile,
 } from '../src/core/StageData';
 import { selectBossSalvoLaneMask } from '../src/entities/BossEntity';
 
@@ -187,7 +188,11 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(wave4.boss.chassis).toBe('SOVEREIGN_TITAN');
   });
 
-  it('sanitizes malformed localStorage payloads including SPLIT_CAUSEWAY mode and split stages safely', () => {
+  it('defaults to UNICORN skin in v7.2 while preserving explicit TACTICAL/UNICORN toggles and Boss visual profiles', () => {
+    const fresh = createDefaultSaveData();
+    expect(fresh.settings.skinTheme).toBe('UNICORN');
+    expect(fresh.settings.skinDefaultV72Applied).toBe(true);
+
     const clean = sanitizeSaveData({
       coins: 150.9,
       unlockedStage: 99,
@@ -205,18 +210,35 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(clean.bestSplitStage).toBe(7);
     expect(clean.upgrades.fireRate).toBe(3);
     expect(clean.upgrades.bulletPower).toBe(0);
-    expect(clean.settings.skinTheme).toBe('TACTICAL');
+    expect(clean.settings.skinTheme).toBe('UNICORN');
+    expect(clean.settings.skinDefaultV72Applied).toBe(false);
 
-    const unicornClean = sanitizeSaveData({
-      settings: { muted: true, haptics: false, skinTheme: 'UNICORN' },
+    const tacticalClean = sanitizeSaveData({
+      settings: {
+        muted: true,
+        haptics: false,
+        skinTheme: 'TACTICAL',
+        skinDefaultV72Applied: true,
+      },
     });
-    expect(unicornClean.settings.skinTheme).toBe('UNICORN');
-    expect(unicornClean.settings.muted).toBe(true);
-    expect(unicornClean.settings.haptics).toBe(false);
+    expect(tacticalClean.settings.skinTheme).toBe('TACTICAL');
+    expect(tacticalClean.settings.skinDefaultV72Applied).toBe(true);
+    expect(tacticalClean.settings.muted).toBe(true);
+    expect(tacticalClean.settings.haptics).toBe(false);
 
     const invalidSkinClean = sanitizeSaveData({
       settings: { skinTheme: 'RAINBOW_INVALID' },
     });
-    expect(invalidSkinClean.settings.skinTheme).toBe('TACTICAL');
+    expect(invalidSkinClean.settings.skinTheme).toBe('UNICORN');
+
+    // Verify Giant Battle Unicorn boss profiles across all 10 Campaign stages
+    for (const stage of CAMPAIGN_STAGES) {
+      const uniProfile = getBossVisualProfile(stage.boss, 'UNICORN');
+      const tacProfile = getBossVisualProfile(stage.boss, 'TACTICAL');
+      expect(uniProfile.name.length).toBeGreaterThan(4);
+      expect(uniProfile.name).not.toBe(tacProfile.name);
+      expect(uniProfile.archetypeLabel.length).toBeGreaterThan(4);
+      expect(tacProfile.name).toBe(stage.boss.name);
+    }
   });
 });

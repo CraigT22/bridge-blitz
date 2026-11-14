@@ -14,7 +14,7 @@
     />
   </head>
   <body>
-    <div id="game-viewport" class="game-viewport" data-skin="TACTICAL">
+    <div id="game-viewport" class="game-viewport" data-skin="UNICORN">
       <div id="canvas-container" class="canvas-container"></div>
 
       <!-- Projected 3D World Overlays (Squad Badge, Heavy Juggernaut HP Bars, Boss Bar, Popups) -->
@@ -382,6 +382,15 @@
               </button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Giant Unicorn Horn Fireworks Celebration Splash Overlay -->
+      <div id="unicorn-celebration-overlay" class="unicorn-celebration-overlay is-hidden" aria-live="polite">
+        <canvas id="unicorn-celebration-canvas" class="unicorn-celebration-overlay__canvas"></canvas>
+        <div id="unicorn-splash-banner" class="unicorn-splash-banner is-hidden">
+          <span id="unicorn-splash-kicker" class="unicorn-splash-banner__kicker">SECTOR 1 CLEARED!</span>
+          <h2 id="unicorn-splash-title" class="unicorn-splash-banner__title">UNICORN VICTORY!</h2>
         </div>
       </div>
 

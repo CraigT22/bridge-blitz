@@ -169,6 +169,7 @@ export interface GameSettings {
   muted: boolean;
   haptics: boolean;
   skinTheme: SkinThemeId;
+  skinDefaultV72Applied?: boolean;
 }
 
 export interface SaveDataV1 {

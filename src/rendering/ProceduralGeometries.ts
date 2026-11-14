@@ -927,41 +927,98 @@ export function createHeavyBoyEnemyGeometry(): THREE.BufferGeometry {
 }
 
 /**
- * Sparkling 3D Starlight Crystal Bolt (Unicorn Skin Bullet Mesh):
- * Faceted 6-point crystal star head + shimmering magic comet wake!
+ * Multi-Striped 3D Rainbow Ribbon/Arc Bolt (Unicorn Skin Bullet Mesh):
+ * 6 vivid side-by-side ROYGBIV prism stripes sculpted into a graceful upward 3D rainbow arch
+ * from tail (`+Z`) to leading nose (`-Z`), finished with a fluffy pearl cloud tail & golden star tip!
  */
 export function createMagicStarBoltGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
 
-  const shimmerWake = new THREE.ConeGeometry(0.155, 1.52, 6);
-  shimmerWake.rotateX(Math.PI / 2);
-  shimmerWake.translate(0, 0, 0.28);
-  parts.push(tagPartGeometry(shimmerWake, 0xfff0fb, 0));
+  const roygbiv: readonly [number, number, number][] = [
+    [1.00, 0.14, 0.28], // Red
+    [1.00, 0.54, 0.08], // Orange
+    [1.00, 0.90, 0.10], // Yellow
+    [0.12, 0.90, 0.38], // Green
+    [0.12, 0.60, 1.00], // Blue
+    [0.74, 0.22, 1.00], // Violet
+  ];
 
-  const innerTail = new THREE.ConeGeometry(0.075, 1.15, 6);
-  innerTail.rotateX(Math.PI / 2);
-  innerTail.translate(0, 0, 0.12);
-  const innerTailTagged = tagPartGeometry(innerTail, 0xffffff, 0);
+  const bandWidth = 0.068;
+  const bandHeight = 0.064;
+  const totalWidth = roygbiv.length * bandWidth;
+  const zSegs = 5;
+  const totalLen = 0.98;
+  const segLen = totalLen / zSegs;
+  const archHeight = 0.18;
 
-  const starA = new THREE.OctahedronGeometry(0.135, 0);
-  starA.scale(1.15, 1.15, 1.45);
-  starA.translate(0, 0, -0.40);
-  const starATagged = tagPartGeometry(starA, 0xffffff, 0);
+  for (let b = 0; b < roygbiv.length; b++) {
+    const [cr, cg, cb] = roygbiv[b];
+    const xCenter = -totalWidth * 0.5 + (b + 0.5) * bandWidth;
 
-  const starB = new THREE.OctahedronGeometry(0.125, 0);
-  starB.rotateZ(Math.PI / 4);
-  starB.scale(1.15, 1.15, 1.35);
-  starB.translate(0, 0, -0.40);
-  const starBTagged = tagPartGeometry(starB, 0xffffff, 0);
+    for (let s = 0; s < zSegs; s++) {
+      const t0 = s / zSegs;
+      const t1 = (s + 1) / zSegs;
+      const tMid = (t0 + t1) * 0.5;
+      // t = 0 is rear tail (+Z), t = 1 is leading nose (-Z)
+      const zCenter = totalLen * 0.5 - tMid * totalLen;
+      const y0 = Math.sin(t0 * Math.PI) * archHeight;
+      const y1 = Math.sin(t1 * Math.PI) * archHeight;
+      const yCenter = (y0 + y1) * 0.5;
+      // Forward travel moves toward -Z; dy/dz gives pitch angle around X
+      const dz = -(t1 - t0) * totalLen;
+      const dy = y1 - y0;
+      const pitchX = Math.atan2(dy, -dz);
 
-  for (const hotGeo of [innerTailTagged, starATagged, starBTagged]) {
-    const colAttr = hotGeo.getAttribute('color') as THREE.BufferAttribute;
-    const arr = colAttr.array as Float32Array;
-    for (let k = 0; k < arr.length; k++) {
-      arr[k] = 2.3;
+      const segBox = new THREE.BoxGeometry(bandWidth * 1.02, bandHeight, segLen * 1.12);
+      segBox.rotateX(pitchX);
+      segBox.translate(xCenter, yCenter, zCenter);
+
+      const tagged = tagPartGeometry(segBox, 0xffffff, 0);
+      const colAttr = tagged.getAttribute('color') as THREE.BufferAttribute;
+      const arr = colAttr.array as Float32Array;
+      const posAttr = tagged.getAttribute('position') as THREE.BufferAttribute;
+      for (let v = 0; v < posAttr.count; v++) {
+        // Subtle top-face highlight so the 3D rainbow ribbon gleams without washing out to white
+        const ny = posAttr.getY(v) > yCenter ? 1.05 : 0.86;
+        arr[v * 3] = Math.min(1.08, cr * ny);
+        arr[v * 3 + 1] = Math.min(1.08, cg * ny);
+        arr[v * 3 + 2] = Math.min(1.08, cb * ny);
+      }
+      parts.push(tagged);
     }
-    parts.push(hotGeo);
   }
+
+  // Fluffy pearl-white mini cloud puff at the rainbow tail (+Z)
+  for (const cx of [-0.10, 0.0, 0.10]) {
+    const puff = new THREE.DodecahedronGeometry(cx === 0 ? 0.072 : 0.056, 0);
+    puff.scale(1.15, 0.85, 0.85);
+    puff.translate(cx, 0.015, totalLen * 0.5 + 0.02);
+    const puffTagged = tagPartGeometry(puff, 0xffffff, 0);
+    const colAttr = puffTagged.getAttribute('color') as THREE.BufferAttribute;
+    const arr = colAttr.array as Float32Array;
+    for (let k = 0; k < arr.length; k += 3) {
+      arr[k] = 0.98;
+      arr[k + 1] = 0.99;
+      arr[k + 2] = 1.04;
+    }
+    parts.push(puffTagged);
+  }
+
+  // Golden starlight crystal spearhead at the leading nose (-Z)
+  const starTip = new THREE.OctahedronGeometry(0.075, 0);
+  starTip.scale(1.35, 0.85, 1.35);
+  starTip.translate(0, 0.02, -totalLen * 0.5 - 0.04);
+  const tipTagged = tagPartGeometry(starTip, 0xffffff, 0);
+  {
+    const colAttr = tipTagged.getAttribute('color') as THREE.BufferAttribute;
+    const arr = colAttr.array as Float32Array;
+    for (let k = 0; k < arr.length; k += 3) {
+      arr[k] = 1.08;
+      arr[k + 1] = 0.94;
+      arr[k + 2] = 0.36;
+    }
+  }
+  parts.push(tipTagged);
 
   const merged = mergeGeometries(parts, false);
   for (const p of parts) {

@@ -992,3 +992,75 @@ export function generateEndlessWaveStage(waveNumber: number): StageDefinition {
     },
   });
 }
+
+const UNICORN_BOSS_NAME_MAP: Readonly<Record<string, string>> = {
+  'Obsidian Warden Mk-I': 'Sapphire Charger Stallion',
+  'Stormwall Enforcer': 'Emerald Chariot Unicorn',
+  'Crimson Juggernaut': 'Cobalt Chariot Stallion',
+  'Volt-Core Siege Mech': 'Verdant Knight Stallion',
+  'Tempest Arachnid': 'Tempest Pegasus Alicorn',
+  'Aegis Dreadnought': 'Aegis Chariot War-Unicorn',
+  'Kraken Command Rig': 'Sky-Wing Pegasus Alicorn',
+  'Obsidian Sovereign': 'Royal Crowned Alicorn',
+  'Hyperion Warlord': 'Emerald King Alicorn',
+  'Apex Sovereign Mech': 'Omega Sovereign Alicorn',
+};
+
+const UNICORN_ARCHETYPE_LABELS: Readonly<Record<BossChassisId, string>> = {
+  WARDEN_MECH: 'CHARGER STALLION',
+  SIEGE_TANK: 'CHARIOT WAR-UNICORN',
+  KRAKEN_WALKER: 'WINGED PEGASUS ALICORN',
+  SOVEREIGN_TITAN: 'CROWNED SOVEREIGN ALICORN',
+};
+
+export interface BossVisualProfile {
+  readonly name: string;
+  readonly archetypeLabel: string;
+  readonly primaryHex: number;
+  readonly accentHex: number;
+  readonly trimHex: number;
+}
+
+export function getBossVisualProfile(
+  def: BossDefinition,
+  skinTheme: 'TACTICAL' | 'UNICORN'
+): BossVisualProfile {
+  if (skinTheme !== 'UNICORN') {
+    const tacticalLabels: Record<BossChassisId, string> = {
+      WARDEN_MECH: 'BIPEDAL MECH',
+      SIEGE_TANK: 'HEAVY SIEGE TANK',
+      KRAKEN_WALKER: 'ARACHNID WALKER',
+      SOVEREIGN_TITAN: 'SOVEREIGN TITAN',
+    };
+    return {
+      name: def.name,
+      archetypeLabel: tacticalLabels[def.chassis],
+      primaryHex: def.primaryHex,
+      accentHex: def.accentHex,
+      trimHex: def.trimHex,
+    };
+  }
+
+  let mappedName = UNICORN_BOSS_NAME_MAP[def.name];
+  if (!mappedName) {
+    mappedName = def.name
+      .replace('Warden', 'Charger Stallion')
+      .replace('Juggernaut', 'Chariot Unicorn')
+      .replace('Kraken', 'Pegasus Alicorn')
+      .replace('Sovereign', 'Crowned Alicorn');
+  }
+
+  const isGreenLead =
+    def.name.includes('Stormwall') ||
+    def.name.includes('Volt') ||
+    def.name.includes('Kraken') ||
+    def.name.includes('Hyperion');
+
+  return {
+    name: mappedName,
+    archetypeLabel: UNICORN_ARCHETYPE_LABELS[def.chassis],
+    primaryHex: isGreenLead ? 0x16b852 : 0x1864f2,
+    accentHex: isGreenLead ? 0x1864f2 : 0x1ec95b,
+    trimHex: def.chassis === 'SOVEREIGN_TITAN' ? 0xffd84d : 0xffcf38,
+  };
+}

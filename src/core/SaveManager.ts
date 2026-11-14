@@ -22,7 +22,8 @@ export function createDefaultSaveData(): SaveDataV1 {
     settings: {
       muted: false,
       haptics: true,
-      skinTheme: 'TACTICAL',
+      skinTheme: 'UNICORN',
+      skinDefaultV72Applied: true,
     },
   };
 }
@@ -66,6 +67,13 @@ export function sanitizeSaveData(raw: unknown): SaveDataV1 {
         ? 'SPLIT_CAUSEWAY'
         : 'CAMPAIGN';
 
+  const sanitizedSkinTheme =
+    rawSettings.skinTheme === 'TACTICAL'
+      ? 'TACTICAL'
+      : rawSettings.skinTheme === 'UNICORN'
+        ? 'UNICORN'
+        : defaults.settings.skinTheme;
+
   return {
     version: 1,
     coins: clampNonNegativeInt(obj.coins, defaults.coins),
@@ -86,7 +94,11 @@ export function sanitizeSaveData(raw: unknown): SaveDataV1 {
       muted: typeof rawSettings.muted === 'boolean' ? rawSettings.muted : defaults.settings.muted,
       haptics:
         typeof rawSettings.haptics === 'boolean' ? rawSettings.haptics : defaults.settings.haptics,
-      skinTheme: rawSettings.skinTheme === 'UNICORN' ? 'UNICORN' : 'TACTICAL',
+      skinTheme: sanitizedSkinTheme,
+      skinDefaultV72Applied:
+        typeof rawSettings.skinDefaultV72Applied === 'boolean'
+          ? rawSettings.skinDefaultV72Applied
+          : false,
     },
   };
 }
@@ -109,7 +121,17 @@ export class SaveManager {
         return createDefaultSaveData();
       }
       const parsed: unknown = JSON.parse(serialized);
-      return sanitizeSaveData(parsed);
+      const clean = sanitizeSaveData(parsed);
+      if (!clean.settings.skinDefaultV72Applied) {
+        clean.settings.skinTheme = 'UNICORN';
+        clean.settings.skinDefaultV72Applied = true;
+        try {
+          window.localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(clean));
+        } catch {
+          // Ignore storage quota issues
+        }
+      }
+      return clean;
     } catch {
       return createDefaultSaveData();
     }
@@ -117,7 +139,13 @@ export class SaveManager {
 
   public save(nextData?: SaveDataV1): void {
     if (nextData) {
-      this.data = sanitizeSaveData(nextData);
+      this.data = sanitizeSaveData({
+        ...nextData,
+        settings: {
+          ...nextData.settings,
+          skinDefaultV72Applied: true,
+        },
+      });
     }
     try {
       window.localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(this.data));
@@ -130,7 +158,7 @@ export class SaveManager {
     const clone: SaveDataV1 = {
       ...this.data,
       upgrades: { ...this.data.upgrades },
-      settings: { ...this.data.settings },
+      settings: { ...this.data.settings, skinDefaultV72Applied: true },
     };
     mutator(clone);
     this.save(clone);

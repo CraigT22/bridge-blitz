@@ -48,6 +48,7 @@ import {
   CAMPAIGN_STAGES,
   generateEndlessWaveStage,
   generateSplitCausewayStage,
+  getBossVisualProfile,
   getCampaignStage,
 } from './StageData';
 import type {
@@ -69,6 +70,14 @@ const MAX_GATE_PAIRS = 6;
 const MAX_TIRE_STACKS = 12;
 const MAX_ENEMY_WAVES = 6;
 const MAX_MID_BRUTES = 2;
+const RAINBOW_SPARK_HEX = [
+  0xff295c,
+  0xff8c1a,
+  0xffe82b,
+  0x22eb6a,
+  0x249dff,
+  0xb83bff,
+] as const;
 
 export class BridgeBlitzGame {
   private readonly saveManager = new SaveManager();
@@ -205,6 +214,8 @@ export class BridgeBlitzGame {
       onExportSave: () => this.handleExportSave(),
       onResetSave: () => this.handleResetSave(),
       onSummaryContinue: () => this.handleSummaryContinue(),
+      onFireworkLaunchSound: (pitchStep) =>
+        this.sound.playUnicornFireworkBurst(pitchStep),
     });
 
     this.stateMachine.onChange((next) => {
@@ -248,6 +259,10 @@ export class BridgeBlitzGame {
       },
       onFirstGesture: () => this.sound.unlockOnGesture(),
       onContinueModal: () => {
+        if (this.hud.isUnicornPreCardSplashActive) {
+          this.hud.revealUnicornVictoryCardEarly();
+          return;
+        }
         if (
           this.stateMachine.state === 'VICTORY' ||
           this.stateMachine.isWipeoutModalReady
@@ -269,6 +284,10 @@ export class BridgeBlitzGame {
 
   private get activeBoardLayout(): BoardLayout {
     return this.activeStageDef.boardLayout ?? 'STANDARD_BRIDGE';
+  }
+
+  private getActiveBossDisplayName(theme: SkinThemeId): string {
+    return getBossVisualProfile(this.activeStageDef.boss, theme).name;
   }
 
   private getStageBruteDefs(
@@ -394,7 +413,7 @@ export class BridgeBlitzGame {
     this.hud.syncSaveState(
       save,
       this.activeStageDef.title,
-      this.activeStageDef.boss.name,
+      this.getActiveBossDisplayName(save.settings.skinTheme),
       this.endlessWave,
       this.activeBoardLayout
     );
@@ -778,7 +797,7 @@ export class BridgeBlitzGame {
     this.hud.syncSaveState(
       updated,
       this.activeStageDef.title,
-      this.activeStageDef.boss.name,
+      this.getActiveBossDisplayName(updated.settings.skinTheme),
       this.endlessWave,
       this.activeBoardLayout
     );
@@ -810,6 +829,7 @@ export class BridgeBlitzGame {
     this.batchRenderer.setSkinTheme(theme);
     this.sceneManager.setSkinTheme(theme);
     this.splitCauseway.setSkinTheme(theme);
+    this.boss.setSkinTheme(theme);
     for (let i = 0; i < MAX_SUPPLY_DRUMS; i++) {
       this.supplyDrums[i].setSkinTheme(theme);
     }
@@ -852,7 +872,7 @@ export class BridgeBlitzGame {
     this.hud.syncSaveState(
       next,
       this.activeStageDef.title,
-      this.activeStageDef.boss.name,
+      this.getActiveBossDisplayName(next.settings.skinTheme),
       this.endlessWave,
       this.activeBoardLayout
     );
@@ -875,7 +895,7 @@ export class BridgeBlitzGame {
     this.hud.syncSaveState(
       next,
       this.activeStageDef.title,
-      this.activeStageDef.boss.name,
+      this.getActiveBossDisplayName(next.settings.skinTheme),
       this.endlessWave,
       this.activeBoardLayout
     );
@@ -889,7 +909,7 @@ export class BridgeBlitzGame {
     this.hud.syncSaveState(
       next,
       this.activeStageDef.title,
-      this.activeStageDef.boss.name,
+      this.getActiveBossDisplayName(next.settings.skinTheme),
       this.endlessWave,
       this.activeBoardLayout
     );
@@ -2053,6 +2073,9 @@ export class BridgeBlitzGame {
       }
 
       if (consumedHit) {
+        if (skinTheme === 'UNICORN') {
+          this.spawnRainbowSparkles(bx, 1.06, bz, 3, 4.4);
+        }
         pool.pierceLeft[i] -= 1;
         if (pool.pierceLeft[i] <= 0) {
           pool.deactivate(i);
@@ -2062,6 +2085,36 @@ export class BridgeBlitzGame {
 
       i++;
     }
+  }
+
+  private rainbowSparkCursor = 0;
+
+  private spawnRainbowSparkles(
+    x: number,
+    y: number,
+    z: number,
+    count: number,
+    speed = 4.6
+  ): void {
+    for (let c = 0; c < count; c++) {
+      const idx = (this.rainbowSparkCursor + c) % RAINBOW_SPARK_HEX.length;
+      const colorHex = RAINBOW_SPARK_HEX[idx];
+      const ang = (c / Math.max(1, count)) * Math.PI * 2 + this.elapsedTime * 5.3 + idx * 0.65;
+      const spd = speed * (0.65 + (c % 3) * 0.24);
+      this.particlePool.spawn(
+        x + Math.cos(ang) * 0.14,
+        y,
+        z + Math.sin(ang) * 0.14,
+        Math.cos(ang) * spd,
+        3.2 + (c % 4) * 1.15,
+        Math.sin(ang) * spd * 0.85,
+        -13.5,
+        0.34,
+        0.15,
+        colorHex
+      );
+    }
+    this.rainbowSparkCursor = (this.rainbowSparkCursor + count) % RAINBOW_SPARK_HEX.length;
   }
 
   private spawnGoldConfettiShower(x: number, y: number, z: number, count: number): void {
@@ -2165,6 +2218,9 @@ export class BridgeBlitzGame {
         1.55
       );
     }
+    if (isUnicorn) {
+      this.spawnRainbowSparkles(brute.x, 2.0, brute.z, 18, 7.5);
+    }
     this.spawnGoldConfettiShower(brute.x, 1.8, brute.z, 22);
     const earned = this.awardLiveCoins(
       brute.coinReward,
@@ -2176,7 +2232,7 @@ export class BridgeBlitzGame {
       brute.x,
       2.7,
       brute.z,
-      `${isUnicorn ? 'CHAMP DOWN!' : 'GOLIATH DOWN!'} +${formatCoinAmount(earned)}`,
+      `${isUnicorn ? 'WAR-UNICORN DOWN!' : 'GOLIATH DOWN!'} +${formatCoinAmount(earned)}`,
       'gold',
       1.15
     );
@@ -2299,14 +2355,36 @@ export class BridgeBlitzGame {
   private endlessSplitClearedMeters = 0;
 
   private handleBossDefeated(): void {
-    this.sound.playBossDefeat();
-    this.sceneManager.addShake(0.68);
-    this.vfx.spawnShockwave(this.boss.x, this.boss.z, 6.5, 0.62, 0xffae42);
-    this.vfx.spawnShockwave(this.boss.x, this.boss.z, 4.2, 0.44, 0xff384c);
-    this.particlePool.spawnBurst(this.boss.x, 2.0, this.boss.z, 46, 9.5, 0xffae42, 0.26, 0.85);
-    this.particlePool.spawnBurst(this.boss.x, 2.2, this.boss.z, 32, 8.0, 0xff384c, 0.24, 0.75);
-
     const save = this.saveManager.getData();
+    const isUnicorn = save.settings.skinTheme === 'UNICORN';
+
+    if (isUnicorn) {
+      this.sound.playUnicornVictoryFanfare();
+    } else {
+      this.sound.playBossDefeat();
+    }
+    this.sceneManager.addShake(0.68);
+    this.vfx.spawnShockwave(
+      this.boss.x,
+      this.boss.z,
+      6.5,
+      0.62,
+      isUnicorn ? 0xff4fa8 : 0xffae42
+    );
+    this.vfx.spawnShockwave(
+      this.boss.x,
+      this.boss.z,
+      4.2,
+      0.44,
+      isUnicorn ? 0x249dff : 0xff384c
+    );
+    if (isUnicorn) {
+      this.spawnRainbowSparkles(this.boss.x, 2.3, this.boss.z, 36, 9.2);
+      this.spawnGoldConfettiShower(this.boss.x, 2.1, this.boss.z, 24);
+    } else {
+      this.particlePool.spawnBurst(this.boss.x, 2.0, this.boss.z, 46, 9.5, 0xffae42, 0.26, 0.85);
+      this.particlePool.spawnBurst(this.boss.x, 2.2, this.boss.z, 32, 8.0, 0xff384c, 0.24, 0.75);
+    }
 
     if (save.selectedMode === 'ENDLESS') {
       if (this.endlessWave === 1) {
@@ -2316,14 +2394,18 @@ export class BridgeBlitzGame {
         this.endlessSplitClearedMeters += this.activeStageDef.trackLength;
       }
       const earned = this.awardLiveCoins(this.boss.rewardCoins, 0, this.squad.z - 4, false);
+      const clearedWave = this.endlessWave;
       this.combatText.spawn(
         0,
         2.6,
         this.squad.z - 4,
-        `WAVE ${this.endlessWave} CLEARED! +${formatCoinAmount(earned)}`,
+        `WAVE ${clearedWave} CLEARED! +${formatCoinAmount(earned)}`,
         'gold',
         1.3
       );
+      if (isUnicorn) {
+        this.hud.triggerEndlessUnicornFlyby(clearedWave);
+      }
       this.endlessWave += 1;
       this.sectorBaseZ = this.squad.z;
       this.activeStageDef = generateEndlessWaveStage(this.endlessWave);
@@ -2335,7 +2417,11 @@ export class BridgeBlitzGame {
     const summary = this.finalizeRunRewards('VICTORY', true);
     this.pendingSummary = summary;
     this.stateMachine.transitionTo('VICTORY');
-    this.hud.showSummaryModal(summary);
+    if (isUnicorn) {
+      this.hud.triggerUnicornVictoryCelebration(summary);
+    } else {
+      this.hud.showSummaryModal(summary);
+    }
   }
 
   private triggerRunDefeat(): void {
@@ -2531,6 +2617,7 @@ export class BridgeBlitzGame {
 
     if (state !== 'PAUSED') {
       this.combatText.update(realDt, this.sceneManager);
+      this.hud.tickCelebrationOverlay(realDt);
     }
   }
 
@@ -2551,6 +2638,7 @@ export class BridgeBlitzGame {
         this.vfx.updateAndSync(step * this.stateMachine.timeScale);
         if (this.stateMachine.state !== 'PAUSED') {
           this.combatText.update(step, this.sceneManager);
+          this.hud.tickCelebrationOverlay(step);
         }
         if (this.stateMachine.tickRealTime(step) && this.pendingSummary) {
           this.hud.showSummaryModal(this.pendingSummary);
@@ -2559,6 +2647,9 @@ export class BridgeBlitzGame {
     }
     if (skipRender) {
       this.vfx.updateAndSync(step * this.stateMachine.timeScale);
+      if (this.stateMachine.state !== 'PAUSED') {
+        this.hud.tickCelebrationOverlay(step);
+      }
       if (this.stateMachine.tickRealTime(step) && this.pendingSummary) {
         this.hud.showSummaryModal(this.pendingSummary);
       }

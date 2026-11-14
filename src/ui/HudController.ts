@@ -11,7 +11,7 @@ import type {
   UpgradeKey,
   WeaponTierId,
 } from '../core/types';
-import { CAMPAIGN_STAGES } from '../core/StageData';
+import { CAMPAIGN_STAGES, getBossVisualProfile } from '../core/StageData';
 import type { EnemyWaveSlot } from '../entities/EnemyWave';
 import type { SplitCausewayController } from '../entities/SplitCausewayController';
 import {
@@ -30,6 +30,7 @@ import {
   WEAPON_LOCK_BONUS_SQUAD,
 } from '../math/weaponMath';
 import type { SceneManager, ScreenProjection } from '../rendering/SceneManager';
+import { UnicornCelebrationOverlay } from './UnicornCelebrationOverlay';
 
 export interface HudCallbacks {
   onStartMarch: () => void;
@@ -53,6 +54,7 @@ export interface HudCallbacks {
   onExportSave: () => void;
   onResetSave: () => void;
   onSummaryContinue: () => void;
+  onFireworkLaunchSound?: (pitchStep: number) => void;
 }
 
 const MAX_HEAVY_HP_BARS = 28;
@@ -179,7 +181,8 @@ export class HudController {
   private selectedArmoryBossStage = 1;
   private hubPreviewWeaponTier: WeaponTierId = 1;
   private latestSaveSnapshot: SaveDataV1 | null = null;
-  private currentSkinTheme: SkinThemeId = 'TACTICAL';
+  private currentSkinTheme: SkinThemeId = 'UNICORN';
+  private readonly unicornCelebration: UnicornCelebrationOverlay;
 
   private lastWeaponTier = -1;
   private lastBossSegments = -1;
@@ -189,6 +192,11 @@ export class HudController {
 
   constructor(callbacks: HudCallbacks) {
     this.callbacks = callbacks;
+    this.unicornCelebration = new UnicornCelebrationOverlay({
+      onFireworkLaunchSound: (pitchStep) => {
+        this.callbacks.onFireworkLaunchSound?.(pitchStep);
+      },
+    });
 
     this.tabPanels = {
       BATTLE: mustEl<HTMLElement>('tab-panel-battle'),
@@ -479,7 +487,7 @@ export class HudController {
       ? 'SKIN: GIRLS VS BOYS'
       : 'SKIN: TACTICAL';
     this.hubSkinTogglePillEl.textContent = isUnicorn
-      ? 'UNICORN WANDS ★ ON'
+      ? 'RAINBOWS ★ ON'
       : 'TAP: GIRLS VS BOYS';
 
     const skinBadgeText = isUnicorn ? 'ON' : 'OFF';
@@ -490,6 +498,7 @@ export class HudController {
 
     this.recruitBtnTitleEl.textContent = isUnicorn ? 'PINK GIRL' : 'VANGUARD';
     this.btnArmoryWeapons.textContent = isUnicorn ? 'Horns & Wands (5)' : 'Weapons (5)';
+    this.btnArmoryBosses.textContent = isUnicorn ? 'Unicorns (10)' : 'Bosses (10)';
 
     if (skinChanged) {
       this.lastWeaponTier = -1;
@@ -671,8 +680,9 @@ export class HudController {
 
       const st = CAMPAIGN_STAGES[this.selectedArmoryBossStage - 1];
       const boss = st.boss;
-      this.armoryItemKicker.textContent = `SECTOR ${st.stageNumber} // ${CHASSIS_LABELS[boss.chassis]}`;
-      this.armoryItemName.textContent = boss.name.toUpperCase();
+      const bossProfile = getBossVisualProfile(boss, this.currentSkinTheme);
+      this.armoryItemKicker.textContent = `SECTOR ${st.stageNumber} // ${isUnicorn ? bossProfile.archetypeLabel : CHASSIS_LABELS[boss.chassis]}`;
+      this.armoryItemName.textContent = bossProfile.name.toUpperCase();
 
       const hpPct = Math.min(100, Math.max(10, Math.round((boss.maxHp / 138000) * 100)));
       const segPct = Math.round((boss.segments / 10) * 100);
@@ -699,7 +709,9 @@ export class HudController {
           <div class="stat-meter__track"><div class="stat-meter__fill" style="width:${rewPct}%"></div></div>
         </div>
       `;
-      this.armoryItemNote.textContent = `Guarding ${st.title} (${layoutTag}). Fires ${boss.salvoLanes}-lane telegraphed plasma salvos every ${boss.salvoInterval.toFixed(2)}s — steer into the open lane!`;
+      this.armoryItemNote.textContent = isUnicorn
+        ? `Guarding ${st.title} (${layoutTag}). Charges its giant spiral horn to launch ${boss.salvoLanes}-lane star-magic salvos every ${boss.salvoInterval.toFixed(2)}s — steer into the open lane!`
+        : `Guarding ${st.title} (${layoutTag}). Fires ${boss.salvoLanes}-lane telegraphed plasma salvos every ${boss.salvoInterval.toFixed(2)}s — steer into the open lane!`;
     }
   }
 
@@ -749,6 +761,10 @@ export class HudController {
         save.selectedMode === 'CAMPAIGN' && save.selectedStage === st.stageNumber;
       const boardBadge =
         st.boardLayout === 'SPLIT_CAUSEWAY' ? '[SPLIT CAUSEWAY]' : `[${st.trackLength}m]`;
+      const bossDisplayName = getBossVisualProfile(
+        st.boss,
+        this.currentSkinTheme
+      ).name;
 
       const row = document.createElement('button');
       row.type = 'button';
@@ -774,7 +790,7 @@ export class HudController {
         <div class="sector-node__num">${String(st.stageNumber).padStart(2, '0')}</div>
         <div class="sector-node__info">
           <span class="sector-node__title">${st.title.toUpperCase()}</span>
-          <span class="sector-node__sub">${boardBadge} ${st.boss.name} • +${formatCoinAmount(st.boss.rewardCoins)} Clear Coins</span>
+          <span class="sector-node__sub">${boardBadge} ${bossDisplayName} • +${formatCoinAmount(st.boss.rewardCoins)} Clear Coins</span>
         </div>
         <span class="sector-node__status">${statusText}</span>
       `;
@@ -950,7 +966,39 @@ export class HudController {
     }
   }
 
-  public showSummaryModal(summary: RunSummary): void {
+  public get isUnicornPreCardSplashActive(): boolean {
+    return this.unicornCelebration.isPreCardSplashActive;
+  }
+
+  public revealUnicornVictoryCardEarly(): void {
+    this.unicornCelebration.revealVictoryCardNow();
+  }
+
+  public tickCelebrationOverlay(dt: number): void {
+    this.unicornCelebration.tick(dt);
+  }
+
+  public triggerUnicornVictoryCelebration(summary: RunSummary): void {
+    const modeLabel =
+      summary.mode === 'SPLIT_CAUSEWAY'
+        ? `SPLIT CAUSEWAY ${summary.stageNumber}`
+        : `SECTOR ${summary.stageNumber}`;
+
+    this.summaryModalEl.classList.add('is-hidden');
+    this.unicornCelebration.startVictoryFinale(
+      `${modeLabel} CLEARED!`,
+      'UNICORN VICTORY!',
+      () => {
+        this.showSummaryModal(summary, true);
+      }
+    );
+  }
+
+  public triggerEndlessUnicornFlyby(waveCleared: number): void {
+    this.unicornCelebration.playEndlessWaveFlyby(waveCleared);
+  }
+
+  public showSummaryModal(summary: RunSummary, unicornBackdropActive = false): void {
     const isVictory = summary.outcome === 'VICTORY';
     const modeLabel =
       summary.mode === 'ENDLESS'
@@ -963,9 +1011,14 @@ export class HudController {
       ? `${modeLabel} CLEARED!`
       : `${modeLabel} — ${Math.round(summary.progressRatio * 100)}% PROGRESS`;
 
-    this.summaryTitleEl.textContent = isVictory ? 'VICTORY!' : 'RUN COMPLETE';
+    this.summaryTitleEl.textContent = isVictory
+      ? unicornBackdropActive
+        ? 'UNICORN VICTORY!'
+        : 'VICTORY!'
+      : 'RUN COMPLETE';
     this.summaryTitleEl.classList.toggle('summary-card__title--victory', isVictory);
     this.summaryTitleEl.classList.toggle('summary-card__title--defeat', !isVictory);
+    this.summaryModalEl.classList.toggle('is-unicorn-victory', unicornBackdropActive);
 
     this.sumDistanceEl.textContent = `${Math.round(summary.distanceMeters)}m`;
     this.sumDrumsEl.textContent = `${summary.drumsBroken}`;
@@ -1010,6 +1063,8 @@ export class HudController {
       cancelAnimationFrame(this.coinRollupRaf);
       this.coinRollupRaf = 0;
     }
+    this.summaryModalEl.classList.remove('is-unicorn-victory');
     this.summaryModalEl.classList.add('is-hidden');
+    this.unicornCelebration.stop();
   }
 }

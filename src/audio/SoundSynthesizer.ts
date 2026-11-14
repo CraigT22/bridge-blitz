@@ -422,4 +422,63 @@ export class SoundSynthesizer {
       osc.stop(t + 0.14);
     }
   }
+
+  public playUnicornVictoryFanfare(): void {
+    this.vibrate(18);
+    const ctx = this.ensureReady();
+    if (!ctx) {
+      return;
+    }
+    const base = ctx.currentTime;
+    const notes = [523.25, 659.25, 783.99, 987.77, 1174.66, 1567.98];
+    for (let i = 0; i < notes.length; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = i >= 4 ? 'sine' : 'triangle';
+      const t = base + i * 0.068;
+      osc.frequency.setValueAtTime(notes[i], t);
+      gain.gain.setValueAtTime(i === notes.length - 1 ? 0.095 : 0.072, t);
+      gain.gain.exponentialRampToValueAtTime(0.0008, t + (i === notes.length - 1 ? 0.55 : 0.28));
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + (i === notes.length - 1 ? 0.57 : 0.30));
+    }
+  }
+
+  public playUnicornFireworkBurst(pitchStep = 0): void {
+    this.vibrate(8);
+    const ctx = this.ensureReady();
+    if (!ctx) {
+      return;
+    }
+    const now = ctx.currentTime;
+    const mult = 1 + ((pitchStep % 4) - 1) * 0.08;
+
+    // 1. Short rising whistle from the Unicorn Horn tip
+    const whistle = ctx.createOscillator();
+    const wGain = ctx.createGain();
+    whistle.type = 'sine';
+    whistle.frequency.setValueAtTime(420 * mult, now);
+    whistle.frequency.exponentialRampToValueAtTime(1260 * mult, now + 0.085);
+    wGain.gain.setValueAtTime(0.032, now);
+    wGain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+    whistle.connect(wGain).connect(ctx.destination);
+    whistle.start(now);
+    whistle.stop(now + 0.095);
+
+    // 2. Crisp skyward firework thump + high sparkle crackle
+    const burstTime = now + 0.075;
+    const pop = ctx.createOscillator();
+    const pGain = ctx.createGain();
+    pop.type = 'triangle';
+    pop.frequency.setValueAtTime(210 * mult, burstTime);
+    pop.frequency.exponentialRampToValueAtTime(48, burstTime + 0.14);
+    pGain.gain.setValueAtTime(0.085, burstTime);
+    pGain.gain.exponentialRampToValueAtTime(0.001, burstTime + 0.15);
+    pop.connect(pGain).connect(ctx.destination);
+    pop.start(burstTime);
+    pop.stop(burstTime + 0.16);
+
+    this.playFilteredNoise(ctx, burstTime, 0.18, 'bandpass', 2650 * mult, 1.4, 0.046);
+  }
 }

@@ -445,6 +445,7 @@ export class InstancedBatchRenderer {
   private readonly ragdollPlayerGeos: Record<SkinThemeId, THREE.BufferGeometry>;
   private readonly ragdollEnemyGeos: Record<SkinThemeId, THREE.BufferGeometry>;
   private readonly bulletGeos: Record<SkinThemeId, THREE.BufferGeometry>;
+  private readonly bulletMat: THREE.MeshBasicMaterial;
   private activeSkinTheme: SkinThemeId = 'TACTICAL';
 
   private readonly enemyHitFlashAttr: THREE.InstancedBufferAttribute;
@@ -753,7 +754,7 @@ export class InstancedBatchRenderer {
       TACTICAL: createTracerBoltGeometry(),
       UNICORN: createMagicStarBoltGeometry(),
     };
-    const bulletMat = new THREE.MeshBasicMaterial({
+    this.bulletMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       vertexColors: true,
       transparent: true,
@@ -764,7 +765,7 @@ export class InstancedBatchRenderer {
     });
     this.bulletMesh = new THREE.InstancedMesh(
       this.bulletGeos.TACTICAL,
-      bulletMat,
+      this.bulletMat,
       bulletCapacity
     );
     this.bulletMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -819,6 +820,9 @@ export class InstancedBatchRenderer {
     this.enemyRagdollOutlineMesh.geometry = this.ragdollEnemyGeos[theme];
 
     this.bulletMesh.geometry = this.bulletGeos[theme];
+    this.bulletMat.depthWrite = theme === 'UNICORN';
+    this.bulletMat.opacity = theme === 'UNICORN' ? 1.0 : 0.95;
+    this.bulletMat.needsUpdate = true;
   }
 
   public syncPlayerSoldiers(
@@ -1065,6 +1069,7 @@ export class InstancedBatchRenderer {
 
   public syncBullets(pool: BulletPool): void {
     const n = pool.activeCount;
+    const isUnicorn = this.activeSkinTheme === 'UNICORN';
     this.bulletMesh.count = n;
     for (let i = 0; i < n; i++) {
       _pos.set(pool.x[i], pool.y[i], pool.z[i]);
@@ -1072,15 +1077,23 @@ export class InstancedBatchRenderer {
       _euler.set(0, yaw + Math.PI, 0);
       _quat.setFromEuler(_euler);
       const s = pool.scale[i];
-      _scale.set(s * 0.88, s * 0.88, s * 1.48);
+      if (isUnicorn) {
+        _scale.set(s * 1.16, s * 1.14, s * 1.34);
+      } else {
+        _scale.set(s * 0.88, s * 0.88, s * 1.48);
+      }
       _mat4.compose(_pos, _quat, _scale);
       this.bulletMesh.setMatrixAt(i, _mat4);
 
-      _color.setRGB(
-        0.08 + pool.colorR[i] * 0.96,
-        0.08 + pool.colorG[i] * 0.96,
-        0.08 + pool.colorB[i] * 0.96
-      );
+      if (isUnicorn) {
+        _color.setRGB(1.02, 1.02, 1.02);
+      } else {
+        _color.setRGB(
+          0.08 + pool.colorR[i] * 0.96,
+          0.08 + pool.colorG[i] * 0.96,
+          0.08 + pool.colorB[i] * 0.96
+        );
+      }
       this.bulletMesh.setColorAt(i, _color);
     }
     this.bulletMesh.instanceMatrix.needsUpdate = true;

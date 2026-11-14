@@ -1,9 +1,11 @@
 import * as THREE from 'three';
-import type { BossChassisId, BossDefinition } from '../core/types';
+import { getBossVisualProfile } from '../core/StageData';
+import type { BossChassisId, BossDefinition, SkinThemeId } from '../core/types';
 import {
   createAllBossChassisRigs,
   type BossChassisRig,
 } from '../rendering/BossRigFactory';
+import { createAllUnicornBossChassisRigs } from '../rendering/UnicornBossRigFactory';
 
 export const BOSS_SALVO_LANE_CENTERS = [-3.1, 0.0, 3.1] as const;
 export const BOSS_SALVO_HIT_HALF_WIDTH = 1.38;
@@ -112,11 +114,14 @@ function createSalvoChevronTexture(): THREE.CanvasTexture {
 
 export class BossEntity {
   public readonly entityId = 999;
-  public readonly rigs: Record<BossChassisId, BossChassisRig>;
+  private readonly tacticalRigs: Record<BossChassisId, BossChassisRig>;
+  private readonly unicornRigs: Record<BossChassisId, BossChassisRig>;
+  private skinTheme: SkinThemeId = 'UNICORN';
+  private latestDef: BossDefinition | null = null;
   public activeChassis: BossChassisId = 'WARDEN_MECH';
   public active = false;
   public defeated = false;
-  public name = 'Iron Warden Mk-I';
+  public name = 'Sapphire Charger Stallion';
   public maxHp = 1100;
   public currentHp = 1100;
   public segments = 5;
@@ -139,6 +144,9 @@ export class BossEntity {
   private readonly laneVisuals: TelegraphLaneVisual[] = [];
   private readonly chevronTex: THREE.CanvasTexture;
   private readonly warheads: BossWarheadSlot[] = [];
+  private readonly warheadShellMat: THREE.MeshBasicMaterial;
+  private readonly warheadWakeMat: THREE.MeshBasicMaterial;
+  private readonly warheadGroundHaloMat: THREE.MeshBasicMaterial;
   private lockedLaneMask: LaneMask3 = [false, false, false];
   private telegraphTimer = 0;
   private salvoCooldown = 0.85;
@@ -155,10 +163,13 @@ export class BossEntity {
   public lastStepSegmentBroken = false;
 
   constructor(scene: THREE.Scene) {
-    this.rigs = createAllBossChassisRigs();
-    for (const key of Object.keys(this.rigs) as BossChassisId[]) {
-      this.rigs[key].root.visible = false;
-      scene.add(this.rigs[key].root);
+    this.tacticalRigs = createAllBossChassisRigs();
+    this.unicornRigs = createAllUnicornBossChassisRigs();
+    for (const key of Object.keys(this.tacticalRigs) as BossChassisId[]) {
+      this.tacticalRigs[key].root.visible = false;
+      this.unicornRigs[key].root.visible = false;
+      scene.add(this.tacticalRigs[key].root);
+      scene.add(this.unicornRigs[key].root);
     }
 
     this.chevronTex = createSalvoChevronTexture();
@@ -223,14 +234,14 @@ export class BossEntity {
       });
     }
 
-    // 2. Pre-allocate Boss Salvo Warhead Pool (Glowing Crimson/Amber Plasma Shells)
+    // 2. Pre-allocate Boss Salvo Warhead Pool (Glowing Plasma / Star-Magic Shells)
     const coreGeo = new THREE.OctahedronGeometry(0.42, 1);
     const coreMat = new THREE.MeshBasicMaterial({
       color: 0xffdf7e,
     });
     const shellGeo = new THREE.OctahedronGeometry(0.62, 0);
-    const shellMat = new THREE.MeshBasicMaterial({
-      color: 0xff2e4c,
+    this.warheadShellMat = new THREE.MeshBasicMaterial({
+      color: 0x249dff,
       transparent: true,
       opacity: 0.72,
       blending: THREE.AdditiveBlending,
@@ -238,8 +249,8 @@ export class BossEntity {
     });
     const wakeGeo = new THREE.ConeGeometry(0.46, 2.1, 10);
     wakeGeo.rotateX(-Math.PI / 2);
-    const wakeMat = new THREE.MeshBasicMaterial({
-      color: 0xff5e2b,
+    this.warheadWakeMat = new THREE.MeshBasicMaterial({
+      color: 0x22e868,
       transparent: true,
       opacity: 0.65,
       blending: THREE.AdditiveBlending,
@@ -247,8 +258,8 @@ export class BossEntity {
     });
     const groundHaloGeo = new THREE.RingGeometry(0.32, 0.92, 18);
     groundHaloGeo.rotateX(-Math.PI / 2);
-    const groundHaloMat = new THREE.MeshBasicMaterial({
-      color: 0xff384c,
+    this.warheadGroundHaloMat = new THREE.MeshBasicMaterial({
+      color: 0xffd238,
       transparent: true,
       opacity: 0.62,
       blending: THREE.AdditiveBlending,
@@ -262,14 +273,14 @@ export class BossEntity {
 
       const coreMesh = new THREE.Mesh(coreGeo, coreMat);
       coreMesh.position.y = 0.92;
-      const shellMesh = new THREE.Mesh(shellGeo, shellMat);
+      const shellMesh = new THREE.Mesh(shellGeo, this.warheadShellMat);
       shellMesh.position.y = 0.92;
       coreMesh.add(shellMesh);
 
-      const wakeMesh = new THREE.Mesh(wakeGeo, wakeMat);
+      const wakeMesh = new THREE.Mesh(wakeGeo, this.warheadWakeMat);
       wakeMesh.position.set(0, 0.92, -1.05);
 
-      const groundHalo = new THREE.Mesh(groundHaloGeo, groundHaloMat);
+      const groundHalo = new THREE.Mesh(groundHaloGeo, this.warheadGroundHaloMat);
       groundHalo.position.set(0, 0.05, 0);
 
       root.add(coreMesh, wakeMesh, groundHalo);
@@ -285,6 +296,12 @@ export class BossEntity {
         damage: 5,
       });
     }
+
+    this.syncSalvoPalette();
+  }
+
+  public get rigs(): Record<BossChassisId, BossChassisRig> {
+    return this.skinTheme === 'UNICORN' ? this.unicornRigs : this.tacticalRigs;
   }
 
   public get activeRig(): BossChassisRig {
@@ -295,10 +312,77 @@ export class BossEntity {
     return this.telegraphTimer > 0;
   }
 
+  private syncSalvoPalette(): void {
+    const isUnicorn = this.skinTheme === 'UNICORN';
+    this.warheadShellMat.color.setHex(isUnicorn ? 0x249dff : 0xff2e4c);
+    this.warheadWakeMat.color.setHex(isUnicorn ? 0x22e868 : 0xff5e2b);
+    this.warheadGroundHaloMat.color.setHex(isUnicorn ? 0xffd238 : 0xff384c);
+    for (let lane = 0; lane < this.laneVisuals.length; lane++) {
+      this.laneVisuals[lane].railMat.color.setHex(isUnicorn ? 0x38d8ff : 0xff9f2e);
+      this.laneVisuals[lane].reticleMat.color.setHex(isUnicorn ? 0x249dff : 0xff4757);
+    }
+  }
+
+  private syncActiveThemeRigAppearance(): void {
+    const def = this.latestDef;
+    const isUnicorn = this.skinTheme === 'UNICORN';
+    const activeSet = isUnicorn ? this.unicornRigs : this.tacticalRigs;
+    const hiddenSet = isUnicorn ? this.tacticalRigs : this.unicornRigs;
+
+    for (const key of Object.keys(hiddenSet) as BossChassisId[]) {
+      hiddenSet[key].root.visible = false;
+    }
+
+    if (!def) {
+      for (const key of Object.keys(activeSet) as BossChassisId[]) {
+        activeSet[key].root.visible = false;
+      }
+      return;
+    }
+
+    const profile = getBossVisualProfile(def, this.skinTheme);
+    this.name = profile.name;
+
+    for (const key of Object.keys(activeSet) as BossChassisId[]) {
+      const rig = activeSet[key];
+      const isSelected = this.active && !this.defeated && key === def.chassis;
+      rig.root.visible = isSelected;
+      if (isSelected) {
+        rig.primaryMat.color.setHex(profile.primaryHex);
+        rig.accentMat.color.setHex(profile.accentHex);
+        rig.trimMat.color.setHex(profile.trimHex);
+        rig.glowMat.color.setHex(profile.trimHex);
+        rig.bodyGroup.rotation.set(0, 0, 0);
+        if (rig.leftLeg) rig.leftLeg.rotation.set(0, 0, 0);
+        if (rig.rightLeg) rig.rightLeg.rotation.set(0, 0, 0);
+        if (rig.spiderLegs) {
+          for (let l = 0; l < rig.spiderLegs.length; l++) {
+            rig.spiderLegs[l].rotation.set(0, 0, 0);
+          }
+        }
+        if (rig.turretGroup) rig.turretGroup.rotation.set(0, 0, 0);
+        if (rig.meleeArm) {
+          rig.meleeArm.rotation.set(isUnicorn ? 0.66 : 0, 0, 0);
+        }
+        rig.root.position.set(this.x, 0, this.z);
+      }
+    }
+    this.applyFlash(this.hitFlash);
+  }
+
+  public setSkinTheme(theme: SkinThemeId): void {
+    if (this.skinTheme === theme) {
+      return;
+    }
+    this.skinTheme = theme;
+    this.syncSalvoPalette();
+    this.syncActiveThemeRigAppearance();
+  }
+
   public configure(def: BossDefinition, trackLength: number): void {
+    this.latestDef = def;
     this.active = true;
     this.defeated = false;
-    this.name = def.name;
     this.activeChassis = def.chassis;
     this.maxHp = def.maxHp;
     this.currentHp = def.maxHp;
@@ -321,25 +405,7 @@ export class BossEntity {
     this.salvoCooldown = 0.55;
     this.salvoCycleIndex = 0;
 
-    for (const key of Object.keys(this.rigs) as BossChassisId[]) {
-      const rig = this.rigs[key];
-      const isSelected = key === def.chassis;
-      rig.root.visible = isSelected;
-      if (isSelected) {
-        rig.primaryMat.color.setHex(def.primaryHex);
-        rig.accentMat.color.setHex(def.accentHex);
-        rig.trimMat.color.setHex(def.trimHex);
-        rig.glowMat.color.setHex(def.trimHex);
-        rig.bodyGroup.rotation.set(0, 0, 0);
-        if (rig.leftLeg) rig.leftLeg.rotation.set(0, 0, 0);
-        if (rig.rightLeg) rig.rightLeg.rotation.set(0, 0, 0);
-        if (rig.turretGroup) rig.turretGroup.rotation.set(0, 0, 0);
-        if (rig.meleeArm) rig.meleeArm.rotation.set(0, 0, 0);
-        rig.root.position.set(this.x, 0, this.z);
-      }
-    }
-
-    this.applyFlash(0);
+    this.syncActiveThemeRigAppearance();
   }
 
   private clearSalvoVisuals(): void {
@@ -357,8 +423,9 @@ export class BossEntity {
   public hide(): void {
     this.active = false;
     this.clearSalvoVisuals();
-    for (const key of Object.keys(this.rigs) as BossChassisId[]) {
-      this.rigs[key].root.visible = false;
+    for (const key of Object.keys(this.tacticalRigs) as BossChassisId[]) {
+      this.tacticalRigs[key].root.visible = false;
+      this.unicornRigs[key].root.visible = false;
     }
   }
 
@@ -391,6 +458,7 @@ export class BossEntity {
     }
 
     const rig = this.activeRig;
+    const isUnicorn = this.skinTheme === 'UNICORN';
 
     if (this.hitFlashCooldown > 0) {
       this.hitFlashCooldown = Math.max(0, this.hitFlashCooldown - dt);
@@ -400,12 +468,12 @@ export class BossEntity {
       this.applyFlash(this.hitFlash);
     }
 
-    // Spin rotary cannons / turbines across all chassis (faster spin during telegraph charge-up!)
+    // Spin rotary cannons / star-halos / chariot wheels across all chassis (faster spin during telegraph charge-up!)
     const spinRate = this.telegraphTimer > 0 ? 30.0 : inBossFight ? 18.5 : 3.5;
     this.barrelSpin += dt * spinRate;
     for (let i = 0; i < rig.spinClusters.length; i++) {
       const sign = i % 2 === 0 ? 1 : -1;
-      if (this.activeChassis === 'KRAKEN_WALKER') {
+      if (!isUnicorn && this.activeChassis === 'KRAKEN_WALKER') {
         rig.spinClusters[i].rotation.y = this.barrelSpin * 0.5;
       } else {
         rig.spinClusters[i].rotation.z = this.barrelSpin * sign;
@@ -416,8 +484,11 @@ export class BossEntity {
     const ringPulse = 1 + Math.sin(this.barrelSpin * 0.32) * 0.06;
     rig.hazardRing.scale.set(ringPulse, ringPulse, 1);
 
-    const baseBodyY =
-      this.activeChassis === 'SIEGE_TANK'
+    const baseBodyY = isUnicorn
+      ? this.activeChassis === 'SOVEREIGN_TITAN'
+        ? 1.88
+        : 1.65
+      : this.activeChassis === 'SIEGE_TANK'
         ? 0.55
         : this.activeChassis === 'KRAKEN_WALKER'
           ? 1.48
@@ -429,8 +500,11 @@ export class BossEntity {
       this.walkPhase += dt * 2.2;
       rig.bodyGroup.position.y = baseBodyY + Math.sin(this.walkPhase) * 0.05;
       rig.bodyGroup.rotation.x = 0;
+      if (isUnicorn && rig.turretGroup) {
+        rig.turretGroup.rotation.set(Math.sin(this.walkPhase * 0.8) * 0.04, -0.18, 0);
+      }
       if (rig.wingPylons) {
-        const flap = Math.sin(this.walkPhase * 0.9) * 0.06;
+        const flap = Math.sin(this.walkPhase * 0.9) * (isUnicorn ? 0.11 : 0.06);
         rig.wingPylons[0].rotation.z = 0.42 + flap;
         rig.wingPylons[1].rotation.z = -0.42 - flap;
       }
@@ -444,7 +518,11 @@ export class BossEntity {
       const dx = targetBossX - this.x;
       this.x += Math.sign(dx) * Math.min(Math.abs(dx), 1.25 * dt);
 
-      const phaseRate = this.activeChassis === 'KRAKEN_WALKER' ? 6.6 : 4.6;
+      const phaseRate = isUnicorn
+        ? 5.6
+        : this.activeChassis === 'KRAKEN_WALKER'
+          ? 6.6
+          : 4.6;
       this.walkPhase += dt * phaseRate;
       const cycle = Math.floor(this.walkPhase / Math.PI);
       if (cycle !== this.lastFootstepCycle) {
@@ -454,7 +532,7 @@ export class BossEntity {
 
       this.animateChassisAdvance(rig, baseBodyY, squadX);
     } else if (currentSquad > 0) {
-      // Boss reached melee range — heavy chassis slam / ram / halberd cleave!
+      // Boss reached melee range — heavy chassis slam / Giant Unicorn rearing horn-charge!
       this.slamTimer -= dt;
       if (this.slamTimer <= 0) {
         this.slamTimer = 0.22;
@@ -464,7 +542,9 @@ export class BossEntity {
       rig.bodyGroup.position.y = baseBodyY + Math.sin(this.slamTimer * 30) * 0.18;
       rig.bodyGroup.rotation.x = 0.15 + Math.sin(this.slamTimer * 30) * 0.09;
       if (rig.meleeArm) {
-        rig.meleeArm.rotation.x = 0.55 + Math.sin(this.slamTimer * 30) * 0.65;
+        rig.meleeArm.rotation.x =
+          (isUnicorn ? 0.66 : 0.55) +
+          Math.sin(this.slamTimer * 30) * (isUnicorn ? 0.38 : 0.65);
       }
     }
 
@@ -609,6 +689,44 @@ export class BossEntity {
     squadX: number
   ): void {
     const p = this.walkPhase;
+    if (this.skinTheme === 'UNICORN' && rig.spiderLegs) {
+      // 4-beat diagonal equine war-horse trot (FL + RR paired, FR + RL counter-paired)
+      const [fl, fr, rl, rr] = rig.spiderLegs;
+      const stride = Math.sin(p) * 0.34;
+      fl.rotation.x = stride;
+      rr.rotation.x = stride * 0.88;
+      fr.rotation.x = -stride;
+      rl.rotation.x = -stride * 0.88;
+
+      rig.bodyGroup.position.y = baseBodyY + Math.abs(Math.sin(p)) * 0.11;
+      rig.bodyGroup.rotation.x = 0.03 + Math.sin(p * 2) * 0.035;
+      rig.bodyGroup.rotation.z = Math.sin(p) * 0.025;
+
+      if (rig.turretGroup) {
+        const aimYaw =
+          -0.18 + Math.max(-0.30, Math.min(0.30, (squadX - this.x) * 0.12));
+        const chargeFrac =
+          this.telegraphTimer > 0
+            ? Math.min(1, this.telegraphTimer / BOSS_TELEGRAPH_DURATION)
+            : 0;
+        rig.turretGroup.rotation.y = aimYaw;
+        rig.turretGroup.rotation.x =
+          Math.sin(p * 2) * 0.045 + chargeFrac * 0.28;
+      }
+
+      if (rig.wingPylons) {
+        const flare = Math.sin(p * 1.6) * 0.15;
+        rig.wingPylons[0].rotation.z = 0.44 + flare;
+        rig.wingPylons[1].rotation.z = -0.44 - flare;
+      }
+
+      for (let b = 0; b < rig.recoilBarrels.length; b++) {
+        const rec = Math.max(0, Math.sin(p * 2.2 + b * Math.PI)) * 0.24;
+        rig.recoilBarrels[b].position.z = 0.76 - rec;
+      }
+      return;
+    }
+
     if (this.activeChassis === 'WARDEN_MECH' || this.activeChassis === 'SOVEREIGN_TITAN') {
       const swing = Math.sin(p) * 0.38;
       if (rig.leftLeg) rig.leftLeg.rotation.x = swing;
