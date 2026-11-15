@@ -62,8 +62,8 @@ export class SceneManager {
   private elapsedSkyTime = 0;
   private portraitFactor = 0;
 
-  private readonly currentCamPos = new THREE.Vector3(0, 8.35, 10.8);
-  private readonly currentLookAt = new THREE.Vector3(0, -1.55, -14.8);
+  private readonly currentCamPos = new THREE.Vector3(0, 7.50, 9.85);
+  private readonly currentLookAt = new THREE.Vector3(0, -1.38, -10.2);
   private lastFramingMode: CameraFramingMode = 'LIVE_BRIDGE';
 
   constructor(canvasContainer: HTMLElement) {
@@ -270,7 +270,7 @@ export class SceneManager {
 
     // Flatter ~52.5° portrait vertical FOV eliminates foreground fisheye bloat while showing wide ocean curbs
     this.portraitFactor = Math.max(0, Math.min(1, (0.95 - aspect) / 0.5));
-    this.camera.fov = 44 + this.portraitFactor * 8.5;
+    this.camera.fov = 43.2 + this.portraitFactor * 8.0;
     this.camera.updateProjectionMatrix();
 
     this.renderer.setPixelRatio(dpr);
@@ -405,35 +405,35 @@ export class SceneManager {
       _desiredPos.set(0, ARMORY_STAGE_Y + 0.62, ARMORY_STAGE_Z + 5.75 + p * 1.65);
       _desiredLook.set(0, ARMORY_STAGE_Y - 0.14 - p * 0.30, ARMORY_STAGE_Z);
     } else if (framingMode === 'LIVE_BRIDGE') {
-      // Comp-Authentic Elevated ~29° Start Camera:
-      // Positions your commando around ~58% vertical height with visible concrete slab space below their boots
-      // above the Upgrade cards while exposing both bridge curbs + ocean water and the upcoming gauntlet!
-      const targetCamX = squadX * 0.28;
-      this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 9.0);
+      // ~10% closer Start Camera so shooters & wands/rifles read clearly above Upgrade cards
+      const targetCamX = squadX * (0.54 + p * 0.14);
+      this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 9.5);
 
       _desiredPos.set(
         this.smoothCamX,
-        6.80 + p * 1.55,
-        squadZ + 10.6 + p * 4.2
+        6.12 + p * 1.38,
+        squadZ + 9.55 + p * 3.78
       );
       _desiredLook.set(
-        this.smoothCamX * 0.45,
-        -0.42 - p * 1.15,
-        squadZ - 10.8
+        this.smoothCamX * 0.78,
+        -0.36 - p * 1.02,
+        squadZ - 10.2
       );
     } else {
+      // ~10% closer Run & Boss Tactical Camera with full curb-to-curb lateral tracking across the +25% wider deck
       const inBossFight = framingMode === 'BOSS_TACTICAL';
-      const targetCamX = squadX * (inBossFight ? 0.24 : 0.30 - p * 0.06);
-      this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 9.5);
+      const followGain = inBossFight ? 0.56 + p * 0.12 : 0.64 + p * 0.14;
+      const targetCamX = squadX * followGain;
+      this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 11.0);
 
-      const camHeight = inBossFight ? 7.65 + p * 1.75 : 6.95 + p * 1.65;
-      const camBack = inBossFight ? 11.8 + p * 4.6 : 10.8 + p * 4.4;
+      const camHeight = inBossFight ? 6.88 + p * 1.56 : 6.24 + p * 1.48;
+      const camBack = inBossFight ? 10.62 + p * 4.14 : 9.72 + p * 3.96;
 
       _desiredPos.set(this.smoothCamX, camHeight, squadZ + camBack);
       _desiredLook.set(
-        this.smoothCamX * 0.48,
-        (inBossFight ? 0.35 : -0.22) - p * (inBossFight ? 0.60 : 0.95),
-        squadZ - (inBossFight ? 12.2 : 11.4)
+        this.smoothCamX * 0.82,
+        (inBossFight ? 0.32 : -0.18) - p * (inBossFight ? 0.54 : 0.86),
+        squadZ - (inBossFight ? 11.2 : 10.5)
       );
     }
 

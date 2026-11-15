@@ -10,8 +10,15 @@ export const ELITE_SLOT_SPACING_X = 0.50;
 export const ELITE_ROW_SPACING_Z = 0.52;
 export const MAX_FRONT_RANK_WIDTH = 7;
 export const SOLDIER_BODY_RADIUS = 0.24;
-export const BRIDGE_PLAYABLE_HALF_WIDTH = 4.9;
-export const GUARDRAIL_MARGIN = 0.20;
+export const BRIDGE_PLAYABLE_HALF_WIDTH = 6.12;
+export const GUARDRAIL_MARGIN = 0.22;
+export const SOLDIER_SAFE_LIMIT_X = 5.62;
+/**
+ * Split Causeway Divider X (-0.88) divides [-6.12, +6.12] into:
+ * - Left Power-Up Column [-6.12, -0.88] = 5.24m wide (0.75x of Right!)
+ * - Right Enemy Column   [-0.88, +6.12] = 7.00m wide
+ */
+export const SPLIT_DIVIDER_X = -0.88;
 
 /**
  * Deterministic diamond/oval honeycomb crowd slots for 1..40 commandos:
@@ -163,7 +170,8 @@ export function computeSquadOuterRadius(logicalSquad: number): number {
 }
 
 /**
- * Clamps the squad's horizontal center cleanly inside the bridge guardrails so outer commandos never clip off.
+ * Clamps the squad's horizontal center strictly inside the widened bridge guardrails (+25% lateral room)
+ * so zero outer characters ever touch, clip, or overhang the bridge curb at any 1..40 crowd size!
  */
 export function clampSquadCenterX(
   desiredX: number,
@@ -172,9 +180,12 @@ export function clampSquadCenterX(
   margin = GUARDRAIL_MARGIN
 ): number {
   const outerRadius = computeSquadOuterRadius(logicalSquad);
-  const maxCenterOffset = Math.min(
-    bridgeHalfWidth - margin - 0.25,
-    Math.max(3.05, bridgeHalfWidth - outerRadius - margin)
+  const maxCenterOffset = Math.max(
+    0,
+    Math.min(
+      bridgeHalfWidth - margin - 0.34,
+      bridgeHalfWidth - outerRadius - margin
+    )
   );
   if (desiredX < -maxCenterOffset) {
     return -maxCenterOffset;

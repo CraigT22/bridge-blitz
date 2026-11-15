@@ -284,7 +284,8 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
       const px = col * cellW + stagger;
       const py = row * cellH;
       const centerX = px + cellW * 0.5;
-      const isRightCorridor = centerX > 256;
+      // Left Power-Up Column occupies 3/7 (~42.9% = 219px) = 25% narrower than Right Enemy Column (4/7 = 293px)!
+      const isRightCorridor = centerX > 219;
       const tone = (((col + 4) * 11 + row * 17) % 7 - 3) * 3.8;
       const r = Math.round((isRightCorridor ? 76 : 64) + tone);
       const g = Math.round((isRightCorridor ? 84 : 86) + tone);
@@ -315,17 +316,17 @@ export function createProceduralSurfaceTextures(): RoadwayTextures {
 
   for (let cy = 38; cy < 512; cy += 128) {
     cwCtx.fillStyle = 'rgba(36, 242, 210, 0.42)';
-    drawChevron(cwCtx, 132, cy, 34, 18, 9);
+    drawChevron(cwCtx, 110, cy, 30, 17, 9);
 
     // Right corridor chevrons point +Z (warning incoming syndicate surge!)
     cwCtx.fillStyle = 'rgba(255, 56, 100, 0.44)';
     cwCtx.beginPath();
-    cwCtx.moveTo(380 - 34, cy);
-    cwCtx.lineTo(380, cy + 18);
-    cwCtx.lineTo(380 + 34, cy);
-    cwCtx.lineTo(380 + 34, cy + 9);
-    cwCtx.lineTo(380, cy + 27);
-    cwCtx.lineTo(380 - 34, cy + 9);
+    cwCtx.moveTo(366 - 38, cy);
+    cwCtx.lineTo(366, cy + 18);
+    cwCtx.lineTo(366 + 38, cy);
+    cwCtx.lineTo(366 + 38, cy + 9);
+    cwCtx.lineTo(366, cy + 27);
+    cwCtx.lineTo(366 - 38, cy + 9);
     cwCtx.closePath();
     cwCtx.fill();
   }

@@ -12,7 +12,7 @@ import {
 } from '../rendering/WeaponRigFactory';
 
 const MAX_BARRICADE_TIERS = 5;
-const BARRICADE_HIT_RADIUS_X = 1.56;
+const BARRICADE_HIT_RADIUS_X = 1.88;
 
 function createHexBlastArmorTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
@@ -262,7 +262,7 @@ export class TireWeaponStackSlot {
     this.broken = false;
     this.retiring = false;
     this.z = def.z;
-    this.x = def.lane === 'LEFT' ? -3.15 : def.lane === 'RIGHT' ? 3.15 : 0;
+    this.x = def.lane === 'LEFT' ? -3.88 : def.lane === 'RIGHT' ? 3.88 : 0;
     this.initialBreakCount = Math.max(1, def.breakCount);
     this.remainingBreakCount = this.initialBreakCount;
     this.weaponTier = def.weaponTier ?? null;
@@ -271,6 +271,7 @@ export class TireWeaponStackSlot {
     this.flashCooldown = 0;
 
     this.root.position.set(this.x, 0, this.z);
+    this.root.scale.set(1.18, 1, 1);
     this.root.visible = true;
 
     this.syncSkinVisuals();
@@ -392,6 +393,12 @@ export class TireWeaponStackSlot {
       return false;
     }
     const dz = squadZ - this.z;
-    return dz > -0.22 && dz < 1.08 && Math.abs(squadX - this.x) < 1.02;
+    const inLane =
+      this.x < -1
+        ? squadX < -2.35
+        : this.x > 1
+          ? squadX > 2.35
+          : Math.abs(squadX) < 1.32;
+    return dz > -0.22 && dz < 1.08 && inLane;
   }
 }

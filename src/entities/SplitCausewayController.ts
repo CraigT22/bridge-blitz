@@ -6,7 +6,11 @@ import type {
   SplitNodeReward,
   WeaponTierId,
 } from '../core/types';
-import { computeSquadOuterRadius } from '../math/formationMath';
+import {
+  computeSquadOuterRadius,
+  SOLDIER_SAFE_LIMIT_X,
+  SPLIT_DIVIDER_X,
+} from '../math/formationMath';
 import { getWeaponDisplaySpec } from '../math/weaponMath';
 import {
   createStaticWeaponBadgeTexture,
@@ -26,15 +30,18 @@ import {
   SHARED_HOOP_GEO,
 } from './SupplyDrum';
 
-export const LEFT_LANE_CENTER_X = -2.58;
-export const RIGHT_LANE_CENTER_X = 2.58;
+// Asymmetric Split Causeway Columns around SPLIT_DIVIDER_X (-0.88):
+// - Left Power-Up Column [-6.12, -0.88] = 5.24m wide (0.75x = 25% smaller than Right!) -> center -3.50
+// - Right Enemy Column   [-0.88, +6.12] = 7.00m wide -> center +2.62
+export const LEFT_LANE_CENTER_X = -3.50;
+export const RIGHT_LANE_CENTER_X = 2.62;
 const VISIBLE_QUEUE_SLOTS = 4;
 const QUEUE_FRONT_OFFSET_Z = 9.8;
-const QUEUE_SLOT_SPACING_Z = 6.45;
-const BARREL_HIT_HALF_WIDTH_X = 1.72;
-const LEFT_GATE_PANEL_WIDTH = 4.24;
+const QUEUE_SLOT_SPACING_Z = 7.35;
+const BARREL_HIT_HALF_WIDTH_X = 1.90;
+const LEFT_GATE_PANEL_WIDTH = 4.36;
 const LEFT_GATE_PANEL_HEIGHT = 2.62;
-const MAX_CAUSEWAY_TROOPERS = 440;
+const MAX_CAUSEWAY_TROOPERS = 740;
 const CELEBRATION_SPARK_COUNT = 14;
 
 export type SplitBarrelHitResult =
@@ -145,7 +152,7 @@ export class SplitCausewayController {
     const postOutlineGeo = new THREE.CylinderGeometry(0.18, 0.22, 3.42, 6);
     const capGeo = new THREE.OctahedronGeometry(0.19, 0);
     const capOutlineGeo = new THREE.OctahedronGeometry(0.24, 0);
-    const shadowGeo = new THREE.CircleGeometry(1.62, 8);
+    const shadowGeo = new THREE.CircleGeometry(1.54, 8);
     const shadowMat = new THREE.MeshBasicMaterial({
       color: 0x05080d,
       transparent: true,
@@ -163,9 +170,9 @@ export class SplitCausewayController {
       shadow.position.set(0, 0.022, 0.06);
       group.add(shadow);
 
-      // Faceted 6-sided Armored Hexagonal Ordnance Pod calibrated so paired holo-gate numerals sit cleanly above rim
+      // Faceted 6-sided Armored Hexagonal Ordnance Pod sized for the 25%-narrower Left Power-Up Column
       const barrelPivot = new THREE.Group();
-      barrelPivot.scale.set(1.25, 0.94, 0.94);
+      barrelPivot.scale.set(1.16, 0.94, 0.94);
 
       const barrelMat = new THREE.MeshStandardMaterial({
         color: 0x7ceef2,
@@ -438,14 +445,14 @@ export class SplitCausewayController {
     this.queueCursor = 0;
     this.bindLeftQueueSlots(true);
 
-    // Populate Right-Lane Multi-Echelon Army
+    // Populate Right-Lane Multi-Echelon Army across the wider 7.00m Right Enemy Column [-0.88, +6.12]
     let idx = 0;
     for (let e = 0; e < def.rightEchelons.length; e++) {
       const ech = def.rightEchelons[e];
       const cols = Math.max(2, ech.cols);
       const rows = Math.max(1, ech.rows);
-      const minX = ech.rank === 2 ? 0.94 : 0.72;
-      const maxX = ech.rank === 2 ? 4.26 : 4.44;
+      const minX = ech.rank === 2 ? -0.05 : -0.26;
+      const maxX = ech.rank === 2 ? 5.30 : 5.54;
       const rowSpacingZ = ech.rank === 2 ? 1.48 : 1.06;
 
       for (let r = 0; r < rows; r++) {
@@ -526,7 +533,7 @@ export class SplitCausewayController {
       slot.flashCooldown = 0;
       slot.barrelMat.emissive.setRGB(0, 0, 0);
       slot.hoopMat.emissive.setRGB(0, 0, 0);
-      slot.barrelPivot.scale.set(1.25, 0.94, 0.94);
+      slot.barrelPivot.scale.set(1.16, 0.94, 0.94);
 
       const shownHp = s === 0 ? this.frontBarrelHp : nodeDef.barrelHp;
       slot.hpTex.redrawIfDirty(shownHp, 0);
@@ -622,7 +629,7 @@ export class SplitCausewayController {
     }
 
     if (this.slideOffsetZ > 0.001) {
-      this.slideOffsetZ *= Math.exp(-11.5 * dt);
+      this.slideOffsetZ *= Math.exp(-8.2 * dt);
       if (this.slideOffsetZ < 0.008) {
         this.slideOffsetZ = 0;
       }
@@ -643,11 +650,11 @@ export class SplitCausewayController {
         slot.barrelMat.emissive.setRGB(slot.flashTimer * 0.14, slot.flashTimer * 0.44, slot.flashTimer * 0.50);
         slot.hoopMat.emissive.setRGB(slot.flashTimer * 0.36, slot.flashTimer * 0.28, 0.06);
         const pop = 1 + slot.flashTimer * 0.055;
-        slot.barrelPivot.scale.set(1.25 * pop, 0.94 * (1 - slot.flashTimer * 0.03), 0.94 * pop);
+        slot.barrelPivot.scale.set(1.16 * pop, 0.94 * (1 - slot.flashTimer * 0.03), 0.94 * pop);
       } else {
         slot.barrelMat.emissive.setRGB(0, 0, 0);
         slot.hoopMat.emissive.setRGB(0, 0, 0);
-        slot.barrelPivot.scale.set(1.25, 0.94, 0.94);
+        slot.barrelPivot.scale.set(1.16, 0.94, 0.94);
       }
 
       if (s === 0) {
@@ -711,7 +718,7 @@ export class SplitCausewayController {
       return;
     }
 
-    // Punishing Tactical reinforcement sprint whenever gap > 13.5m so right lane never goes quiet!
+    // Punishing Tactical reinforcement sprint whenever gap > 16.5m so right lane never goes quiet!
     let closestAliveZ = -999999;
     for (let i = 0; i < this.totalTroopers; i++) {
       if (this.unitAlive[i] !== 0 && this.unitZ[i] > closestAliveZ) {
@@ -724,7 +731,7 @@ export class SplitCausewayController {
       this.siegeDistance > 20.0 && closestAliveZ > -900000 && gapAhead > 16.5 ? 1.58 : 1.0;
     const stepSpeed = this.marchSpeed * speedBoost;
     this.siegeDistance = Math.min(this.siegeColumnSpan, this.siegeDistance + stepSpeed * dt);
-    this.marchPhase += dt * 11.6 * (speedBoost > 1 ? 1.28 : 1.0);
+    this.marchPhase += dt * 13.2 * (speedBoost > 1 ? 1.28 : 1.0);
 
     let alive = 0;
     for (let i = 0; i < this.totalTroopers; i++) {
@@ -735,7 +742,7 @@ export class SplitCausewayController {
         this.unitHitFlash[i] = Math.max(0, this.unitHitFlash[i] - dt * 6.8);
       }
 
-      // Once a right-lane trooper clears the nose of the Center Divider Wall (`dividerTipZ`),
+      // Once a right-lane trooper clears the nose of the Divider Wall (`dividerTipZ`),
       // they charge aggressively into the open Breach Zone toward `(squadX, squadZ)`!
       if (this.unitZ[i] > this.dividerTipZ + 0.25) {
         const dx = squadX - this.unitX[i];
@@ -745,8 +752,8 @@ export class SplitCausewayController {
         const chargeStep = stepSpeed * this.unitSpeedMul[i] * breachMul * dt;
         const inv = 1 / Math.max(0.001, dist);
         this.unitX[i] = Math.max(
-          -4.35,
-          Math.min(4.35, this.unitX[i] + dx * inv * chargeStep)
+          -SOLDIER_SAFE_LIMIT_X,
+          Math.min(SOLDIER_SAFE_LIMIT_X, this.unitX[i] + dx * inv * chargeStep)
         );
         this.unitZ[i] += Math.max(stepSpeed * 0.50 * dt, dz * inv * chargeStep);
       } else {
@@ -825,7 +832,7 @@ export class SplitCausewayController {
   }
 
   /**
-   * Blocks bullets that hit or attempt to cross the solid ballistic Center Divider Wall (`x = 0`, `z <= dividerTipZ`).
+   * Blocks bullets that hit or attempt to cross the solid ballistic Divider Wall (`x = SPLIT_DIVIDER_X`, `z <= dividerTipZ`).
    */
   public checkDividerWallBlock(bx: number, bz: number, prevBx: number): boolean {
     if (!this.active || this.retractedForBoss) {
@@ -834,10 +841,13 @@ export class SplitCausewayController {
     if (bz > this.dividerTipZ + 0.18) {
       return false;
     }
-    if (Math.abs(bx) < 0.28) {
+    if (Math.abs(bx - SPLIT_DIVIDER_X) < 0.28) {
       return true;
     }
-    return (prevBx < -0.02 && bx >= -0.02) || (prevBx > 0.02 && bx <= 0.02);
+    return (
+      (prevBx < SPLIT_DIVIDER_X - 0.02 && bx >= SPLIT_DIVIDER_X - 0.02) ||
+      (prevBx > SPLIT_DIVIDER_X + 0.02 && bx <= SPLIT_DIVIDER_X + 0.02)
+    );
   }
 
   public tryLeftQueueBulletHit(
@@ -851,7 +861,7 @@ export class SplitCausewayController {
       !this.active ||
       this.retractedForBoss ||
       this.queueCursor >= this.queueTotal ||
-      bx > -0.26
+      bx > SPLIT_DIVIDER_X - 0.24
     ) {
       return _missResult;
     }
@@ -892,7 +902,7 @@ export class SplitCausewayController {
       const clearedEntityId = frontSlot.entityId;
       this.queueCursor++;
       this.slideOffsetZ += QUEUE_SLOT_SPACING_Z;
-      this.advanceLockTimer = 0.42;
+      this.advanceLockTimer = 0.56;
       this.bindLeftQueueSlots(true);
       this.syncQueuePositions();
 
@@ -925,7 +935,7 @@ export class SplitCausewayController {
       return { status: 'MISS', entityId: -1 };
     }
     // Bullets inside the Left Corridor past the divider tip cannot hit Right-Corridor troopers
-    if (bz <= this.dividerTipZ && bx < 0.22) {
+    if (bz <= this.dividerTipZ && bx < SPLIT_DIVIDER_X + 0.22) {
       return { status: 'MISS', entityId: -1 };
     }
 

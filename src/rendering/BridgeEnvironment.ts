@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { BoardLayout } from '../core/types';
+import { SPLIT_DIVIDER_X } from '../math/formationMath';
 import {
   createProceduralSurfaceTextures,
   type RoadwayTextures,
@@ -70,8 +71,8 @@ const WATER_FRAGMENT_SHADER = /* glsl */ `
     float whitecap = smoothstep(0.29, 0.54, vWaveElev + chop * 0.24);
     col = mix(col, vec3(0.72, 0.88, 0.96), whitecap * 0.34);
 
-    // Viaduct shadow band directly beneath roadway (X in [-5.8, +5.8])
-    float underBridge = 1.0 - smoothstep(5.2, 10.5, abs(p.x));
+    // Viaduct shadow band directly beneath widened roadway (X in [-7.1, +7.1])
+    float underBridge = 1.0 - smoothstep(6.5, 12.2, abs(p.x));
     col *= (1.0 - underBridge * 0.46);
 
     // Distance atmospheric storm-slate blend
@@ -212,10 +213,10 @@ export class BridgeEnvironment {
       roughness: 0.2,
     });
 
-    // Shared catenary cable geometries for phase 0 & phase 1
+    // Shared catenary cable geometries for phase 0 & phase 1 (+25% wider viaduct span!)
     const catenaryGeos: Record<0 | 1, [THREE.TubeGeometry, THREE.TubeGeometry]> = {
-      0: [createCatenaryCableGeometry(0, -6.05), createCatenaryCableGeometry(0, 6.05)],
-      1: [createCatenaryCableGeometry(1, -6.05), createCatenaryCableGeometry(1, 6.05)],
+      0: [createCatenaryCableGeometry(0, -7.30), createCatenaryCableGeometry(0, 7.30)],
+      1: [createCatenaryCableGeometry(1, -7.30), createCatenaryCableGeometry(1, 7.30)],
     };
 
     // 2. Modular Recycling 80m-Paired Naval Viaduct Chunks
@@ -322,14 +323,14 @@ export class BridgeEnvironment {
   ): THREE.Group {
     const group = new THREE.Group();
 
-    // Weathered Asphalt Roadway Deck + Underside Steel Box Girder
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(11.5, 0.55, CHUNK_LENGTH), deckMat);
+    // +25% Widened Asphalt Roadway Deck (14.2m wide => [-7.1, +7.1]) + Underside Steel Box Girder
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(14.2, 0.55, CHUNK_LENGTH), deckMat);
     deck.position.set(0, -0.275, -CHUNK_LENGTH / 2);
     deck.receiveShadow = true;
     group.add(deck);
 
     const underGirder = new THREE.Mesh(
-      new THREE.BoxGeometry(12.2, 1.05, CHUNK_LENGTH),
+      new THREE.BoxGeometry(15.0, 1.05, CHUNK_LENGTH),
       gunmetalMat
     );
     underGirder.position.set(0, -1.05, -CHUNK_LENGTH / 2);
@@ -346,9 +347,9 @@ export class BridgeEnvironment {
     for (let sideIdx = 0; sideIdx < 2; sideIdx++) {
       const sign = sideIdx === 0 ? -1 : 1;
 
-      // Diagonal Yellow/Black Hazard Curb Strip
+      // Diagonal Yellow/Black Hazard Curb Strip (inner face at +-6.24, well outside +-5.62 safe shooter limit!)
       const curb = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.18, CHUNK_LENGTH), curbMat);
-      curb.position.set(sign * 5.18, 0.09, -CHUNK_LENGTH / 2);
+      curb.position.set(sign * 6.42, 0.09, -CHUNK_LENGTH / 2);
       curb.receiveShadow = true;
       group.add(curb);
 
@@ -357,7 +358,7 @@ export class BridgeEnvironment {
         new THREE.BoxGeometry(0.46, 0.52, CHUNK_LENGTH),
         concreteBarrierMat
       );
-      kRailBase.position.set(sign * 5.54, 0.26, -CHUNK_LENGTH / 2);
+      kRailBase.position.set(sign * 6.78, 0.26, -CHUNK_LENGTH / 2);
       kRailBase.castShadow = true;
       kRailBase.receiveShadow = true;
       group.add(kRailBase);
@@ -366,12 +367,12 @@ export class BridgeEnvironment {
         new THREE.BoxGeometry(0.16, 0.12, CHUNK_LENGTH),
         gunmetalMat
       );
-      topSteelRail.position.set(sign * 5.62, 0.88, -CHUNK_LENGTH / 2);
+      topSteelRail.position.set(sign * 6.86, 0.88, -CHUNK_LENGTH / 2);
       group.add(topSteelRail);
 
       for (let pz = -3; pz >= -CHUNK_LENGTH + 2; pz -= 5) {
         const stanchion = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.45, 0.14), gunmetalMat);
-        stanchion.position.set(sign * 5.62, 0.68, pz);
+        stanchion.position.set(sign * 6.86, 0.68, pz);
         group.add(stanchion);
       }
 
@@ -383,7 +384,7 @@ export class BridgeEnvironment {
           new THREE.CylinderGeometry(0.032, 0.032, ropeH, 6),
           cableSteelMat
         );
-        rope.position.set(sign * 6.05, 0.5 + ropeH * 0.5, cz);
+        rope.position.set(sign * 7.30, 0.5 + ropeH * 0.5, cz);
         group.add(rope);
 
         const clamp = new THREE.Mesh(
@@ -391,24 +392,24 @@ export class BridgeEnvironment {
           gunmetalMat
         );
         clamp.rotation.x = Math.PI / 2;
-        clamp.position.set(sign * 6.05, catY, cz);
+        clamp.position.set(sign * 7.30, catY, cz);
         group.add(clamp);
       }
 
       // Tactical Overhead Highway Streetlamp Pole (one per 40m span on each side)
       const lampZ = -20;
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 6.2, 8), gunmetalMat);
-      pole.position.set(sign * 5.72, 3.1, lampZ);
+      pole.position.set(sign * 6.96, 3.1, lampZ);
       pole.castShadow = true;
       group.add(pole);
 
       const mastArm = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.1, 0.12), gunmetalMat);
-      mastArm.position.set(sign * 5.05, 6.12, lampZ);
+      mastArm.position.set(sign * 6.28, 6.12, lampZ);
       mastArm.rotation.z = -sign * 0.12;
       group.add(mastArm);
 
       const lampHead = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.09, 0.24), lampGlowMat);
-      lampHead.position.set(sign * 4.42, 6.0, lampZ);
+      lampHead.position.set(sign * 5.65, 6.0, lampZ);
       group.add(lampHead);
     }
 
@@ -416,7 +417,7 @@ export class BridgeEnvironment {
     if (spanPhase === 0) {
       // Concrete sea caisson pier beneath tower
       const pier = new THREE.Mesh(
-        new THREE.BoxGeometry(15.6, 4.2, 3.4),
+        new THREE.BoxGeometry(18.2, 4.2, 3.4),
         concreteBarrierMat
       );
       pier.position.set(0, -3.4, 0);
@@ -425,29 +426,29 @@ export class BridgeEnvironment {
       for (const sign of [-1, 1]) {
         // Stepped Industrial Tower Legs (raised portal height for elevated tactical camera!)
         const lowerLeg = new THREE.Mesh(new THREE.BoxGeometry(1.55, 17.2, 1.75), towerMat);
-        lowerLeg.position.set(sign * 6.05, 7.05, 0);
+        lowerLeg.position.set(sign * 7.30, 7.05, 0);
         lowerLeg.castShadow = true;
         lowerLeg.receiveShadow = true;
         group.add(lowerLeg);
 
         const upperLeg = new THREE.Mesh(new THREE.BoxGeometry(1.22, 9.2, 1.4), towerMat);
-        upperLeg.position.set(sign * 6.05, 19.3, 0);
+        upperLeg.position.set(sign * 7.30, 19.3, 0);
         upperLeg.castShadow = true;
         group.add(upperLeg);
 
         // Steel Cable Saddle & Aviation Warning Beacon on Peak
         const saddle = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.55, 1.65), gunmetalMat);
-        saddle.position.set(sign * 6.05, 24.05, 0);
+        saddle.position.set(sign * 7.30, 24.05, 0);
         group.add(saddle);
 
         const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), beaconGlowMat);
-        beacon.position.set(sign * 6.05, 24.52, 0);
+        beacon.position.set(sign * 7.30, 24.52, 0);
         group.add(beacon);
       }
 
       // Portal Crossbeams + Diagonal Steel X-Bracing Trusses (raised >= 16.2m so elevated camera never clips!)
       for (const beamY of [16.2, 19.5, 22.8]) {
-        const beam = new THREE.Mesh(new THREE.BoxGeometry(13.4, 0.90, 1.12), towerMat);
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(16.0, 0.90, 1.12), towerMat);
         beam.position.set(0, beamY, 0);
         beam.castShadow = true;
         group.add(beam);
@@ -455,9 +456,9 @@ export class BridgeEnvironment {
 
       for (const bayMidY of [17.85, 21.15]) {
         for (const diagSign of [-1, 1]) {
-          const strut = new THREE.Mesh(new THREE.BoxGeometry(11.6, 0.26, 0.34), gunmetalMat);
+          const strut = new THREE.Mesh(new THREE.BoxGeometry(14.0, 0.26, 0.34), gunmetalMat);
           strut.position.set(0, bayMidY, 0);
-          strut.rotation.z = diagSign * 0.28;
+          strut.rotation.z = diagSign * 0.24;
           group.add(strut);
         }
       }
@@ -479,18 +480,18 @@ export class BridgeEnvironment {
 
     // Seamless 20m approach deck (localZ +22..+2 => world bossStartZ+30..bossStartZ+10)
     // Guarantees zero roadway gap regardless of stage trackLength modulo 40m!
-    const approachDeck = new THREE.Mesh(new THREE.BoxGeometry(11.56, 0.84, 20), deckMat);
+    const approachDeck = new THREE.Mesh(new THREE.BoxGeometry(14.26, 0.84, 20), deckMat);
     approachDeck.position.set(0, -0.39, 12);
     approachDeck.receiveShadow = true;
     group.add(approachDeck);
 
-    const approachGirder = new THREE.Mesh(new THREE.BoxGeometry(12.24, 1.05, 20), gunmetalMat);
+    const approachGirder = new THREE.Mesh(new THREE.BoxGeometry(15.04, 1.05, 20), gunmetalMat);
     approachGirder.position.set(0, -1.04, 12);
     group.add(approachGirder);
 
     for (const sign of [-1, 1]) {
       const approachCurb = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.2, 20), curbMat);
-      approachCurb.position.set(sign * 5.18, 0.11, 12);
+      approachCurb.position.set(sign * 6.42, 0.11, 12);
       approachCurb.receiveShadow = true;
       group.add(approachCurb);
 
@@ -498,28 +499,28 @@ export class BridgeEnvironment {
         new THREE.BoxGeometry(0.48, 0.54, 20),
         concreteBarrierMat
       );
-      approachWall.position.set(sign * 5.54, 0.28, 12);
+      approachWall.position.set(sign * 6.78, 0.28, 12);
       approachWall.castShadow = true;
       approachWall.receiveShadow = true;
       group.add(approachWall);
 
-      // Tapered wing transition walls linking standard K-rail (5.54) to bastion wall (7.70)
+      // Tapered wing transition walls linking widened K-rail (6.78) to bastion wall (8.90)
       const wingWall = new THREE.Mesh(
         new THREE.BoxGeometry(2.65, 0.85, 0.72),
         concreteBarrierMat
       );
-      wingWall.position.set(sign * 6.52, 0.42, 2.0);
+      wingWall.position.set(sign * 7.72, 0.42, 2.0);
       wingWall.castShadow = true;
       group.add(wingWall);
     }
 
     // Widened 28m Armored Boss Bastion Pad (localZ +2..-26 => world bossStartZ+10..bossStartZ-18)
-    const pad = new THREE.Mesh(new THREE.BoxGeometry(16.2, 0.84, 28), deckMat);
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(18.6, 0.84, 28), deckMat);
     pad.position.set(0, -0.39, -12);
     pad.receiveShadow = true;
     group.add(pad);
 
-    const padGirder = new THREE.Mesh(new THREE.BoxGeometry(16.6, 1.15, 28), gunmetalMat);
+    const padGirder = new THREE.Mesh(new THREE.BoxGeometry(19.0, 1.15, 28), gunmetalMat);
     padGirder.position.set(0, -1.08, -12);
     group.add(padGirder);
 
@@ -528,35 +529,35 @@ export class BridgeEnvironment {
         new THREE.BoxGeometry(0.75, 0.85, 28),
         concreteBarrierMat
       );
-      blastWall.position.set(sign * 7.7, 0.42, -12);
+      blastWall.position.set(sign * 8.90, 0.42, -12);
       blastWall.castShadow = true;
       blastWall.receiveShadow = true;
       group.add(blastWall);
 
       const hazardStrip = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.24, 28), curbMat);
-      hazardStrip.position.set(sign * 7.15, 0.12, -12);
+      hazardStrip.position.set(sign * 8.35, 0.12, -12);
       group.add(hazardStrip);
 
       // Heavy Armored Bastion Pylons + Floodlights
       const pylon = new THREE.Mesh(new THREE.BoxGeometry(1.55, 10.5, 1.65), towerMat);
-      pylon.position.set(sign * 7.65, 5.0, -24.6);
+      pylon.position.set(sign * 8.85, 5.0, -24.6);
       pylon.castShadow = true;
       group.add(pylon);
 
       const floodBox = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.55, 0.45), gunmetalMat);
-      floodBox.position.set(sign * 7.3, 9.4, -23.8);
+      floodBox.position.set(sign * 8.50, 9.4, -23.8);
       floodBox.rotation.x = 0.35;
       group.add(floodBox);
 
       const floodLens = new THREE.Mesh(new THREE.PlaneGeometry(0.92, 0.38), lampGlowMat);
-      floodLens.position.set(sign * 7.3, 9.32, -23.55);
+      floodLens.position.set(sign * 8.50, 9.32, -23.55);
       floodLens.rotation.x = 0.35;
       group.add(floodLens);
     }
 
     // Campaign Terminus Bulkhead overlooking open ocean behind the Boss!
     const rearWall = new THREE.Mesh(
-      new THREE.BoxGeometry(16.2, 1.05, 0.85),
+      new THREE.BoxGeometry(18.6, 1.05, 0.85),
       concreteBarrierMat
     );
     rearWall.position.set(0, 0.52, -25.6);
@@ -564,15 +565,15 @@ export class BridgeEnvironment {
     rearWall.receiveShadow = true;
     this.endBulkheadGroup.add(rearWall);
 
-    const rearHazard = new THREE.Mesh(new THREE.BoxGeometry(14.8, 0.28, 0.48), curbMat);
+    const rearHazard = new THREE.Mesh(new THREE.BoxGeometry(17.2, 0.28, 0.48), curbMat);
     rearHazard.position.set(0, 0.14, -25.02);
     this.endBulkheadGroup.add(rearHazard);
 
-    const rearRail = new THREE.Mesh(new THREE.BoxGeometry(15.6, 0.16, 0.22), gunmetalMat);
+    const rearRail = new THREE.Mesh(new THREE.BoxGeometry(18.0, 0.16, 0.22), gunmetalMat);
     rearRail.position.set(0, 1.16, -25.6);
     this.endBulkheadGroup.add(rearRail);
 
-    for (const bx of [-4.6, 0, 4.6]) {
+    for (const bx of [-5.4, 0, 5.4]) {
       const beaconPedestal = new THREE.Mesh(
         new THREE.CylinderGeometry(0.18, 0.22, 0.28, 8),
         gunmetalMat
@@ -728,7 +729,7 @@ export class BridgeEnvironment {
     this.splitDividerGroup.visible = isSplit;
     this.dividerRetracted = false;
     this.dividerCurrentY = 0;
-    this.splitDividerGroup.position.set(0, 0, dividerTipWorldZ);
+    this.splitDividerGroup.position.set(SPLIT_DIVIDER_X, 0, dividerTipWorldZ);
   }
 
   public setDividerRetracted(retracted: boolean): void {

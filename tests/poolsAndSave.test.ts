@@ -101,8 +101,8 @@ describe('ObjectPool & Core State Integrity', () => {
   });
 
   it('guarantees Boss telegraphed lane salvos target player lane while always leaving >= 1 safe lane', () => {
-    for (const x of [-3.2, 0.0, 3.2]) {
-      const expectedPlayerLane = x < -1.15 ? 0 : x > 1.15 ? 2 : 1;
+    for (const x of [-3.85, 0.0, 3.85]) {
+      const expectedPlayerLane = x < -1.45 ? 0 : x > 1.45 ? 2 : 1;
 
       const mask1 = selectBossSalvoLaneMask(x, 1, 0);
       expect(mask1[expectedPlayerLane]).toBe(true);
@@ -143,12 +143,16 @@ describe('ObjectPool & Core State Integrity', () => {
       if (expectedLayout === 'SPLIT_CAUSEWAY') {
         expect(stage.splitCauseway).toBeDefined();
         expect(stage.splitCauseway!.leftQueue.length).toBe(28);
-        expect(stage.splitCauseway!.rightEchelons.length).toBe(22);
+        expect(stage.splitCauseway!.rightEchelons.length).toBe(26);
+        expect(
+          stage.splitCauseway!.rightEchelons[0].cols *
+            stage.splitCauseway!.rightEchelons[0].rows
+        ).toBeGreaterThanOrEqual(20);
         expect(stage.splitCauseway!.goliathSpawns.length).toBe(3);
-        expect(stage.splitCauseway!.marchSpeed).toBeGreaterThanOrEqual(5.25);
-        expect(stage.splitCauseway!.leftQueue[0].barrelHp).toBeGreaterThanOrEqual(26);
-        expect(stage.splitCauseway!.leftQueue[27].barrelHp).toBeGreaterThanOrEqual(90000);
-        expect(stage.splitCauseway!.goliathSpawns[0].speed).toBeGreaterThanOrEqual(3.55);
+        expect(stage.splitCauseway!.marchSpeed).toBeGreaterThanOrEqual(6.80);
+        expect(stage.splitCauseway!.leftQueue[0].barrelHp).toBeGreaterThanOrEqual(40);
+        expect(stage.splitCauseway!.leftQueue[27].barrelHp).toBeGreaterThanOrEqual(140000);
+        expect(stage.splitCauseway!.goliathSpawns[0].speed).toBeGreaterThanOrEqual(4.60);
       }
 
       seenChassis.add(stage.boss.chassis);
@@ -168,7 +172,7 @@ describe('ObjectPool & Core State Integrity', () => {
     });
     expect(split1.boss.salvoLanes).toBe(1);
     expect(split2.boss.salvoLanes).toBe(2);
-    expect(split1.splitCauseway!.marchSpeed).toBeGreaterThanOrEqual(5.25);
+    expect(split1.splitCauseway!.marchSpeed).toBeGreaterThanOrEqual(6.80);
     expect(split6.splitCauseway!.marchSpeed).toBeGreaterThan(split1.splitCauseway!.marchSpeed);
     expect(split6.boss.maxHp).toBeGreaterThan(split1.boss.maxHp);
 

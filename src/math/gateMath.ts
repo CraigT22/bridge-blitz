@@ -24,8 +24,8 @@ export const MAX_SHOOTABLE_MUL_VALUE = 99.9;
 export const POSITIVE_GATE_RESISTANCE_SLOPE = 0.14;
 export const MUL_GATE_RESISTANCE_SLOPE = 0.13;
 
-export const SPLIT_SPAN_MIN_X = -4.88;
-export const SPLIT_SPAN_MAX_X = 4.88;
+export const SPLIT_SPAN_MIN_X = -6.04;
+export const SPLIT_SPAN_MAX_X = 6.04;
 export const MIN_SPLIT_GATE_RATIO = 0.22;
 export const MAX_SPLIT_GATE_RATIO = 0.78;
 

@@ -130,14 +130,14 @@ jobs:
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v7.2.0
-          name: Bridge Blitz v7.2.0 — Rainbow Bullets, Giant Unicorns & Horn Fireworks Finale APK
+          tag_name: v7.3.0
+          name: Bridge Blitz v7.3.0 — Position-Based Aim, +25% Wider Bridge, Asymmetric Split Causeway & +10% Zoom APK
           body: |
-            ### Bridge Blitz v7.2.0 — Rainbow Bullets, Giant Unicorns & Horn Fireworks Finale (`versionCode 17`)
-            - **Direct Chrome Download (installs cleanly over v7.1 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=17)
-            - **What's New in v7.2**:
-              - **Default `Girls vs. Boys` (`UNICORN`) Startup + Persistent Skin Toggle**: Boots directly into `UNICORN` (`RAINBOWS ★ ON`) by default via a one-time `v7.2` save migration while preserving any manual `TACTICAL` ⇄ `UNICORN` toggle across sessions.
-              - **6-Band ROYGBIV 3D Rainbow Ribbon Bullets**: Every projectile fired in `UNICORN` mode is a sculpted multi-striped Red-Orange-Yellow-Green-Blue-Violet 3D rainbow arc bolt with pearl cloud tail, golden crystal tip, and multi-color ROYGBIV hit sparkles.
-              - **Giant Battle Unicorns (Mid-Bosses & End Bosses)**: Towering 4-legged rearing **Armored War-Unicorn** mid-bosses plus **4 distinct Giant Battle Unicorn Boss archetypes** (*Charger Stallion*, *Chariot War-Unicorn*, *Winged Pegasus Alicorn*, and *Crowned Sovereign Alicorn*) in Royal-Blue & Kelly-Green barding on the bridge and in the 360° 3D Armory turntable.
-              - **End-of-Level Giant Unicorn Horn Fireworks Celebration Splash**: Clearing any Campaign or Split Causeway stage unleashes an unobstructed `1.8s` Giant Spiral Unicorn Horn rising from bottom-center and firing arcing multi-burst ROYGBIV fireworks before smoothly revealing the Victory payout card over continuing fireworks (plus a non-blocking `1.6s` fly-by celebration on Endless wave clears).
+            ### Bridge Blitz v7.3.0 — Position-Based Aim, +25% Wider Bridge, Asymmetric Split Causeway & +10% Zoom (`versionCode 18`)
+            - **Direct Chrome Download (installs cleanly over v7.2 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=18)
+            - **What's New in v7.3**:
+              - **Pure Position-Based Spearhead Firing (Zero Target Auto-Adapting)**: Shooters always fire straight forward to a sharp spearhead point directly ahead of where you position them — never bending sideways toward offset bosses, mid-bosses, barrels, or enemy clusters.
+              - **+25% Wider Side-to-Side Movement Area + Zero Edge Fall-Off**: Widened the bridge roadway and lateral steering range by +25% so shooters can reach the outer lanes early to pick off edge enemies sooner while strict inner-curb clamping guarantees zero characters ever overhang or fall off the edges.
+              - **Asymmetric Split Causeway Rebalance**: Divided Split Causeway into a **25% smaller Left Power-Up Column** (`5.24m`) with tougher, slower-to-earn power-ups (`1.55×` pod HP) and a **wider Right Enemy Column** (`7.00m`) surging with **larger (`26` echelons up to `7×4`) and +30% faster enemy waves**.
+              - **~10% Closer Camera Zoom**: Moved the portrait & tactical camera ~10% closer with tighter FOV and full curb-to-curb lateral tracking so shooters, wands/weapons, rainbow volleys, and enemies read clearly on mobile screens.
           files: BridgeBlitz-Pixel10XL.apk

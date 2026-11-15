@@ -59,8 +59,8 @@ export interface GateSquadCollectEvent {
   readonly positive: boolean;
 }
 
-const SPLIT_WIDTH = 4.82;
-const FULL_WIDTH = 9.72;
+const SPLIT_WIDTH = 6.00;
+const FULL_WIDTH = 12.08;
 const PANEL_HEIGHT = 2.52;
 const CENTER_POST_GAP = 0.04;
 
@@ -101,7 +101,7 @@ export class GatePairSlot {
 
     // Grounded contact shadow strip
     const gantryShadow = new THREE.Mesh(
-      new THREE.PlaneGeometry(10.2, 0.48),
+      new THREE.PlaneGeometry(12.6, 0.48),
       new THREE.MeshBasicMaterial({
         color: 0x05080d,
         transparent: true,
@@ -115,9 +115,9 @@ export class GatePairSlot {
 
     // Faceted 6-sided Hexagonal Holo-Pylons & Octahedron Emitter Finials!
     const pylonDefs: ReadonlyArray<readonly [number, THREE.MeshStandardMaterial]> = [
-      [-4.90, this.leftPylonMat],
+      [-6.08, this.leftPylonMat],
       [0, this.centerPylonMat],
-      [4.90, this.rightPylonMat],
+      [6.08, this.rightPylonMat],
     ];
     for (const [px, pMat] of pylonDefs) {
       const holder = px === 0 ? this.centerPostGroup : this.root;

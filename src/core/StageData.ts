@@ -150,8 +150,9 @@ function buildSplitCausewayDefinition(
   bruteCoins: number
 ): SplitCausewayDefinition {
   const d = DIFFICULTY_MULTIPLIER_V6;
-  const siegeColumnSpan = Math.round(326 + (stageIdx - 1) * 9);
-  const marchSpeed = Math.min(6.20, Math.max(5.25, enemyBaseSpeed * 2.12 + stageIdx * 0.10));
+  const siegeColumnSpan = Math.round((352 + (stageIdx - 1) * 9) * 1.30);
+  const baseMarchSpeed = Math.min(6.20, Math.max(5.25, enemyBaseSpeed * 2.12 + stageIdx * 0.10));
+  const marchSpeed = baseMarchSpeed * 1.30;
 
   // Earned incremental tactical progression across all 28 Left-Lane Ordnance Nodes
   const rewardPattern: ReadonlyArray<SplitNodeReward> = [
@@ -191,31 +192,35 @@ function buildSplitCausewayDefinition(
     3480, 4480, 5700, 7200, 9000, 11200, 13800, 16900, 20600, 25000, 30200, 36400, 43800, 52500,
   ];
 
+  const powerUpEarnFactor = 1.55;
   const leftQueue: SplitBarrelNodeDefinition[] = [];
   for (let i = 0; i < rewardPattern.length; i++) {
     const stageFactor = i === 0 ? Math.pow(hpScale, 0.68) : Math.pow(hpScale, 0.92);
-    const barrelHp = Math.max(26, Math.round(baseQueueHps[i] * d * stageFactor));
+    const barrelHp = Math.max(
+      40,
+      Math.round(baseQueueHps[i] * d * stageFactor * powerUpEarnFactor)
+    );
     leftQueue.push({
       barrelHp,
       reward: rewardPattern[i],
     });
   }
 
-  // 22 fast-surging Right-Lane Syndicate Echelons with tight inter-wave spacing
+  // 26 larger, +30% faster Right-Lane Echelons surging down the wider right column
   const rightEchelons: SplitHordeEchelonDefinition[] = [];
   let cursorZ = 21.5;
-  const totalEchelons = 22;
+  const totalEchelons = 26;
   for (let e = 0; e < totalEchelons; e++) {
     const progress = e / (totalEchelons - 1);
     let rank: EnemyVisualRank = 1;
     if (e === 0 || (e >= 3 && e % 4 === 3)) {
       rank = 0; // Fast Horned Volt-Trim Vanguard Raiders
-    } else if (e === 2 || (e >= 6 && e % 4 === 2) || e >= 20) {
+    } else if (e === 2 || (e >= 6 && e % 4 === 2) || e >= 23) {
       rank = 2; // Towering 1.65x Horned Ironclad Enforcers
     }
 
-    const cols = rank === 2 ? 4 : e === 0 ? 3 : e <= 5 ? 4 : 5;
-    const rows = rank === 2 ? 2 : 3;
+    const cols = rank === 2 ? 5 : e === 0 ? 5 : e <= 5 ? 6 : 7;
+    const rows = rank === 2 ? 3 : 4;
     const echelonGrowth = 1 + Math.pow(progress, 1.45) * 2.05;
     const rankHpMul =
       rank === 2 ? 1.95 : rank === 0 ? (e === 0 ? 0.68 : 0.85) : 1.00;
@@ -241,11 +246,11 @@ function buildSplitCausewayDefinition(
     });
 
     const depthSpan = rows * (rank === 2 ? 1.42 : 1.04);
-    const gapZ = e === 0 ? 8.6 : 12.2 + (stageIdx - 1) * 0.24;
+    const gapZ = e === 0 ? 9.4 : 13.0 + (stageIdx - 1) * 0.26;
     cursorZ += depthSpan + gapZ;
   }
 
-  const fastBruteSpeed = Math.min(4.35, Math.max(3.55, bruteSpeed * 1.76));
+  const fastBruteSpeed = Math.min(4.35, Math.max(3.55, bruteSpeed * 1.76)) * 1.30;
   const goliathSpawns: MidBridgeBruteDefinition[] = [
     {
       z: -Math.round(siegeColumnSpan * 0.34),
@@ -259,7 +264,7 @@ function buildSplitCausewayDefinition(
       z: -Math.round(siegeColumnSpan * 0.64),
       name: bruteName,
       maxHp: Math.round(bruteMaxHp * 0.22),
-      speed: Number(Math.min(4.45, fastBruteSpeed + 0.15).toFixed(2)),
+      speed: Number(Math.min(5.85, fastBruteSpeed + 0.20).toFixed(2)),
       clubDamage: bruteDamage,
       coinReward: bruteCoins,
     },
@@ -267,7 +272,7 @@ function buildSplitCausewayDefinition(
       z: -Math.round(siegeColumnSpan * 0.88),
       name: `${bruteName} Prime`,
       maxHp: Math.round(bruteMaxHp * 0.30),
-      speed: Number(Math.min(4.55, fastBruteSpeed + 0.28).toFixed(2)),
+      speed: Number(Math.min(5.98, fastBruteSpeed + 0.36).toFixed(2)),
       clubDamage: bruteDamage + 2,
       coinReward: Math.round(bruteCoins * 1.25),
     },

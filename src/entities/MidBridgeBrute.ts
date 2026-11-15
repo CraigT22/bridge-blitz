@@ -1000,10 +1000,10 @@ export class MidBridgeBrute {
     }
 
     const insideRightCorridor = dividerTipZ !== undefined && this.z <= dividerTipZ + 0.55;
-    const minAllowedX = insideRightCorridor ? 1.48 : -3.15;
-    const maxAllowedX = insideRightCorridor ? 3.42 : 3.15;
+    const minAllowedX = insideRightCorridor ? 0.45 : -4.25;
+    const maxAllowedX = insideRightCorridor ? 4.75 : 4.25;
     const effectiveDuelDist = dividerTipZ !== undefined ? 6.3 : DUEL_HALT_DIST_Z;
-    const lateralPursueSpeed = dividerTipZ !== undefined && !insideRightCorridor ? 3.35 : 1.95;
+    const lateralPursueSpeed = dividerTipZ !== undefined && !insideRightCorridor ? 3.85 : 2.35;
 
     const engaged = dividerTipZ !== undefined ? distZ < 105 : distZ < ENGAGE_WAKE_DIST_Z;
     const inDuelRange = distZ <= effectiveDuelDist + 0.35 && distZ > -2.5;

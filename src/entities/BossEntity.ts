@@ -7,8 +7,8 @@ import {
 } from '../rendering/BossRigFactory';
 import { createAllUnicornBossChassisRigs } from '../rendering/UnicornBossRigFactory';
 
-export const BOSS_SALVO_LANE_CENTERS = [-3.1, 0.0, 3.1] as const;
-export const BOSS_SALVO_HIT_HALF_WIDTH = 1.38;
+export const BOSS_SALVO_LANE_CENTERS = [-3.85, 0.0, 3.85] as const;
+export const BOSS_SALVO_HIT_HALF_WIDTH = 1.72;
 export const BOSS_TELEGRAPH_DURATION = 0.76;
 const BOSS_WARHEAD_SPEED = 30.5;
 const MAX_BOSS_WARHEADS = 8;
@@ -53,7 +53,7 @@ export function selectBossSalvoLaneMask(
   salvoLanes: 1 | 2,
   cycleIndex: number
 ): LaneMask3 {
-  const playerLane: 0 | 1 | 2 = squadX < -1.15 ? 0 : squadX > 1.15 ? 2 : 1;
+  const playerLane: 0 | 1 | 2 = squadX < -1.45 ? 0 : squadX > 1.45 ? 2 : 1;
   if (salvoLanes === 1) {
     return SINGLE_LANE_MASKS[playerLane];
   }
@@ -175,11 +175,11 @@ export class BossEntity {
     this.chevronTex = createSalvoChevronTexture();
 
     // 1. Pre-allocate 3 Roadway Crimson Hazard-Chevron Telegraph Strips
-    const carpetGeo = new THREE.PlaneGeometry(2.44, 1.0);
+    const carpetGeo = new THREE.PlaneGeometry(3.06, 1.0);
     carpetGeo.rotateX(-Math.PI / 2);
     const railGeo = new THREE.PlaneGeometry(0.16, 1.0);
     railGeo.rotateX(-Math.PI / 2);
-    const reticleGeo = new THREE.RingGeometry(0.55, 1.08, 24);
+    const reticleGeo = new THREE.RingGeometry(0.65, 1.28, 24);
     reticleGeo.rotateX(-Math.PI / 2);
 
     for (let lane = 0; lane < 3; lane++) {
@@ -215,9 +215,9 @@ export class BossEntity {
       const carpetGroup = new THREE.Group();
       const carpetMesh = new THREE.Mesh(carpetGeo, carpetMat);
       const leftRail = new THREE.Mesh(railGeo, railMat);
-      leftRail.position.x = -1.22;
+      leftRail.position.x = -1.53;
       const rightRail = new THREE.Mesh(railGeo, railMat);
-      rightRail.position.x = 1.22;
+      rightRail.position.x = 1.53;
       carpetGroup.add(carpetMesh, leftRail, rightRail);
 
       const reticleRing = new THREE.Mesh(reticleGeo, reticleMat);
@@ -514,9 +514,9 @@ export class BossEntity {
     const stopZ = squadZ - 2.35;
     if (this.z < stopZ) {
       this.z = Math.min(stopZ, this.z + this.advanceSpeed * dt);
-      const targetBossX = Math.max(-1.55, Math.min(1.55, squadX * 0.55));
+      const targetBossX = Math.max(-2.65, Math.min(2.65, squadX * 0.68));
       const dx = targetBossX - this.x;
-      this.x += Math.sign(dx) * Math.min(Math.abs(dx), 1.25 * dt);
+      this.x += Math.sign(dx) * Math.min(Math.abs(dx), 1.65 * dt);
 
       const phaseRate = isUnicorn
         ? 5.6
@@ -798,8 +798,8 @@ export class BossEntity {
     const hitHalfZ = this.activeChassis === 'SIEGE_TANK' ? 1.65 : 1.45;
     const hitHalfX =
       this.activeChassis === 'KRAKEN_WALKER' || this.activeChassis === 'SIEGE_TANK'
-        ? 2.25
-        : 2.05;
+        ? 2.45
+        : 2.25;
 
     const minZ = Math.min(bz, prevBz) - hitHalfZ;
     const maxZ = Math.max(bz, prevBz) + hitHalfZ;

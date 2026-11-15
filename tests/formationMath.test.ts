@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BRIDGE_PLAYABLE_HALF_WIDTH,
   clampSquadCenterX,
   computeSquadOuterRadius,
   ELITE_SLOT_SPACING_X,
   getEliteFormationOffset,
+  GUARDRAIL_MARGIN,
+  SPLIT_DIVIDER_X,
 } from '../src/math/formationMath';
 
 describe('formationMath', () => {
@@ -31,7 +34,7 @@ describe('formationMath', () => {
     expect(seen.size).toBe(40);
   });
 
-  it('expands squad outer radius smoothly across 1..40 soldiers while allowing outer-lane steering (>= 3.05m)', () => {
+  it('provides +25% wider side-to-side movement while guaranteeing zero curb overhang across 1..40 shooters', () => {
     const r1 = computeSquadOuterRadius(1);
     const r8 = computeSquadOuterRadius(8);
     const r24 = computeSquadOuterRadius(24);
@@ -41,10 +44,25 @@ describe('formationMath', () => {
     expect(r24).toBeGreaterThan(r8);
     expect(r40).toBeGreaterThanOrEqual(r24);
 
-    // Even a 40-soldier crowd can steer its center into LEFT (-3.05) and RIGHT (+3.05) lanes!
+    // Single shooter and 40-shooter crowd both gain >= +25% wider side-to-side travel
+    expect(clampSquadCenterX(99, 1)).toBeGreaterThanOrEqual(5.5);
     const clampedRight40 = clampSquadCenterX(99, 40);
     const clampedLeft40 = clampSquadCenterX(-99, 40);
-    expect(clampedRight40).toBeGreaterThanOrEqual(3.05);
+    expect(clampedRight40).toBeGreaterThanOrEqual(3.85);
     expect(clampedLeft40).toBeCloseTo(-clampedRight40, 6);
+
+    // No outer character ever overhangs or touches the bridge curb across 1..40 shooters
+    const safeInnerEdge = BRIDGE_PLAYABLE_HALF_WIDTH - GUARDRAIL_MARGIN;
+    for (let n = 1; n <= 40; n++) {
+      const maxCenter = clampSquadCenterX(99, n);
+      const outerMostCharacterX = maxCenter + computeSquadOuterRadius(n);
+      expect(outerMostCharacterX).toBeLessThanOrEqual(safeInnerEdge + 1e-6);
+    }
+  });
+
+  it('divides Split Causeway into a 25% smaller Left Power-Up Column than the Right Enemy Column', () => {
+    const leftPowerUpWidth = BRIDGE_PLAYABLE_HALF_WIDTH + SPLIT_DIVIDER_X;
+    const rightEnemyWidth = BRIDGE_PLAYABLE_HALF_WIDTH - SPLIT_DIVIDER_X;
+    expect(leftPowerUpWidth / rightEnemyWidth).toBeCloseTo(0.75, 2);
   });
 });

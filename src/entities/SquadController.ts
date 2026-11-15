@@ -3,6 +3,8 @@ import type { SkinThemeId, WeaponTierId } from '../core/types';
 import {
   clampSquadCenterX,
   getEliteFormationOffset,
+  SOLDIER_SAFE_LIMIT_X,
+  SPLIT_DIVIDER_X,
 } from '../math/formationMath';
 import {
   COMMANDO_MODEL_SCALE,
@@ -121,19 +123,24 @@ export class SquadController {
       this.barrelSpinAngle += dt * 3.2;
     }
 
-    // On Split Causeway boards while the center divider is raised, smoothly pack outer squad ranks
-    // into the active left or right corridor so all 1..40 guns fire cleanly past the center armor wall!
-    let laneMinX = -4.38;
-    let laneMaxX = 4.38;
+    // On Split Causeway boards while the off-center divider (-0.88) is raised, smoothly pack outer squad ranks
+    // into the active 25%-narrower Left Power-Up Column or wider Right Enemy Column with zero wall/curb clipping!
+    let laneMinX = -SOLDIER_SAFE_LIMIT_X;
+    let laneMaxX = SOLDIER_SAFE_LIMIT_X;
     let spreadScaleX = 1.0;
     if (splitDividerActive) {
-      spreadScaleX = 0.72;
-      if (this.x < -0.32) {
-        const commit = Math.min(1, (-this.x - 0.32) / 0.85);
-        laneMaxX = 4.38 + (-0.28 - 4.38) * commit;
-      } else if (this.x > 0.32) {
-        const commit = Math.min(1, (this.x - 0.32) / 0.85);
-        laneMinX = -4.38 + (0.28 - -4.38) * commit;
+      if (this.x < SPLIT_DIVIDER_X - 0.24) {
+        spreadScaleX = 0.62;
+        const commit = Math.min(1, (SPLIT_DIVIDER_X - 0.24 - this.x) / 0.80);
+        laneMaxX =
+          SOLDIER_SAFE_LIMIT_X + (SPLIT_DIVIDER_X - 0.30 - SOLDIER_SAFE_LIMIT_X) * commit;
+      } else if (this.x > SPLIT_DIVIDER_X + 0.24) {
+        spreadScaleX = 0.80;
+        const commit = Math.min(1, (this.x - (SPLIT_DIVIDER_X + 0.24)) / 0.80);
+        laneMinX =
+          -SOLDIER_SAFE_LIMIT_X + (SPLIT_DIVIDER_X + 0.30 - -SOLDIER_SAFE_LIMIT_X) * commit;
+      } else {
+        spreadScaleX = 0.70;
       }
     }
 
@@ -183,7 +190,10 @@ export class SquadController {
       const dx = sx - obsX;
       if (Math.abs(dx) < padX) {
         const edgeX = obsX + pushSign * (padX + (i % 3) * 0.07);
-        const safeEdgeX = Math.max(-4.38, Math.min(4.38, edgeX));
+        const safeEdgeX = Math.max(
+          -SOLDIER_SAFE_LIMIT_X,
+          Math.min(SOLDIER_SAFE_LIMIT_X, edgeX)
+        );
         this.soldierWorldX[i] += (safeEdgeX - sx) * blend;
       }
     }

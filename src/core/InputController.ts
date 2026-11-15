@@ -184,7 +184,7 @@ export class InputController {
     }
 
     const clampedAxis = Math.max(-1, Math.min(1, axis));
-    const keyboardSpeed = 11.2;
+    const keyboardSpeed = 14.0;
     deltaX += clampedAxis * keyboardSpeed * dt;
     return deltaX;
   }

@@ -4,12 +4,14 @@ import { EnemyWaveSlot } from '../entities/EnemyWave';
 import { GatePairSlot } from '../entities/GatePair';
 import { MidBridgeBrute } from '../entities/MidBridgeBrute';
 import {
+  LEFT_LANE_CENTER_X,
   RIGHT_LANE_CENTER_X,
   SplitCausewayController,
 } from '../entities/SplitCausewayController';
 import { SquadController } from '../entities/SquadController';
 import { SupplyDrumSlot } from '../entities/SupplyDrum';
 import { TireWeaponStackSlot } from '../entities/TireWeaponStack';
+import { SPLIT_DIVIDER_X } from '../math/formationMath';
 import { formatGateLabel, resolveGateSquadCount } from '../math/gateMath';
 import {
   attemptPurchaseUpgrade,
@@ -464,8 +466,8 @@ export class BridgeBlitzGame {
       this.boss.configure(stage.boss, -zBase + stage.trackLength);
       this.boss.hide();
 
-      // Align squad cleanly into the Left Corridor facing the front X2 barrel at launch
-      this.squad.x = -1.65;
+      // Align squad cleanly into the Left Power-Up Column facing the front pod at launch
+      this.squad.x = LEFT_LANE_CENTER_X;
       this.squad.z = zBase;
       this.squad.updateMovement(0, 0, false, false, true);
       return;
@@ -1011,114 +1013,21 @@ export class BridgeBlitzGame {
   private focalTargetZ = -FOCAL_CONVERGENCE_DISTANCE;
 
   private updateFocalTarget(): void {
-    const state = this.stateMachine.state;
-    const effectiveState =
-      state === 'PAUSED' ? this.stateMachine.resumeTargetState : state;
-
-    if (
-      effectiveState === 'BOSS_FIGHT' &&
-      this.boss.active &&
-      !this.boss.defeated
-    ) {
-      this.focalTargetX = this.boss.x;
-      this.focalTargetZ = Math.min(this.squad.z - 5.5, this.boss.z - 0.15);
-      return;
-    }
-
     const vis = Math.min(this.squad.logicalCount, MAX_VISUAL_SOLDIERS);
     const muzzleOffsetX = 0.255 * COMMANDO_MODEL_SCALE;
 
-    if (
-      this.activeBoardLayout === 'SPLIT_CAUSEWAY' &&
-      !this.splitCauseway.retractedForBoss
-    ) {
-      if (this.squad.x < -0.05) {
-        const frontBarrel = this.splitCauseway.getFrontBarrelPosition();
-        if (frontBarrel) {
-          this.focalTargetX =
-            -2.45 + Math.max(-0.85, Math.min(0.85, (this.squad.x + 2.45) * 0.48));
-          this.focalTargetZ = frontBarrel.z - 0.35;
-        } else {
-          this.focalTargetX = Math.min(-0.65, this.squad.x + muzzleOffsetX * 0.3);
-          this.focalTargetZ = this.squad.z - FOCAL_CONVERGENCE_DISTANCE;
-        }
-      } else {
-        let lockedBrute: MidBridgeBrute | null = null;
-        for (let i = 0; i < MAX_MID_BRUTES; i++) {
-          const b = this.midBrutes[i];
-          if (
-            b.active &&
-            !b.defeated &&
-            this.squad.z - b.z <= 28 &&
-            Math.abs(this.squad.x - b.x) <= 2.3
-          ) {
-            lockedBrute = b;
-            break;
-          }
-        }
-        const closestRight = this.splitCauseway.getClosestRightTarget(34);
-        if (
-          lockedBrute &&
-          (!closestRight || lockedBrute.z >= closestRight.z - 3.2)
-        ) {
-          this.focalTargetX = Math.max(0.6, lockedBrute.x);
-          this.focalTargetZ = Math.min(this.squad.z - 6.0, lockedBrute.z - 0.2);
-        } else if (closestRight) {
-          this.focalTargetX = Math.max(0.75, Math.min(4.05, closestRight.x));
-          this.focalTargetZ = Math.min(this.squad.z - 5.2, closestRight.z - 0.15);
-        } else {
-          this.focalTargetX = Math.max(
-            0.78,
-            vis === 1
-              ? this.squad.soldierWorldX[0] + muzzleOffsetX
-              : this.squad.x + muzzleOffsetX * 0.32
-          );
-          this.focalTargetZ = this.squad.z - FOCAL_CONVERGENCE_DISTANCE;
-        }
-      }
-      return;
-    }
-
-    let stdLockedBrute: MidBridgeBrute | null = null;
-    if (effectiveState === 'RUNNING') {
-      for (let i = 0; i < MAX_MID_BRUTES; i++) {
-        const b = this.midBrutes[i];
-        if (
-          b.active &&
-          !b.defeated &&
-          this.squad.z - b.z <= 16.5 &&
-          this.squad.z - b.z > -1.5 &&
-          Math.abs(this.squad.x - b.x) <= 3.15
-        ) {
-          stdLockedBrute = b;
-          break;
-        }
-      }
-    }
-
-    if (stdLockedBrute) {
-      this.focalTargetX = stdLockedBrute.x;
-      this.focalTargetZ = Math.min(this.squad.z - 5.2, stdLockedBrute.z - 0.15);
-      return;
-    }
-
-    this.focalTargetX =
-      vis === 1
-        ? this.squad.soldierWorldX[0] + muzzleOffsetX
-        : this.squad.x + muzzleOffsetX * 0.35;
-
-    if (
-      effectiveState === 'RUNNING' &&
-      this.boss.active &&
-      !this.boss.defeated &&
-      this.squad.z - this.boss.z <= FOCAL_CONVERGENCE_DISTANCE + 1.5 &&
-      Math.abs(this.squad.x - this.boss.x) <= 2.8
-    ) {
-      this.focalTargetX = this.boss.x;
-      this.focalTargetZ = Math.min(this.squad.z - 6.0, this.boss.z - 0.15);
+    if (vis <= 0) {
+      this.focalTargetX = this.squad.x;
+    } else if (vis === 1) {
+      this.focalTargetX = this.squad.soldierWorldX[0] + muzzleOffsetX;
     } else {
-      this.focalTargetZ = this.squad.z - FOCAL_CONVERGENCE_DISTANCE;
+      let sumX = 0;
+      for (let i = 0; i < vis; i++) {
+        sumX += this.squad.soldierWorldX[i];
+      }
+      this.focalTargetX = sumX / vis + muzzleOffsetX * 0.35;
     }
+    this.focalTargetZ = this.squad.z - FOCAL_CONVERGENCE_DISTANCE;
   }
 
   private fixedUpdate(rawDt: number): void {
@@ -1150,23 +1059,7 @@ export class BridgeBlitzGame {
       this.input.resetFrameDeltas();
     }
 
-    const bossAimYaw =
-      state === 'BOSS_FIGHT' && this.boss.active
-        ? Math.max(
-            -0.34,
-            Math.min(
-              0.34,
-              Math.atan2(
-                this.boss.x - this.squad.x,
-                Math.max(2.2, this.squad.z - this.boss.z)
-              )
-            )
-          )
-        : 0;
-
-    const targetFacingYaw = state === 'BOSS_FIGHT' ? -bossAimYaw : 0;
-    this.commandoFacingYaw +=
-      (targetFacingYaw - this.commandoFacingYaw) * Math.min(1, dt * 12);
+    this.commandoFacingYaw = 0;
 
     const haltedByBrute =
       state === 'RUNNING' && this.isAnyBruteHaltingMarch(this.squad.z);
@@ -1730,10 +1623,10 @@ export class BridgeBlitzGame {
       pool.x[i] = bx;
       pool.z[i] = bz;
 
-      // Center Divider Wall ballistic block on Split Causeway boards
+      // Asymmetric Divider Wall ballistic block on Split Causeway boards
       if (isSplit && this.splitCauseway.checkDividerWallBlock(bx, bz, prevX)) {
-        this.vfx.spawnImpactSplash(0, 1.05, bz, 0.55, 0xffe066);
-        this.particlePool.spawnBurst(0, 1.05, bz, 2, 3.4, 0xffe066, 0.08, 0.18);
+        this.vfx.spawnImpactSplash(SPLIT_DIVIDER_X, 1.05, bz, 0.55, 0xffe066);
+        this.particlePool.spawnBurst(SPLIT_DIVIDER_X, 1.05, bz, 2, 3.4, 0xffe066, 0.08, 0.18);
         pool.deactivate(i);
         continue;
       }
@@ -1776,7 +1669,7 @@ export class BridgeBlitzGame {
         // 1B. Split Causeway Right-Corridor Riot Goliaths
         if (!consumedHit) {
           const blockedByDivider =
-            bz <= this.splitCauseway.dividerTipZ && bx < 0.22;
+            bz <= this.splitCauseway.dividerTipZ && bx < SPLIT_DIVIDER_X + 0.22;
           if (!blockedByDivider) {
             for (let bIdx = 0; bIdx < MAX_MID_BRUTES; bIdx++) {
               const brute = this.midBrutes[bIdx];
@@ -2631,7 +2524,7 @@ export class BridgeBlitzGame {
     for (let i = 0; i < ticks; i++) {
       if (typeof targetX === 'number') {
         const dx = targetX - this.squad.x;
-        this.squad.x += Math.sign(dx) * Math.min(Math.abs(dx), 12 * step);
+        this.squad.x += Math.sign(dx) * Math.min(Math.abs(dx), 15 * step);
       }
       this.fixedUpdate(step);
       if (i < ticks - 1) {
@@ -2677,7 +2570,7 @@ export class BridgeBlitzGame {
       for (let i = 0; i < MAX_MID_BRUTES; i++) {
         const dangerX = this.midBrutes[i].getActiveDangerSmashX();
         if (dangerX !== null && this.squad.z - this.midBrutes[i].z <= 12.0) {
-          recommendedDodgeX = dangerX >= 0 ? -1.95 : 2.65;
+          recommendedDodgeX = dangerX >= 0 ? -2.45 : 3.15;
           break;
         }
       }
@@ -2744,6 +2637,49 @@ export class BridgeBlitzGame {
       activeBullets: this.bulletPool.activeCount,
       activeParticles: this.particlePool.activeCount,
       upgrades: { ...save.upgrades },
+    };
+  }
+
+  public getDebugProbe(): {
+    focalTargetX: number;
+    focalTargetZ: number;
+    commandoFacingYaw: number;
+    minSoldierX: number;
+    maxSoldierX: number;
+    meanBulletX: number | null;
+    cameraY: number;
+    cameraDeltaZ: number;
+    cameraFov: number;
+    splitDividerX: number;
+  } {
+    const vis = Math.min(this.squad.logicalCount, MAX_VISUAL_SOLDIERS);
+    let minSoldierX = this.squad.x;
+    let maxSoldierX = this.squad.x;
+    if (vis > 0) {
+      minSoldierX = Infinity;
+      maxSoldierX = -Infinity;
+      for (let i = 0; i < vis; i++) {
+        const sx = this.squad.soldierWorldX[i];
+        if (sx < minSoldierX) minSoldierX = sx;
+        if (sx > maxSoldierX) maxSoldierX = sx;
+      }
+    }
+    let sumBx = 0;
+    const bc = this.bulletPool.activeCount;
+    for (let i = 0; i < bc; i++) {
+      sumBx += this.bulletPool.x[i];
+    }
+    return {
+      focalTargetX: this.focalTargetX,
+      focalTargetZ: this.focalTargetZ,
+      commandoFacingYaw: this.commandoFacingYaw,
+      minSoldierX,
+      maxSoldierX,
+      meanBulletX: bc > 0 ? sumBx / bc : null,
+      cameraY: this.sceneManager.camera.position.y,
+      cameraDeltaZ: this.sceneManager.camera.position.z - this.squad.z,
+      cameraFov: this.sceneManager.camera.fov,
+      splitDividerX: SPLIT_DIVIDER_X,
     };
   }
 }

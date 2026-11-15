@@ -7,6 +7,7 @@ declare global {
   interface Window {
     __BRIDGE_BLITZ__?: {
       getSnapshot: () => TelemetrySnapshot;
+      getProbe: () => ReturnType<BridgeBlitzGame['getDebugProbe']>;
       step: (seconds: number, targetX?: number, skipRender?: boolean) => TelemetrySnapshot;
     };
   }
@@ -17,6 +18,7 @@ const game = new BridgeBlitzGame();
 
 window.__BRIDGE_BLITZ__ = {
   getSnapshot: () => game.getTelemetrySnapshot(),
+  getProbe: () => game.getDebugProbe(),
   step: (seconds: number, targetX?: number, skipRender?: boolean) =>
     game.advanceSimulation(seconds, targetX, skipRender),
 };
