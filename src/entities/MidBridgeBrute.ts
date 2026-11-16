@@ -970,7 +970,8 @@ export class MidBridgeBrute {
     squadX: number,
     squadZ: number,
     playerLogicalSquad: number,
-    dividerTipZ?: number
+    dividerTipZ?: number,
+    blockingGateZ: number | null = null
   ): BruteClubSmashEvent | null {
     if (!this.active || this.defeated || this.hp <= 0) {
       return null;
@@ -1005,15 +1006,25 @@ export class MidBridgeBrute {
     const effectiveDuelDist = dividerTipZ !== undefined ? 6.3 : DUEL_HALT_DIST_Z;
     const lateralPursueSpeed = dividerTipZ !== undefined && !insideRightCorridor ? 3.85 : 2.35;
 
-    const engaged = dividerTipZ !== undefined ? distZ < 105 : distZ < ENGAGE_WAKE_DIST_Z;
-    const inDuelRange = distZ <= effectiveDuelDist + 0.35 && distZ > -2.5;
+    const blockedByGate =
+      dividerTipZ === undefined &&
+      blockingGateZ !== null &&
+      this.z <= blockingGateZ + 1.5;
+    const engaged =
+      !blockedByGate &&
+      (dividerTipZ !== undefined ? distZ < 105 : distZ < ENGAGE_WAKE_DIST_Z);
+    const inDuelRange = !blockedByGate && distZ <= effectiveDuelDist + 0.35 && distZ > -2.5;
     let smashEvent: BruteClubSmashEvent | null = null;
     let targetBodyYaw = 0;
     let rearPitch = 0;
     let rearLiftY = 0;
 
     if (engaged && !inDuelRange && distZ > effectiveDuelDist) {
-      this.z += this.speed * dt;
+      const maxBruteZ =
+        blockingGateZ !== null && dividerTipZ === undefined
+          ? blockingGateZ - 30.0
+          : Infinity;
+      this.z = Math.min(maxBruteZ, this.z + this.speed * dt);
       this.stridePhase += dt * (dividerTipZ !== undefined ? 7.6 : 6.4);
       const desiredX = Math.max(minAllowedX, Math.min(maxAllowedX, squadX));
       const dx = desiredX - this.x;

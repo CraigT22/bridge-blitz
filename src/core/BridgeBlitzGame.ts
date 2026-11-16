@@ -1009,6 +1009,25 @@ export class BridgeBlitzGame {
     return 'RUN_TACTICAL';
   }
 
+  private findBlockingGateZ(entityZ: number): number | null {
+    if (this.activeBoardLayout === 'SPLIT_CAUSEWAY') {
+      return null;
+    }
+    let closestGateZ: number | null = null;
+    for (let g = 0; g < MAX_GATE_PAIRS; g++) {
+      const pair = this.gatePairs[g];
+      if (!pair.active || pair.triggered) {
+        continue;
+      }
+      if (pair.z >= entityZ - 1.5 && pair.z <= this.squad.z + 1.5) {
+        if (closestGateZ === null || pair.z < closestGateZ) {
+          closestGateZ = pair.z;
+        }
+      }
+    }
+    return closestGateZ;
+  }
+
   private focalTargetX = 0;
   private focalTargetZ = -FOCAL_CONVERGENCE_DISTANCE;
 
@@ -1326,7 +1345,8 @@ export class BridgeBlitzGame {
       for (let i = 0; i < MAX_ENEMY_WAVES; i++) {
         const wave = this.enemyWaves[i];
         if (state === 'RUNNING' || state === 'BOSS_FIGHT') {
-          wave.update(dt, this.squad.x, this.squad.z);
+          const blockingGateZ = this.findBlockingGateZ(wave.z);
+          wave.update(dt, this.squad.x, this.squad.z, blockingGateZ);
           if (this.squad.logicalCount > 0) {
             const collision = wave.resolveSquadCollision(
               this.squad.x,
@@ -1386,12 +1406,14 @@ export class BridgeBlitzGame {
         ) {
           brute.z += brute.speed * 1.15 * dt;
         }
+        const bruteBlockingGateZ = isSplit ? null : this.findBlockingGateZ(brute.z);
         const bruteSmash = brute.update(
           dt,
           this.squad.x,
           this.squad.z,
           this.squad.logicalCount,
-          dividerZ
+          dividerZ,
+          bruteBlockingGateZ
         );
         if (bruteSmash) {
           this.sceneManager.addShake(0.48);
@@ -2651,6 +2673,8 @@ export class BridgeBlitzGame {
     cameraDeltaZ: number;
     cameraFov: number;
     splitDividerX: number;
+    nextUncollectedGateZ: number | null;
+    minBehindGateWaveDist: number | null;
   } {
     const vis = Math.min(this.squad.logicalCount, MAX_VISUAL_SOLDIERS);
     let minSoldierX = this.squad.x;
@@ -2669,6 +2693,31 @@ export class BridgeBlitzGame {
     for (let i = 0; i < bc; i++) {
       sumBx += this.bulletPool.x[i];
     }
+
+    let nextUncollectedGateZ: number | null = null;
+    let minBehindGateWaveDist: number | null = null;
+    if (this.activeBoardLayout !== 'SPLIT_CAUSEWAY') {
+      for (let g = 0; g < MAX_GATE_PAIRS; g++) {
+        const pair = this.gatePairs[g];
+        if (!pair.active || pair.triggered || pair.z > this.squad.z + 1.5) {
+          continue;
+        }
+        if (nextUncollectedGateZ === null || pair.z > nextUncollectedGateZ) {
+          nextUncollectedGateZ = pair.z;
+        }
+        for (let w = 0; w < MAX_ENEMY_WAVES; w++) {
+          const wave = this.enemyWaves[w];
+          if (!wave.active || wave.aliveCount <= 0 || wave.z > pair.z + 2.0) {
+            continue;
+          }
+          const dist = pair.z - wave.z;
+          if (minBehindGateWaveDist === null || dist < minBehindGateWaveDist) {
+            minBehindGateWaveDist = dist;
+          }
+        }
+      }
+    }
+
     return {
       focalTargetX: this.focalTargetX,
       focalTargetZ: this.focalTargetZ,
@@ -2680,6 +2729,8 @@ export class BridgeBlitzGame {
       cameraDeltaZ: this.sceneManager.camera.position.z - this.squad.z,
       cameraFov: this.sceneManager.camera.fov,
       splitDividerX: SPLIT_DIVIDER_X,
+      nextUncollectedGateZ,
+      minBehindGateWaveDist,
     };
   }
 }

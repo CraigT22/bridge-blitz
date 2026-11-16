@@ -85,6 +85,7 @@ export class EnemyWaveSlot {
     });
     const heavySet = new Set(heavyOrder.slice(0, Math.max(0, heavyTarget)));
 
+    let maxConfiguredZ = def.z;
     for (let i = 0; i < this.totalConfigured; i++) {
       this.unitAlive[i] = 1;
       const isHeavy = heavySet.has(i) ? 1 : 0;
@@ -105,6 +106,9 @@ export class EnemyWaveSlot {
 
       this.unitX[i] = wx;
       this.unitZ[i] = wz;
+      if (i === 0 || wz > maxConfiguredZ) {
+        maxConfiguredZ = wz;
+      }
 
       const maxHp = isHeavy ? this.hpPerEnemy * 3.4 : this.hpPerEnemy;
       this.unitMaxHp[i] = maxHp;
@@ -112,6 +116,7 @@ export class EnemyWaveSlot {
       this.unitHitFlash[i] = 0;
       this.unitCoins[i] = isHeavy ? Math.round(baseCoin * 3.2) : baseCoin;
     }
+    this.z = Math.fround(maxConfiguredZ);
   }
 
   public hide(): void {
@@ -121,7 +126,12 @@ export class EnemyWaveSlot {
     this.isMarching = false;
   }
 
-  public update(dt: number, squadX: number, squadZ: number): void {
+  public update(
+    dt: number,
+    squadX: number,
+    squadZ: number,
+    blockingGateZ: number | null = null
+  ): void {
     if (!this.active || this.aliveCount <= 0) {
       return;
     }
@@ -131,10 +141,15 @@ export class EnemyWaveSlot {
       return;
     }
 
-    const withinEngage = squadZ - this.z < 46;
+    // Hold formation behind any uncollected Holo-Gate between the player and this wave
+    // so enemies never march into/through gates while the gate absorbs player bullets!
+    const blockedByGate = blockingGateZ !== null && this.z <= blockingGateZ + 1.5;
+    const maxAllowedUnitZ =
+      blockingGateZ !== null ? blockingGateZ - 32.0 : Infinity;
+    const withinEngage = !blockedByGate && squadZ - this.z < 36;
     this.isMarching = withinEngage;
     if (withinEngage) {
-      this.z += this.speed * dt;
+      this.z = Math.min(maxAllowedUnitZ, this.z + this.speed * dt);
       this.marchPhase += dt * 9.8;
     }
 
@@ -157,7 +172,10 @@ export class EnemyWaveSlot {
             : this.unitIsVanguard[i] === 1
               ? 1.14
               : 1.0;
-        this.unitZ[i] += this.speed * speedMul * dt;
+        this.unitZ[i] = Math.min(
+          maxAllowedUnitZ,
+          this.unitZ[i] + this.speed * speedMul * dt
+        );
 
         // Controlled close-range flank pinch (< 10.5m): pressures center campers while keeping carved breach lanes passable!
         const distZ = squadZ - this.unitZ[i];
@@ -166,6 +184,8 @@ export class EnemyWaveSlot {
           const lateralRate = this.unitIsVanguard[i] === 1 ? 0.34 : 0.24;
           this.unitX[i] += Math.sign(dx) * Math.min(Math.abs(dx), lateralRate * dt);
         }
+      } else if (this.unitZ[i] > maxAllowedUnitZ) {
+        this.unitZ[i] = maxAllowedUnitZ;
       }
 
       if (this.unitZ[i] > squadZ + 14) {

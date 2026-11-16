@@ -295,8 +295,8 @@ function buildSplitCausewayDefinition(
  */
 function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
   const d = DIFFICULTY_MULTIPLIER_V6;
-  const actSpan = seed.baseSpan;
-  const trackLength = Math.round(actSpan * BOARD_LENGTH_MULTIPLIER_V6);
+  const actSpan = Math.max(380, Math.round(seed.baseSpan * 1.36));
+  const trackLength = Math.round(actSpan * BOARD_LENGTH_MULTIPLIER_V6) + 38;
 
   const supplyDrums: SupplyDrumDefinition[] = [];
   const gatePairs: GatePairDefinition[] = [];
@@ -320,7 +320,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
     const lateWeapon = Math.min(5, midWeapon + (act >= 1 ? 1 : 0)) as WeaponTierId;
 
     // 3 V-Trio Hex Ordnance Pod Formations per Act (12 formations = 36 pods total!)
-    // Act 0 removes the cheap -17.5m weapon drop & places a heavy center pod so AFK center-camping crashes!
+    // Placed with generous sightlines before Gates (#1 at 0.195, #3 at 0.865)
     if (act === 0) {
       supplyDrums.push(
         ...drumV3(
@@ -333,7 +333,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
           { type: 'RECRUIT', val: 2 }
         ),
         ...drumV3(
-          actBaseZ - Math.round(actSpan * 0.16),
+          actBaseZ - Math.round(actSpan * 0.115),
           54 * s,
           295 * s,
           56 * s,
@@ -342,7 +342,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
           { type: 'WEAPON', val: earlyWeapon }
         ),
         ...drumV3(
-          actBaseZ - Math.round(actSpan * 0.82),
+          actBaseZ - Math.round(actSpan * 0.795),
           195 * s,
           155 * s,
           215 * s,
@@ -354,7 +354,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
     } else {
       supplyDrums.push(
         ...drumV3(
-          actBaseZ - 17.5,
+          actBaseZ - Math.round(actSpan * 0.065),
           120 * s,
           175 * s,
           130 * s,
@@ -363,7 +363,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
           { type: 'RECRUIT', val: 2 + Math.floor(act / 2) }
         ),
         ...drumV3(
-          actBaseZ - Math.round(actSpan * 0.16),
+          actBaseZ - Math.round(actSpan * 0.125),
           110 * s,
           285 * s,
           125 * s,
@@ -372,7 +372,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
           { type: 'WEAPON', val: midWeapon }
         ),
         ...drumV3(
-          actBaseZ - Math.round(actSpan * 0.82),
+          actBaseZ - Math.round(actSpan * 0.795),
           240 * s,
           185 * s,
           265 * s,
@@ -383,7 +383,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
       );
     }
 
-    // 3 Hex Holo-Gate Pairs per Act (12 Gate Pairs total, cleanly separated from Ordnance Pods!)
+    // 3 Hex Holo-Gate Pairs per Act (12 Gate Pairs total, each with 43m-52m clear runway behind & 50m+ enemy clearance ahead!)
     const startFrac = Math.max(
       0.05,
       Number((0.22 - (seed.stageNumber - 1) * 0.02 - act * 0.04).toFixed(2))
@@ -394,18 +394,18 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
 
     gatePairs.push(
       {
-        z: actBaseZ - Math.round(actSpan * 0.27),
+        z: actBaseZ - Math.round(actSpan * 0.195),
         left: null,
         right: null,
         full: shootMulGate(startFrac, 7.2 * k),
       },
       {
-        z: actBaseZ - Math.round(actSpan * 0.55),
+        z: actBaseZ - Math.round(actSpan * 0.468),
         left: swapSides ? addGate(negVal, 16 * k) : addGate(posVal, 18 * k),
         right: swapSides ? addGate(posVal, 18 * k) : addGate(negVal, 16 * k),
       },
       {
-        z: actBaseZ - Math.round(actSpan * 0.92),
+        z: actBaseZ - Math.round(actSpan * 0.865),
         left: swapSides ? shootMulGate(1.0, 28 * k) : shootMulGate(0.1, 22 * k),
         right: swapSides ? shootMulGate(0.1, 22 * k) : shootMulGate(1.0, 28 * k),
       }
@@ -422,7 +422,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
 
     tireStacks.push(
       ...tireWall3(
-        actBaseZ - Math.round(actSpan * 0.47),
+        actBaseZ - Math.round(actSpan * 0.390),
         wLaneA === 'LEFT' ? wallHpA : wallHpA * 1.48,
         wLaneA === 'CENTER' ? wallHpA : wallHpA * 1.52,
         wLaneA === 'RIGHT' ? wallHpA : wallHpA * 1.48,
@@ -431,7 +431,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
         Math.round((95 + seed.stageNumber * 28) * (1 + act * 0.3))
       ),
       ...tireWall3(
-        actBaseZ - Math.round(actSpan * 0.75),
+        actBaseZ - Math.round(actSpan * 0.665),
         wLaneB === 'LEFT' ? wallHpB : wallHpB * 1.28,
         wLaneB === 'CENTER' ? wallHpB : wallHpB * 1.32,
         wLaneB === 'RIGHT' ? wallHpB : wallHpB * 1.28,
@@ -441,12 +441,12 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
       )
     );
 
-    // 4 Mixed 3-Rank Horned Syndicate Mech Waves per Act (16 Waves total, waking at 46m!)
+    // 4 Dedicated Open-Road Enemy Skirmish Waves per Act (16 Waves total, >= 43m behind every Gate!)
     const waveSpeed = Math.min(3.25, seed.enemyBaseSpeed + act * 0.14);
     const waveHp = seed.enemyBaseHp * d * actMul;
     enemyWaves.push(
       {
-        z: actBaseZ - Math.round(actSpan * 0.37),
+        z: actBaseZ - Math.round(actSpan * 0.310),
         lane: 'CENTER',
         count: Math.min(48, 26 + seed.stageNumber + act * 3),
         hpPerEnemy: Math.max(6, Math.round(waveHp * 0.72)),
@@ -456,7 +456,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
         coinPerKill: seed.coinBase + act,
       },
       {
-        z: actBaseZ - Math.round(actSpan * 0.62),
+        z: actBaseZ - Math.round(actSpan * 0.585),
         lane: 'CENTER',
         count: Math.min(50, 32 + seed.stageNumber + act * 3),
         hpPerEnemy: Math.max(9, Math.round(waveHp * 1.02)),
@@ -466,7 +466,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
         coinPerKill: seed.coinBase + act + 1,
       },
       {
-        z: actBaseZ - Math.round(actSpan * 0.87),
+        z: actBaseZ - Math.round(actSpan * 0.732),
         lane: 'CENTER',
         count: Math.min(52, 39 + Math.floor(seed.stageNumber / 2) + act * 2),
         hpPerEnemy: Math.max(13, Math.round(waveHp * 1.42)),
@@ -476,7 +476,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
         coinPerKill: seed.coinBase + act + 2,
       },
       {
-        z: actBaseZ - Math.round(actSpan * 0.97),
+        z: actBaseZ - Math.round(actSpan * 0.980),
         lane: 'CENTER',
         count: Math.min(52, 43 + Math.floor(seed.stageNumber / 2) + act * 2),
         hpPerEnemy: Math.max(16, Math.round(waveHp * 1.68)),
@@ -489,7 +489,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
   }
 
   const primaryBrute: MidBridgeBruteDefinition = {
-    z: -Math.round(actSpan * 1.64),
+    z: -Math.round(actSpan * 1.625),
     name: seed.bruteName,
     maxHp: seed.bruteMaxHp,
     speed: seed.bruteSpeed,
@@ -499,7 +499,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
 
   const midBrutes: MidBridgeBruteDefinition[] = [
     {
-      z: -Math.round(actSpan * 0.64),
+      z: -Math.round(actSpan * 0.625),
       name: `${seed.bruteName} Vanguard`,
       maxHp: Math.round(seed.bruteMaxHp * 0.30),
       speed: Math.max(1.92, seed.bruteSpeed - 0.04),
@@ -508,7 +508,7 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
     },
     primaryBrute,
     {
-      z: -Math.round(actSpan * 3.64),
+      z: -Math.round(actSpan * 3.625),
       name: `${seed.bruteName} Warden`,
       maxHp: Math.round(seed.bruteMaxHp * 1.12),
       speed: Math.min(2.65, seed.bruteSpeed + 0.12),

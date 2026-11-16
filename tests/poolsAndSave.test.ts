@@ -9,6 +9,7 @@ import {
   getBossVisualProfile,
 } from '../src/core/StageData';
 import { selectBossSalvoLaneMask } from '../src/entities/BossEntity';
+import { EnemyWaveSlot } from '../src/entities/EnemyWave';
 
 describe('ObjectPool & Core State Integrity', () => {
   it('maintains contiguous O(1) swap-remove invariants in BulletPool', () => {
@@ -190,6 +191,19 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(wave2.boss.salvoLanes).toBe(2);
     expect(wave5.boss.salvoLanes).toBe(2);
     expect(wave4.boss.chassis).toBe('SOVEREIGN_TITAN');
+
+    // Every EnemyWave on Standard Bridge stages must sit >= 42m away from every GatePair (front & rear)
+    for (const stdStage of [
+      ...CAMPAIGN_STAGES.filter((s) => s.boardLayout === 'STANDARD_BRIDGE'),
+      wave1,
+      wave5,
+    ]) {
+      for (const gate of stdStage.gatePairs) {
+        for (const wv of stdStage.enemyWaves) {
+          expect(Math.abs(wv.z - gate.z)).toBeGreaterThanOrEqual(42);
+        }
+      }
+    }
   });
 
   it('defaults to UNICORN skin in v7.2 while preserving explicit TACTICAL/UNICORN toggles and Boss visual profiles', () => {
@@ -244,5 +258,31 @@ describe('ObjectPool & Core State Integrity', () => {
       expect(uniProfile.archetypeLabel.length).toBeGreaterThan(4);
       expect(tacProfile.name).toBe(stage.boss.name);
     }
+  });
+
+  it('prevents enemy waves from marching toward or through uncollected Holo-Gates ahead of them', () => {
+    const wave = new EnemyWaveSlot(0);
+    wave.configure({
+      z: -118,
+      lane: 'CENTER',
+      count: 36,
+      hpPerEnemy: 12,
+      speed: 2.8,
+      coinPerKill: 4,
+    });
+    const initialFrontZ = wave.z;
+
+    // Even if squad stands 2m in front of Gate (-74m) for 15s, wave holds behind the gate
+    for (let t = 0; t < 150; t++) {
+      wave.update(0.1, 0, -72, -74);
+    }
+    expect(wave.isMarching).toBe(false);
+    expect(wave.z).toBeLessThanOrEqual(-74 - 32);
+    expect(wave.z).toBeCloseTo(initialFrontZ, 3);
+
+    // Once player passes through the gate (blockingGateZ = null) and approaches within 36m, wave engages!
+    wave.update(0.5, 0, -86, null);
+    expect(wave.isMarching).toBe(true);
+    expect(wave.z).toBeGreaterThan(initialFrontZ);
   });
 });

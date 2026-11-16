@@ -130,14 +130,12 @@ jobs:
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v7.3.0
-          name: Bridge Blitz v7.3.0 — Position-Based Aim, +25% Wider Bridge, Asymmetric Split Causeway & +10% Zoom APK
+          tag_name: v7.4.0
+          name: Bridge Blitz v7.4.0 — Spacious Gate-to-Wave Clearance & Gate Standoff Shield APK
           body: |
-            ### Bridge Blitz v7.3.0 — Position-Based Aim, +25% Wider Bridge, Asymmetric Split Causeway & +10% Zoom (`versionCode 18`)
-            - **Direct Chrome Download (installs cleanly over v7.2 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=18)
-            - **What's New in v7.3**:
-              - **Pure Position-Based Spearhead Firing (Zero Target Auto-Adapting)**: Shooters always fire straight forward to a sharp spearhead point directly ahead of where you position them — never bending sideways toward offset bosses, mid-bosses, barrels, or enemy clusters.
-              - **+25% Wider Side-to-Side Movement Area + Zero Edge Fall-Off**: Widened the bridge roadway and lateral steering range by +25% so shooters can reach the outer lanes early to pick off edge enemies sooner while strict inner-curb clamping guarantees zero characters ever overhang or fall off the edges.
-              - **Asymmetric Split Causeway Rebalance**: Divided Split Causeway into a **25% smaller Left Power-Up Column** (`5.24m`) with tougher, slower-to-earn power-ups (`1.55×` pod HP) and a **wider Right Enemy Column** (`7.00m`) surging with **larger (`26` echelons up to `7×4`) and +30% faster enemy waves**.
-              - **~10% Closer Camera Zoom**: Moved the portrait & tactical camera ~10% closer with tighter FOV and full curb-to-curb lateral tracking so shooters, wands/weapons, rainbow volleys, and enemies read clearly on mobile screens.
+            ### Bridge Blitz v7.4.0 — Spacious Gate-to-Wave Clearance & Gate Standoff Shield (`versionCode 19`)
+            - **Direct Chrome Download (installs cleanly over v7.3 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=19)
+            - **What's New in v7.4**:
+              - **44m–54m Open-Bridge Clearance Around Every Gate**: Re-spaced all 4-Act Standard Bridge sectors (Campaign & Endless) so every Holo-Gate Pair has `44m–54m` of clear empty roadway behind it and `50m+` separation from any preceding enemy wave ahead of it.
+              - **Runtime Gate Standoff Shield (`>= 32m` Hold)**: Enemy waves and Mid-Bridge Giant Unicorns behind an uncollected Holo-Gate now hold formation well down-bridge (`>= 32m` behind the gate) while the gate absorbs player volleys — only waking and charging once you collect/pass through the gate.
           files: BridgeBlitz-Pixel10XL.apk
