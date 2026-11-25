@@ -372,4 +372,33 @@ describe('ObjectPool & Core State Integrity', () => {
     }
     expect(ctrl.getFrontLeftBarrelHp()).toBeCloseTo(damagedHp, 4);
   });
+
+  it('steers Split Causeway Right-Column enemies across the open foreground arena toward squadX after clearing dividerTipZ', async () => {
+    const {
+      LEFT_LANE_CENTER_X,
+      SplitCausewayController,
+    } = await import('../src/entities/SplitCausewayController');
+
+    const splitStage = generateSplitCausewayStage(1);
+    const ctrl = new SplitCausewayController();
+    ctrl.configure(splitStage.splitCauseway!, 0);
+
+    // Record initial X of front-row right-column enemies (all start right of SPLIT_DIVIDER_X = -0.88)
+    const initialFrontX = ctrl.unitX[0];
+    expect(initialFrontX).toBeGreaterThan(-0.88);
+
+    // Hold squad in Left Power-Up Column (-3.50) until front echelon marches past dividerTipZ (-7.4)
+    for (let i = 0; i < 75; i++) {
+      ctrl.update(0.05, LEFT_LANE_CENTER_X, 0, true);
+    }
+
+    // Front-row chasers must have crossed past dividerTipZ and peeled left toward squadX (-3.50)!
+    let crossedAndSteeredLeft = 0;
+    for (let i = 0; i < Math.min(20, ctrl.totalTroopers); i++) {
+      if (ctrl.unitAlive[i] && ctrl.unitZ[i] > ctrl.dividerTipZ && ctrl.unitX[i] < -0.5) {
+        crossedAndSteeredLeft++;
+      }
+    }
+    expect(crossedAndSteeredLeft).toBeGreaterThanOrEqual(2);
+  });
 });

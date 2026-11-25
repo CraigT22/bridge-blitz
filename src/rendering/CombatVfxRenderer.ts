@@ -368,7 +368,7 @@ export class CombatVfxRenderer {
     this.coinMesh.count = 0;
     scene.add(this.coinMesh);
 
-    const coinOutlineMat = createWeldedOutlineMat(0.026, 'magnet-coin-outline-v80');
+    const coinOutlineMat = createWeldedOutlineMat(0.034, 'magnet-coin-outline-v81');
     this.coinOutlineMesh = new THREE.InstancedMesh(coinGeo, coinOutlineMat, MAX_MAGNET_COINS);
     this.coinOutlineMesh.instanceMatrix = this.coinMesh.instanceMatrix;
     this.coinOutlineMesh.frustumCulled = false;
@@ -870,13 +870,13 @@ export class CombatVfxRenderer {
       let cx: number;
       let cy: number;
       let cz: number;
-      let coinScale = 1.05;
+      let coinScale = 1.02;
 
       if (nextAge <= popDur) {
         // Phase 1: Energetic upward fountain pop from dead enemy / broken barrel
         this.coinVy[c] -= 18.0 * dt;
         this.coinX[c] += this.coinVx[c] * dt;
-        this.coinY[c] = Math.max(0.35, this.coinY[c] + this.coinVy[c] * dt);
+        this.coinY[c] = Math.max(0.45, this.coinY[c] + this.coinVy[c] * dt);
         this.coinZ[c] += this.coinVz[c] * dt;
         this.coinStartX[c] = this.coinX[c];
         this.coinStartY[c] = this.coinY[c];
@@ -895,7 +895,7 @@ export class CombatVfxRenderer {
         this.coinX[c] = cx;
         this.coinY[c] = cy;
         this.coinZ[c] = cz;
-        coinScale = 1.08 - u * 0.44;
+        coinScale = 1.06 - u * 0.68;
       }
 
       _pos.set(cx, cy, cz);

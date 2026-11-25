@@ -138,7 +138,7 @@ export class BridgeEnvironment {
       uTime: { value: 0 },
       uCamPos: { value: new THREE.Vector3(0, 9, 14) },
     };
-    const waterGeo = new THREE.PlaneGeometry(420, 560, 64, 84);
+    const waterGeo = new THREE.PlaneGeometry(520, 620, 64, 84);
     waterGeo.rotateX(-Math.PI / 2);
     const waterMat = new THREE.ShaderMaterial({
       vertexShader: WATER_VERTEX_SHADER,
@@ -146,7 +146,7 @@ export class BridgeEnvironment {
       uniforms: this.waterUniforms,
     });
     this.waterMesh = new THREE.Mesh(waterGeo, waterMat);
-    this.waterMesh.position.set(0, -4.6, -140);
+    this.waterMesh.position.set(0, -4.6, -210);
     this.root.add(this.waterMesh);
 
     // Shared Midnight Storm PBR Viaduct Materials (tuned for direct 4-light forward pass, metalness <= 0.48)
@@ -643,72 +643,72 @@ export class BridgeEnvironment {
       group.add(hazardEdge);
     }
 
-    // Tall dark ballistic steel armor divider wall + watertight BackSide cel-outline
+    // Tall dark ballistic steel armor divider wall (~3.65m tall, towering over barrels & gates!) + watertight BackSide cel-outline
     const wallPanel = new THREE.Mesh(
-      new THREE.BoxGeometry(0.24, 2.58, len),
+      new THREE.BoxGeometry(0.26, 3.46, len),
       armorWallMat
     );
-    wallPanel.position.set(0, 1.38, -len / 2);
+    wallPanel.position.set(0, 1.82, -len / 2);
     group.add(wallPanel);
 
     const wallOutline = new THREE.Mesh(
-      new THREE.BoxGeometry(0.30, 2.66, len + 0.08),
+      new THREE.BoxGeometry(0.32, 3.54, len + 0.08),
       outlineMat
     );
-    wallOutline.position.set(0, 1.38, -len / 2);
+    wallOutline.position.set(0, 1.82, -len / 2);
     group.add(wallOutline);
 
     // Glowing Asymmetric Plasma Telemetry Conduits (Teal on Left Ordnance side, Crimson-Amber on Right Breach side)
     const leftConduitMat = new THREE.MeshBasicMaterial({ color: 0x24f2d2 });
     const rightConduitMat = new THREE.MeshBasicMaterial({ color: 0xff3b6b });
-    const leftConduit = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.09, len - 0.6), leftConduitMat);
-    leftConduit.position.set(-0.135, 1.82, -len / 2);
-    const rightConduit = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.09, len - 0.6), rightConduitMat);
-    rightConduit.position.set(0.135, 1.82, -len / 2);
+    const leftConduit = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.11, len - 0.6), leftConduitMat);
+    leftConduit.position.set(-0.145, 2.42, -len / 2);
+    const rightConduit = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.11, len - 0.6), rightConduitMat);
+    rightConduit.position.set(0.145, 2.42, -len / 2);
     group.add(leftConduit, rightConduit);
 
     // Top gunmetal coping rail + repeating vertical steel H-beam ribs
     const topCap = new THREE.Mesh(
-      new THREE.BoxGeometry(0.32, 0.12, len + 0.1),
+      new THREE.BoxGeometry(0.34, 0.14, len + 0.1),
       gunmetalMat
     );
-    topCap.position.set(0, 2.71, -len / 2);
+    topCap.position.set(0, 3.60, -len / 2);
     group.add(topCap);
 
-    const ribGeo = new THREE.BoxGeometry(0.36, 2.48, 0.18);
+    const ribGeo = new THREE.BoxGeometry(0.38, 3.38, 0.18);
     for (let zOff = -1.2; zOff >= -len + 2; zOff -= 6.5) {
       const rib = new THREE.Mesh(ribGeo, gunmetalMat);
-      rib.position.set(0, 1.38, zOff);
+      rib.position.set(0, 1.82, zOff);
       group.add(rib);
     }
 
     // Front Faceted Hexagonal Breach-Line Nose Prow + Warning Beacon at localZ = 0
     const noseProw = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.20, 0.30, 2.72, 6),
+      new THREE.CylinderGeometry(0.22, 0.32, 3.62, 6),
       gunmetalMat
     );
-    noseProw.position.set(0, 1.36, 0.05);
+    noseProw.position.set(0, 1.81, 0.05);
     group.add(noseProw);
 
     const noseOutline = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.25, 0.35, 2.78, 6),
+      new THREE.CylinderGeometry(0.27, 0.37, 3.68, 6),
       outlineMat
     );
-    noseOutline.position.set(0, 1.36, 0.05);
+    noseOutline.position.set(0, 1.81, 0.05);
     group.add(noseOutline);
 
     const noseHazard = new THREE.Mesh(
-      new THREE.BoxGeometry(0.42, 0.62, 0.12),
+      new THREE.BoxGeometry(0.44, 0.72, 0.12),
       curbMat
     );
-    noseHazard.position.set(0, 0.95, 0.24);
+    noseHazard.position.set(0, 1.15, 0.25);
     group.add(noseHazard);
 
     const prowBeacon = new THREE.Mesh(
-      new THREE.OctahedronGeometry(0.17, 0),
+      new THREE.OctahedronGeometry(0.19, 0),
       beaconGlowMat
     );
-    prowBeacon.position.set(0, 2.88, 0.05);
+    prowBeacon.position.set(0, 3.78, 0.05);
     group.add(prowBeacon);
 
     return group;
@@ -716,7 +716,7 @@ export class BridgeEnvironment {
 
   public configureBoardLayout(
     layout: BoardLayout,
-    dividerTipWorldZ = -8.2
+    dividerTipWorldZ = -7.4
   ): void {
     const isSplit = layout === 'SPLIT_CAUSEWAY';
     const nextAlbedo = isSplit ? this.textures.causewayAlbedo : this.textures.albedo;
@@ -760,13 +760,13 @@ export class BridgeEnvironment {
     if (camPos) {
       this.waterUniforms.uCamPos.value.copy(camPos);
     }
-    this.waterMesh.position.z = squadZ - 130;
+    this.waterMesh.position.z = squadZ - 210;
 
-    if (this.splitDividerGroup.visible || this.dividerCurrentY > -3.1) {
-      const targetY = this.dividerRetracted ? -3.2 : 0;
+    if (this.splitDividerGroup.visible || this.dividerCurrentY > -4.1) {
+      const targetY = this.dividerRetracted ? -4.2 : 0;
       this.dividerCurrentY += (targetY - this.dividerCurrentY) * Math.min(1, dt * 6.5);
       this.splitDividerGroup.position.y = this.dividerCurrentY;
-      if (this.dividerRetracted && this.dividerCurrentY < -3.05) {
+      if (this.dividerRetracted && this.dividerCurrentY < -4.05) {
         this.splitDividerGroup.visible = false;
       }
     }

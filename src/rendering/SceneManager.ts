@@ -62,19 +62,19 @@ export class SceneManager {
   private elapsedSkyTime = 0;
   private portraitFactor = 0;
 
-  private readonly currentCamPos = new THREE.Vector3(0, 7.50, 9.85);
-  private readonly currentLookAt = new THREE.Vector3(0, -1.38, -10.2);
+  private readonly currentCamPos = new THREE.Vector3(0, 7.3, 12.6);
+  private readonly currentLookAt = new THREE.Vector3(0, 0.04, -5.0);
   private lastFramingMode: CameraFramingMode = 'LIVE_BRIDGE';
 
   constructor(canvasContainer: HTMLElement) {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x091322);
-    this.scene.fog = new THREE.FogExp2(0x11273d, 0.0033);
+    this.scene.fog = new THREE.FogExp2(0x11273d, 0.0026);
 
     const initW = Math.max(1, window.innerWidth);
     const initH = Math.max(1, window.innerHeight);
 
-    this.camera = new THREE.PerspectiveCamera(45, initW / initH, 0.3, 420);
+    this.camera = new THREE.PerspectiveCamera(46, initW / initH, 0.3, 560);
     this.camera.position.copy(this.currentCamPos);
     this.camera.lookAt(this.currentLookAt);
 
@@ -268,10 +268,10 @@ export class SceneManager {
 
     this.camera.aspect = aspect;
 
-    // v8.0 Locked-Center 3-Lane Portrait Framing: ~66.5° portrait vertical FOV (~46° landscape)
-    // tuned with 35° downward pitch so both guardrails and all 3 lanes stay permanently in frame on 9:16 (412×915)
+    // v8.1 Option A Full Comp Framing: 62.0° portrait vertical FOV (46.0° landscape)
+    // paired with ~22.5° 3/4 over-the-shoulder pitch for visible horizon (~16%) & heroic squad scale!
     this.portraitFactor = Math.max(0, Math.min(1, (0.95 - aspect) / 0.5));
-    this.camera.fov = 46.0 + this.portraitFactor * 20.5;
+    this.camera.fov = 46.0 + this.portraitFactor * 16.0;
     this.camera.updateProjectionMatrix();
 
     this.renderer.setPixelRatio(dpr);
@@ -406,34 +406,36 @@ export class SceneManager {
       _desiredPos.set(0, ARMORY_STAGE_Y + 0.62, ARMORY_STAGE_Z + 5.75 + p * 1.65);
       _desiredLook.set(0, ARMORY_STAGE_Y - 0.14 - p * 0.30, ARMORY_STAGE_Z);
     } else if (framingMode === 'LIVE_BRIDGE') {
-      // Showcase Hub camera with locked-center 20% follow so all 3 lanes & guardrails frame the start screen cleanly
-      const targetCamX = squadX * 0.20;
+      // v8.1 Option A Hub Camera: heroic 3/4 over-the-shoulder angle (~22.4° pitch) placing squad
+      // cleanly above bottom upgrade cards with open Midnight Storm sky horizon (~16%) & chunky front barrels!
+      const targetCamX = squadX * 0.44;
       this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 6.5);
 
-      const camHeight = 12.4 + p * 5.4;
-      const camBack = 11.4 + p * 4.8;
-      const lookAhead = 8.4 + p * 2.8;
+      const camHeight = 6.2 + p * 1.1;
+      const camBack = 10.6 + p * 2.0;
+      const lookAhead = 4.6 + p * 0.4;
       _desiredPos.set(this.smoothCamX, camHeight, squadZ + camBack);
-      _desiredLook.set(this.smoothCamX * 0.65, -0.4 - p * 0.4, squadZ - lookAhead);
+      _desiredLook.set(this.smoothCamX * 0.80, 0.04, squadZ - lookAhead);
     } else {
-      // v8.0 Locked-Center 3-Lane Arcade Camera:
-      // - Heavily damped ~20% horizontal follow (keeps bridge centered & stable during fast lateral swipes!)
+      // v8.1 Option A Full Comp Framing Arcade Camera:
+      // - Responsive ~44% horizontal follow (`lookX = smoothCamX * 0.80`) so hugging left barrel column
+      //   or right enemy lane centers action cleanly while curbs angle dramatically into frame!
       // - Rigid forward Z tracking (zero Z lag)
-      // - ~35.0° downward pitch (34°–36°) with pronounced guardrail vanishing-point convergence
-      //   keeping both guardrails (±6.86m) and all 3 lanes permanently in frame on 412×915 portrait!
+      // - ~22.5° downward 3/4 pitch on 412×915 portrait: visible horizon (~15.5% from top),
+      //   squad feet at ~60.5% leaving ~39% open lower deck for one-handed thumb swiping!
       const inBossFight = framingMode === 'BOSS_TACTICAL';
-      const followGain = 0.20;
+      const followGain = inBossFight ? 0.40 : 0.44;
       const targetCamX = squadX * followGain;
-      this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 6.5);
+      this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 7.2);
 
-      const camHeight = inBossFight ? 15.2 + p * 6.8 : 14.5 + p * 6.5;
-      const camBack = inBossFight ? 12.8 + p * 5.8 : 12.2 + p * 5.6;
-      const lookAhead = inBossFight ? 8.9 + p * 4.0 : 8.5 + p * 3.7;
-      const lookY = inBossFight ? 0.2 : 0.0;
+      const camHeight = inBossFight ? 7.6 + p * 1.4 : 6.4 + p * 1.2;
+      const camBack = inBossFight ? 13.0 + p * 2.4 : 11.2 + p * 2.0;
+      const lookAhead = inBossFight ? 6.0 + p * 0.8 : 4.6 + p * 0.4;
+      const lookY = inBossFight ? 0.45 : 0.05;
 
       _desiredPos.set(this.smoothCamX, camHeight, squadZ + camBack);
       _desiredLook.set(
-        this.smoothCamX * 0.65,
+        this.smoothCamX * (inBossFight ? 0.78 : 0.80),
         lookY,
         squadZ - lookAhead
       );

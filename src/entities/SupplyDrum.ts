@@ -21,11 +21,12 @@ import {
   type ShowcaseWeaponRig,
 } from '../rendering/WeaponRigFactory';
 
-export const DRUM_HIT_RADIUS_X = 1.55;
+export const DRUM_HIT_RADIUS_X = 1.72;
 export const ROLLING_BARREL_DEFAULT_SPEED = 3.2;
 export const ROLLING_BARREL_WAKE_DIST_Z = 48.0;
-export const ROLLING_BARREL_CRASH_HALF_X = 1.18;
-const BARREL_ROLL_RADIUS = 0.98;
+export const ROLLING_BARREL_CRASH_HALF_X = 1.28;
+const BARREL_VISUAL_SCALE = 1.24;
+const BARREL_ROLL_RADIUS = 1.24;
 
 export function obstacleLaneToX(lane: ObstacleLane): number {
   switch (lane) {
@@ -246,7 +247,7 @@ export class SupplyDrumSlot {
 
     // Grounded contact shadow beneath rolling barrel
     const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(1.42, 10),
+      new THREE.CircleGeometry(1.74, 10),
       new THREE.MeshBasicMaterial({
         color: 0x05080d,
         transparent: true,
@@ -272,8 +273,9 @@ export class SupplyDrumSlot {
       emissive: 0x000000,
     });
 
-    // Center drumBodyGroup at y = 1.02 so local X-axis rotation spins the barrel cleanly in place!
-    this.drumBodyGroup.position.set(0, 1.02, 0);
+    // Center drumBodyGroup at y = 1.26 (1.24x scale) so local X-axis rotation rolls flush on the viaduct deck!
+    this.drumBodyGroup.position.set(0, 1.26, 0);
+    this.drumBodyGroup.scale.setScalar(BARREL_VISUAL_SCALE);
 
     const podMesh = new THREE.Mesh(SHARED_BARREL_GEOS.bodyGeo, this.drumMat);
     this.drumBodyGroup.add(podMesh);
@@ -295,22 +297,22 @@ export class SupplyDrumSlot {
     // Chamfered Dark-Glass Tactical HUD HP Plaque (stays upright on front face while barrel spins!)
     this.hpLabelTex = new EditableArcadeHpTexture();
     this.hpLabelMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(2.26, 1.32),
+      new THREE.PlaneGeometry(2.68, 1.56),
       new THREE.MeshBasicMaterial({
         map: this.hpLabelTex.texture,
         transparent: true,
         depthWrite: false,
       })
     );
-    this.hpLabelMesh.position.set(0, 1.02, 1.15);
+    this.hpLabelMesh.position.set(0, 1.26, 1.40);
     this.root.add(this.hpLabelMesh);
 
     // Perched Top Reward Pivot (stays upright above rolling barrel!)
-    this.pickupPivot.position.set(0, 2.58, 0);
+    this.pickupPivot.position.set(0, 3.08, 0);
     this.root.add(this.pickupPivot);
 
     this.glowHaloMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.95, 1.95),
+      new THREE.PlaneGeometry(2.15, 2.15),
       new THREE.MeshBasicMaterial({
         map: SHARED_GLOW_TEX,
         transparent: true,
@@ -360,7 +362,7 @@ export class SupplyDrumSlot {
     for (const theme of ['TACTICAL', 'UNICORN'] as const) {
       for (const t of [1, 2, 3, 4, 5] as const) {
         const rig = this.weaponRigsByTheme[theme][t];
-        rig.root.scale.setScalar(1.62);
+        rig.root.scale.setScalar(1.75);
         rig.root.rotation.z = 0.14;
         rig.root.visible = false;
         this.pickupPivot.add(rig.root);
@@ -444,7 +446,7 @@ export class SupplyDrumSlot {
     this.root.position.set(this.x, 0, this.z);
     this.root.visible = true;
     this.drumBodyGroup.rotation.x = 0;
-    this.drumBodyGroup.scale.set(1, 1, 1);
+    this.drumBodyGroup.scale.setScalar(BARREL_VISUAL_SCALE);
     this.drumMat.emissive.setRGB(0, 0, 0);
     this.hoopMat.emissive.setRGB(0, 0, 0);
 
@@ -503,7 +505,7 @@ export class SupplyDrumSlot {
 
     this.spinAngle += dt * 2.4;
     const bobY = Math.sin(this.spinAngle * 1.5) * 0.08;
-    this.pickupPivot.position.y = 2.66 + bobY;
+    this.pickupPivot.position.y = 3.10 + bobY;
     this.glowHaloMesh.rotation.z = this.spinAngle * 0.45;
 
     const activeRecruitGroup = this.recruitGroups[this.skinTheme];
@@ -529,11 +531,15 @@ export class SupplyDrumSlot {
       this.drumMat.emissive.setRGB(this.flashTimer * 0.42, this.flashTimer * 0.42, this.flashTimer * 0.46);
       this.hoopMat.emissive.setRGB(this.flashTimer * 0.42, this.flashTimer * 0.36, this.flashTimer * 0.25);
       const pop = 1 + this.flashTimer * 0.05;
-      this.drumBodyGroup.scale.set(pop, 1 - this.flashTimer * 0.03, pop);
+      this.drumBodyGroup.scale.set(
+        BARREL_VISUAL_SCALE * pop,
+        BARREL_VISUAL_SCALE * (1 - this.flashTimer * 0.03),
+        BARREL_VISUAL_SCALE * pop
+      );
     } else {
       this.drumMat.emissive.setRGB(0, 0, 0);
       this.hoopMat.emissive.setRGB(0, 0, 0);
-      this.drumBodyGroup.scale.set(1, 1, 1);
+      this.drumBodyGroup.scale.setScalar(BARREL_VISUAL_SCALE);
     }
 
     this.hpLabelTex.redrawIfDirty(this.remainingHp, this.flashTimer);

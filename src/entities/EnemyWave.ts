@@ -94,15 +94,15 @@ export class EnemyWaveSlot {
       this.unitIsVanguard[i] = !isHeavy && row < vanguardRowCutoff ? 1 : 0;
       const col = i % cols;
       const uNorm = cols > 1 ? col / (cols - 1) - 0.5 : 0;
-      const rowShift = (row % 2) * 0.28 - 0.14;
-      const staggerX = (((i * 17 + 5) % 11) - 5) * 0.08 + rowShift;
-      const staggerZ = (((i * 13 + 3) % 9) - 4) * 0.12;
+      const rowShift = (row % 2) * 0.32 - 0.16;
+      const staggerX = (((i * 17 + 5) % 11) - 5) * 0.12 + rowShift;
+      const staggerZ = (((i * 13 + 3) % 9) - 4) * 0.16;
 
       const wx = Math.max(
-        -5.02,
-        Math.min(5.02, this.x + uNorm * spanHalfX * 2 + staggerX)
+        -5.05,
+        Math.min(5.05, this.x + uNorm * spanHalfX * 2 + staggerX)
       );
-      const wz = def.z - row * 0.96 + staggerZ;
+      const wz = def.z - row * 1.06 + staggerZ;
 
       this.unitX[i] = wx;
       this.unitZ[i] = wz;
@@ -146,7 +146,7 @@ export class EnemyWaveSlot {
     const blockedByGate = blockingGateZ !== null && this.z <= blockingGateZ + 1.5;
     const maxAllowedUnitZ =
       blockingGateZ !== null ? blockingGateZ - 32.0 : Infinity;
-    const withinEngage = !blockedByGate && squadZ - this.z < 40;
+    const withinEngage = !blockedByGate && squadZ - this.z < 34;
     this.isMarching = withinEngage;
     if (withinEngage) {
       this.z = Math.min(maxAllowedUnitZ, this.z + this.speed * dt);
@@ -268,7 +268,7 @@ export class EnemyWaveSlot {
       if (uEntityId === lastHitId) {
         continue;
       }
-      const hitRad = this.unitIsHeavy[i] === 1 ? 0.66 : 0.48;
+      const hitRad = this.unitIsHeavy[i] === 1 ? 0.80 : 0.56;
       const uz = this.unitZ[i];
       if (uz < segMinZ - hitRad || uz > segMaxZ + hitRad) {
         continue;

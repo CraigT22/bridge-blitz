@@ -66,7 +66,7 @@ export interface GateSquadCollectEvent {
 
 const SPLIT_WIDTH = 6.00;
 const FULL_WIDTH = 12.08;
-const PANEL_HEIGHT = 2.52;
+const PANEL_HEIGHT = 2.92;
 const CENTER_POST_GAP = 0.04;
 
 export class GatePairSlot {
@@ -132,19 +132,19 @@ export class GatePairSlot {
       const holder = px === 0 ? this.centerPostGroup : this.root;
       const localX = px === 0 ? 0 : px;
       const post = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.14, 0.185, 2.72, 6),
+        new THREE.CylinderGeometry(0.15, 0.20, 3.12, 6),
         pMat
       );
-      post.position.set(localX, 1.36, 0);
+      post.position.set(localX, 1.56, 0);
       const postOutline = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.188, 0.232, 2.78, 6),
+        new THREE.CylinderGeometry(0.20, 0.25, 3.18, 6),
         outlineMat
       );
-      postOutline.position.set(localX, 1.36, 0);
-      const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.20, 0), pMat);
-      cap.position.set(localX, 2.78, 0);
-      const capOutline = new THREE.Mesh(new THREE.OctahedronGeometry(0.25, 0), outlineMat);
-      capOutline.position.set(localX, 2.78, 0);
+      postOutline.position.set(localX, 1.56, 0);
+      const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), pMat);
+      cap.position.set(localX, 3.18, 0);
+      const capOutline = new THREE.Mesh(new THREE.OctahedronGeometry(0.27, 0), outlineMat);
+      capOutline.position.set(localX, 3.18, 0);
       holder.add(post, postOutline, cap, capOutline);
     }
     this.root.add(this.centerPostGroup);
@@ -181,11 +181,11 @@ export class GatePairSlot {
       panelMat
     );
     panelMesh.scale.x = width;
-    panelMesh.position.set(0, 1.28, 0);
+    panelMesh.position.set(0, 1.48, 0);
     group.add(panelMesh);
 
     const padlockGroup = createPadlockMesh();
-    padlockGroup.position.set(0, 2.75, 0.10);
+    padlockGroup.position.set(0, 3.15, 0.10);
     group.add(padlockGroup);
 
     this.root.add(group);

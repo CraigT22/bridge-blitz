@@ -4,7 +4,6 @@ import { EnemyWaveSlot } from '../entities/EnemyWave';
 import { GatePairSlot } from '../entities/GatePair';
 import { MidBridgeBrute } from '../entities/MidBridgeBrute';
 import {
-  LEFT_LANE_CENTER_X,
   RIGHT_LANE_CENTER_X,
   SplitCausewayController,
 } from '../entities/SplitCausewayController';
@@ -136,6 +135,9 @@ export class BridgeBlitzGame {
   private readonly coinTargetNdc = { x: 0.82, y: 0.89 };
   private readonly debugProjLeft: ScreenProjection = { x: 0, y: 0, visible: false };
   private readonly debugProjRight: ScreenProjection = { x: 0, y: 0, visible: false };
+  private readonly debugProjHorizon: ScreenProjection = { x: 0, y: 0, visible: false };
+  private readonly debugProjFeet: ScreenProjection = { x: 0, y: 0, visible: false };
+  private readonly debugProjHead: ScreenProjection = { x: 0, y: 0, visible: false };
 
   private readonly handleMagnetCoinArrived = (amount: number): void => {
     const wallet = this.saveManager.getData().coins;
@@ -521,8 +523,8 @@ export class BridgeBlitzGame {
       this.boss.configure(stage.boss, -zBase + stage.trackLength);
       this.boss.hide();
 
-      // Align squad cleanly into the Left Power-Up Column facing the front pod at launch
-      this.squad.x = LEFT_LANE_CENTER_X;
+      // Center squad cleanly at x = 0 in the open foreground arena (matches comp Hub framing cleanly!)
+      this.squad.x = 0;
       this.squad.z = zBase;
       this.squad.updateMovement(0, 0, false, false, true);
       return;
@@ -1091,7 +1093,7 @@ export class BridgeBlitzGame {
     const save = this.saveManager.getData();
     const isSplit = this.activeBoardLayout === 'SPLIT_CAUSEWAY';
     const splitDividerActive = isSplit && !this.splitCauseway.retractedForBoss;
-    const shotRange = isSplit ? 46 : 42;
+    const shotRange = isSplit ? 38 : 34;
 
     if (state === 'RUNNING') {
       this.streamUpcomingEntities();
@@ -2795,9 +2797,15 @@ export class BridgeBlitzGame {
     cameraPitchDeg: number;
     leftGuardrailScreenX: number;
     rightGuardrailScreenX: number;
+    horizonScreenY: number;
+    squadFeetScreenY: number;
+    squadHeadScreenY: number;
+    soldierHeightPct: number;
     viewportWidth: number;
+    viewportHeight: number;
     splitDividerX: number;
     splitFrontLeftBarrelHp: number;
+    splitPostDividerChasers: number;
     nextUncollectedGateZ: number | null;
     minBehindGateWaveDist: number | null;
     nextGateDebug: ReturnType<GatePairSlot['getDebugValues']> | null;
@@ -2886,6 +2894,22 @@ export class BridgeBlitzGame {
 
     this.sceneManager.projectToScreen(-6.86, 0.55, this.squad.z, this.debugProjLeft);
     this.sceneManager.projectToScreen(6.86, 0.55, this.squad.z, this.debugProjRight);
+    this.sceneManager.projectToScreen(
+      this.sceneManager.camera.position.x,
+      this.sceneManager.camera.position.y,
+      this.sceneManager.camera.position.z - 500,
+      this.debugProjHorizon
+    );
+    this.sceneManager.projectToScreen(this.squad.x, 0, this.squad.z, this.debugProjFeet);
+    this.sceneManager.projectToScreen(
+      this.squad.x,
+      1.12 * COMMANDO_MODEL_SCALE,
+      this.squad.z,
+      this.debugProjHead
+    );
+    const vpH = Math.max(1, window.innerHeight);
+    const soldierHeightPct =
+      ((this.debugProjFeet.y - this.debugProjHead.y) / vpH) * 100;
 
     return {
       commandoFacingYaw: this.commandoFacingYaw,
@@ -2904,9 +2928,15 @@ export class BridgeBlitzGame {
       cameraPitchDeg,
       leftGuardrailScreenX: this.debugProjLeft.x,
       rightGuardrailScreenX: this.debugProjRight.x,
+      horizonScreenY: this.debugProjHorizon.y,
+      squadFeetScreenY: this.debugProjFeet.y,
+      squadHeadScreenY: this.debugProjHead.y,
+      soldierHeightPct,
       viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
       splitDividerX: SPLIT_DIVIDER_X,
       splitFrontLeftBarrelHp: this.splitCauseway.getFrontLeftBarrelHp(),
+      splitPostDividerChasers: this.splitCauseway.getPostDividerChaserCount(),
       nextUncollectedGateZ,
       minBehindGateWaveDist,
       nextGateDebug: nextGatePair ? nextGatePair.getDebugValues() : null,

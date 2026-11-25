@@ -418,18 +418,18 @@ export function createGoldenHourSkyDome(): {
         float siegeCos = max(0.0001, dot(dir, siegeDir));
         col += vec3(0.62, 0.24, 0.12) * pow(siegeCos, 9.0) * 0.34;
 
-        // Crisp Moonlit Storm-Eye Halo & Pale Ice Moon ahead-left of the viaduct
-        vec3 moonDir = normalize(vec3(-0.36, 0.25, -0.89));
+        // Crisp Moonlit Storm-Eye Halo & Pale Ice Moon gleaming in the upper horizon sky strip
+        vec3 moonDir = normalize(vec3(-0.24, 0.088, -0.966));
         float moonCos = max(0.0001, dot(dir, moonDir));
-        col += vec3(0.18, 0.62, 0.85) * pow(moonCos, 6.5) * 0.62;
-        col += vec3(1.18, 1.42, 1.58) * smoothstep(0.9968, 0.9993, moonCos);
+        col += vec3(0.16, 0.56, 0.78) * pow(moonCos, 14.0) * 0.42;
+        col += vec3(1.12, 1.36, 1.54) * smoothstep(0.9984, 0.9995, moonCos);
 
         // Rolling storm clouds rim-lit by ice-cyan moonlight + subtle distant lightning pulse
-        if (y > 0.01) {
-          vec2 cloudUv = dir.xz / (y + 0.18) * 1.55 + vec2(uTime * 0.018, -uTime * 0.009);
+        if (y > 0.004) {
+          vec2 cloudUv = dir.xz / (y + 0.16) * 1.55 + vec2(uTime * 0.018, -uTime * 0.009);
           float c1 = noise2(cloudUv * 2.3);
           float c2 = noise2(cloudUv * 5.4 - 2.8);
-          float cloud = smoothstep(0.45, 0.78, c1 * 0.66 + c2 * 0.34) * smoothstep(0.01, 0.11, y) * (1.0 - smoothstep(0.40, 0.76, y));
+          float cloud = smoothstep(0.45, 0.78, c1 * 0.66 + c2 * 0.34) * smoothstep(0.004, 0.068, y) * (1.0 - smoothstep(0.38, 0.74, y));
           float flash = pow(max(0.0001, 0.5 + 0.5 * sin(uTime * 1.9 + c1 * 4.2)), 14.0) * 0.35;
           vec3 cloudDark = vec3(0.045, 0.082, 0.148);
           vec3 cloudRim = vec3(0.28, 0.78, 0.96) + vec3(0.35, 0.85, 1.0) * flash;

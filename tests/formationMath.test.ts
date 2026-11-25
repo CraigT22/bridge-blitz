@@ -5,7 +5,7 @@ import {
   clampBulletSpawnX,
   clampSquadCenterX,
   computeSquadOuterRadius,
-  ELITE_SLOT_SPACING_X,
+  EARLY_RANK_SPACING_X,
   getEliteFormationOffset,
   SOLDIER_VISUAL_OVERHANG_LIMIT_X,
   SPLIT_DIVIDER_X,
@@ -13,7 +13,7 @@ import {
 } from '../src/math/formationMath';
 
 describe('formationMath', () => {
-  it('builds a compact circular/oval honeycomb blob (~1.2–1.6 lanes wide at 40 soldiers)', () => {
+  it('gives 2-3 early soldiers crisp shoulder spacing and builds a compact ~1.2–1.6 lane-wide blob at 40 soldiers', () => {
     const out = { x: 0, z: 0 };
 
     getEliteFormationOffset(0, 1, out);
@@ -24,8 +24,16 @@ describe('formationMath', () => {
     const x0 = out.x;
     getEliteFormationOffset(1, 2, out);
     const x1 = out.x;
-    expect(x0).toBeCloseTo(-ELITE_SLOT_SPACING_X * 0.5);
-    expect(x1).toBeCloseTo(ELITE_SLOT_SPACING_X * 0.5);
+    expect(x0).toBeCloseTo(-EARLY_RANK_SPACING_X * 0.5);
+    expect(x1).toBeCloseTo(EARLY_RANK_SPACING_X * 0.5);
+
+    // 3 soldiers stand shoulder-to-shoulder cleanly across front rank
+    getEliteFormationOffset(0, 3, out);
+    expect(out.x).toBeCloseTo(-EARLY_RANK_SPACING_X);
+    getEliteFormationOffset(1, 3, out);
+    expect(out.x).toBeCloseTo(0);
+    getEliteFormationOffset(2, 3, out);
+    expect(out.x).toBeCloseTo(EARLY_RANK_SPACING_X);
 
     // Verify all 40 slots are distinct and stay compact (~1.2-1.6 lanes wide including shoulders)
     const seen = new Set<string>();
@@ -33,7 +41,7 @@ describe('formationMath', () => {
     for (let i = 0; i < 40; i++) {
       getEliteFormationOffset(i, 40, out);
       maxAbsX = Math.max(maxAbsX, Math.abs(out.x));
-      expect(Math.abs(out.x)).toBeLessThanOrEqual(2.55);
+      expect(Math.abs(out.x)).toBeLessThanOrEqual(2.65);
       seen.add(`${out.x.toFixed(3)},${out.z.toFixed(3)}`);
     }
     expect(seen.size).toBe(40);

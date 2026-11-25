@@ -315,7 +315,7 @@ function buildSplitCausewayDefinition(
   return {
     siegeColumnSpan,
     marchSpeed: Number(marchSpeed.toFixed(2)),
-    dividerStartZ: 8.2,
+    dividerStartZ: 7.4,
     dividerLength: 108,
     leftQueue,
     rightEchelons,

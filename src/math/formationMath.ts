@@ -6,10 +6,11 @@ export interface FormationSlot {
   readonly radius: number;
 }
 
-export const ELITE_SLOT_SPACING_X = 0.72;
-export const ELITE_ROW_SPACING_Z = 0.58;
+export const EARLY_RANK_SPACING_X = 1.12;
+export const ELITE_SLOT_SPACING_X = 0.84;
+export const ELITE_ROW_SPACING_Z = 0.78;
 export const MAX_FRONT_RANK_WIDTH = 7;
-export const SOLDIER_BODY_RADIUS = 0.24;
+export const SOLDIER_BODY_RADIUS = 0.28;
 export const BRIDGE_PLAYABLE_HALF_WIDTH = 6.12;
 export const GUARDRAIL_MARGIN = 0.22;
 export const SOLDIER_SAFE_LIMIT_X = 5.62;
@@ -52,7 +53,7 @@ export function buildHoneycombSlots(
     const stagger = (Math.abs(row) % 2) * 0.5;
     for (let col = -5; col <= 5; col++) {
       const baseX = (col + stagger - (stagger > 0 ? 0.5 : 0)) * spacingX;
-      if (Math.abs(baseX) > 2.75) {
+      if (Math.abs(baseX) > 2.62) {
         continue;
       }
       const baseZ = row * spacingZ;
@@ -102,9 +103,9 @@ export const PRECOMPUTED_HONEYCOMB_SLOTS: ReadonlyArray<FormationSlot> =
 /**
  * Computes world-space formation offset `(x, z)` for soldier `slotIndex` in a `1..40` crowd:
  * - 1 soldier: `[0, 0]`
- * - 2 soldiers: tight side-by-side pair
- * - 3 soldiers: tight front line
- * - 4..40 soldiers: compact re-centered concentric circular/oval blob!
+ * - 2 soldiers: clean shoulder-to-shoulder pair (`EARLY_RANK_SPACING_X = 1.12m`)
+ * - 3 soldiers: crisp 3-soldier heroic front rank (`-1.12, 0, +1.12`)
+ * - 4..40 soldiers: compact re-centered concentric circular/oval blob (~1.35 lanes wide)!
  */
 export function getEliteFormationOffset(
   slotIndex: number,
@@ -121,10 +122,10 @@ export function getEliteFormationOffset(
     x = 0;
     z = 0;
   } else if (safeCount === 2) {
-    x = (idx === 0 ? -0.5 : 0.5) * ELITE_SLOT_SPACING_X;
+    x = (idx === 0 ? -0.5 : 0.5) * EARLY_RANK_SPACING_X;
     z = 0;
   } else if (safeCount === 3) {
-    x = (idx - 1) * ELITE_SLOT_SPACING_X;
+    x = (idx - 1) * EARLY_RANK_SPACING_X;
     z = 0;
   } else {
     // Re-center X across the active subset so small/medium clusters stay perfectly balanced
@@ -163,10 +164,10 @@ export function computeSquadOuterRadius(logicalSquad: number): number {
     return SOLDIER_BODY_RADIUS;
   }
   if (safeCount === 2) {
-    return ELITE_SLOT_SPACING_X * 0.5 + SOLDIER_BODY_RADIUS;
+    return EARLY_RANK_SPACING_X * 0.5 + SOLDIER_BODY_RADIUS;
   }
   if (safeCount === 3) {
-    return ELITE_SLOT_SPACING_X + SOLDIER_BODY_RADIUS;
+    return EARLY_RANK_SPACING_X + SOLDIER_BODY_RADIUS;
   }
 
   let sumX = 0;

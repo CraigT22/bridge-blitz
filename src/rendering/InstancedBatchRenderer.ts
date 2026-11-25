@@ -26,8 +26,8 @@ const MAX_RAGDOLL_INSTANCES = 96;
 const MAX_SHADOW_DISCS =
   MAX_VISUAL_SOLDIERS + MAX_ENEMY_INSTANCES + MAX_HEAVY_ENEMY_INSTANCES;
 
-const ENEMY_MODEL_SCALE = 1.04;
-const HEAVY_ENEMY_SCALE = 1.26;
+const ENEMY_MODEL_SCALE = 1.62;
+const HEAVY_ENEMY_SCALE = 2.10;
 
 // Module-scoped reusable scratch primitives — strictly zero per-frame allocations!
 const _pos = new THREE.Vector3();
@@ -605,8 +605,8 @@ export class InstancedBatchRenderer {
 
     const playerOutlineMat = createCommandoCelOutlineMaterial(
       this.playerUniforms,
-      0.023,
-      'commando-player-outline-v80',
+      0.019,
+      'commando-player-outline-v81',
       false,
       true
     );
@@ -629,8 +629,8 @@ export class InstancedBatchRenderer {
     applyEquippedWeaponShader(weaponMat, this.weaponUniforms, 'commando-weapon-v71');
     const weaponOutlineMat = createEquippedWeaponOutlineMaterial(
       this.weaponUniforms,
-      0.017,
-      'commando-weapon-outline-v71'
+      0.014,
+      'commando-weapon-outline-v81'
     );
 
     this.weaponGeos = {
@@ -716,8 +716,8 @@ export class InstancedBatchRenderer {
 
     const enemyOutlineMat = createCommandoCelOutlineMaterial(
       this.enemyUniforms,
-      0.023,
-      'commando-enemy-outline-v71',
+      0.019,
+      'commando-enemy-outline-v81',
       true
     );
     this.enemyOutlineMesh = new THREE.InstancedMesh(
@@ -771,8 +771,8 @@ export class InstancedBatchRenderer {
 
     const heavyOutlineMat = createCommandoCelOutlineMaterial(
       this.enemyUniforms,
-      0.026,
-      'commando-heavy-outline-v71',
+      0.021,
+      'commando-heavy-outline-v81',
       true
     );
     this.heavyEnemyOutlineMesh = new THREE.InstancedMesh(
@@ -1034,7 +1034,7 @@ export class InstancedBatchRenderer {
 
       _pos.set(wx, 0.022, wz);
       _quat.identity();
-      const shadowScale = Math.max(0.58, 0.92 - bobY * 0.85);
+      const shadowScale = Math.max(0.84, 1.38 - bobY * 0.85);
       _scale.set(shadowScale, 1, shadowScale);
       _mat4.compose(_pos, _quat, _scale);
       this.shadowDiscMesh.setMatrixAt(this.shadowDiscCursor++, _mat4);
@@ -1083,7 +1083,7 @@ export class InstancedBatchRenderer {
     if (this.shadowDiscCursor < MAX_SHADOW_DISCS) {
       _pos.set(x, 0.022, z);
       _quat.identity();
-      const shadowScale = 0.88 - bob * 0.9;
+      const shadowScale = 1.32 - bob * 0.9;
       _scale.set(shadowScale, 1, shadowScale);
       _mat4.compose(_pos, _quat, _scale);
       this.shadowDiscMesh.setMatrixAt(this.shadowDiscCursor++, _mat4);
@@ -1120,7 +1120,7 @@ export class InstancedBatchRenderer {
     if (this.shadowDiscCursor < MAX_SHADOW_DISCS) {
       _pos.set(x, 0.022, z);
       _quat.identity();
-      const shadowScale = 1.18 - bob * 0.9;
+      const shadowScale = 1.82 - bob * 0.9;
       _scale.set(shadowScale, 1, shadowScale);
       _mat4.compose(_pos, _quat, _scale);
       this.shadowDiscMesh.setMatrixAt(this.shadowDiscCursor++, _mat4);
@@ -1191,27 +1191,27 @@ export class InstancedBatchRenderer {
       const s = pool.scale[i];
 
       if (tier <= 1) {
-        // Lv1: Slender glowing streak tapering to transparent tail
+        // Lv1: Crisp short glowing bolt/streak tapering to transparent tail
         if (isUnicorn) {
-          _scale.set(s * 0.96, s * 0.95, s * 1.18);
+          _scale.set(s * 0.94, s * 0.94, s * 0.98);
         } else {
-          _scale.set(s * 0.90, s * 0.90, s * 1.24);
+          _scale.set(s * 0.88, s * 0.88, s * 1.02);
         }
         _mat4.compose(_pos, _quat, _scale);
         this.bulletMesh.setMatrixAt(streakCount, _mat4);
-        this.bulletMesh.setColorAt(streakCount, _color.setRGB(1.04, 1.04, 1.04));
+        this.bulletMesh.setColorAt(streakCount, _color.setRGB(1.06, 1.06, 1.06));
         streakCount++;
       } else {
-        // Lv2–Lv5: Wider, brighter arrowhead scaling cleanly with weapon tier!
-        const tierBoost = 1.0 + (Math.min(5, tier) - 2) * 0.11;
+        // Lv2–Lv5: Crisp brighter swept arrowhead scaling cleanly with weapon tier!
+        const tierBoost = 1.0 + (Math.min(5, tier) - 2) * 0.09;
         if (isUnicorn) {
-          _scale.set(s * 1.18 * tierBoost, s * 1.08, s * 1.24 * tierBoost);
+          _scale.set(s * 1.04 * tierBoost, s * 1.02, s * 1.04 * tierBoost);
         } else {
-          _scale.set(s * 1.16 * tierBoost, s * 1.06, s * 1.28 * tierBoost);
+          _scale.set(s * 1.02 * tierBoost, s * 1.02, s * 1.06 * tierBoost);
         }
         _mat4.compose(_pos, _quat, _scale);
         this.bulletArrowheadMesh.setMatrixAt(arrowCount, _mat4);
-        const bright = 1.04 + (Math.min(5, tier) - 2) * 0.06;
+        const bright = 1.06 + (Math.min(5, tier) - 2) * 0.06;
         this.bulletArrowheadMesh.setColorAt(arrowCount, _color.setRGB(bright, bright, bright));
         arrowCount++;
       }
