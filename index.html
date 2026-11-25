@@ -82,6 +82,11 @@
               <button class="hub-mode-pill" data-select-mode="SPLIT_CAUSEWAY" type="button">SPLIT CAUSEWAY</button>
               <button class="hub-mode-pill" data-select-mode="ENDLESS" type="button">ENDLESS</button>
             </div>
+            <div id="hub-difficulty-bar" class="hub-difficulty-bar" role="radiogroup" aria-label="Difficulty Tier">
+              <button class="hub-diff-pill hub-diff-pill--normal is-active" data-select-difficulty="NORMAL" type="button">NORMAL 1×</button>
+              <button class="hub-diff-pill hub-diff-pill--hard" data-select-difficulty="HARD" type="button">HARD 1.5×</button>
+              <button class="hub-diff-pill hub-diff-pill--nightmare" data-select-difficulty="NIGHTMARE" type="button">NIGHTMARE 2.25×</button>
+            </div>
             <button id="btn-hub-skin-toggle" class="hub-skin-toggle" type="button" aria-pressed="false" title="Toggle Girls vs. Boys Unicorn Magic Skin">
               <span class="hub-skin-toggle__icon" aria-hidden="true">🦄</span>
               <span id="hub-skin-toggle-label" class="hub-skin-toggle__label">SKIN: TACTICAL</span>
@@ -102,8 +107,13 @@
             </div>
           </div>
 
-          <div id="top-weapon-pill" class="top-weapon-pill is-hidden">
-            <span id="squad-weapon-badge" class="top-weapon-pill__label">Lv1 PISTOL</span>
+          <div class="top-run-badges">
+            <div id="top-weapon-pill" class="top-weapon-pill is-hidden">
+              <span id="squad-weapon-badge" class="top-weapon-pill__label">Lv1 PISTOL</span>
+            </div>
+            <div id="top-difficulty-pill" class="top-difficulty-pill is-hidden">
+              <span id="top-difficulty-label" class="top-difficulty-pill__label">HARD 1.5×</span>
+            </div>
           </div>
         </div>
 

@@ -12,6 +12,8 @@ export type BossChassisId =
 
 export type GameMode = 'CAMPAIGN' | 'SPLIT_CAUSEWAY' | 'ENDLESS';
 
+export type DifficultyTier = 'NORMAL' | 'HARD' | 'NIGHTMARE';
+
 export type BoardLayout = 'STANDARD_BRIDGE' | 'SPLIT_CAUSEWAY';
 
 export type EnemyVisualRank = 0 | 1 | 2;
@@ -34,6 +36,8 @@ export interface SplitHordeEchelonDefinition {
   readonly hpPerUnit: number;
   readonly speed: number;
   readonly coinPerKill: number;
+  readonly shooterRatio?: number;
+  readonly chargerRatio?: number;
 }
 
 export interface SplitCausewayDefinition {
@@ -96,6 +100,8 @@ export interface SupplyDrumDefinition {
   readonly rewardValue: number;
   /** Forward rolling speed toward the squad (+Z m/s) on Standard Bridge */
   readonly rollSpeed?: number;
+  /** v8.2 Red-banded Spiked Hazard Drum: heavier HP, heavy lethal-capable crash casualties, minimal scrap on shatter */
+  readonly isHazard?: boolean;
 }
 
 export interface TireStackDefinition {
@@ -115,6 +121,10 @@ export interface EnemyWaveDefinition {
   readonly heavyCount?: number;
   readonly vanguardRatio?: number;
   readonly coinPerKill?: number;
+  /** Number of backline ranged shooters firing telegraphed lane bolts */
+  readonly shooterCount?: number;
+  /** Number of heavy vanguard chargers capable of telegraphed lane sprints */
+  readonly chargerCount?: number;
 }
 
 export interface BossDefinition {
@@ -180,6 +190,7 @@ export interface SaveDataV1 {
   unlockedStage: number;
   selectedStage: number;
   selectedMode: GameMode;
+  difficulty: DifficultyTier;
   splitCausewayStage: number;
   bestSplitStage: number;
   upgrades: UpgradeLevels;
@@ -191,6 +202,7 @@ export interface SaveDataV1 {
 export interface RunSummary {
   outcome: 'VICTORY' | 'DEFEAT';
   mode: GameMode;
+  difficulty: DifficultyTier;
   stageNumber: number;
   distanceMeters: number;
   progressRatio: number;
@@ -203,12 +215,14 @@ export interface RunSummary {
   killCoins: number;
   bonusCoins: number;
   warChestMultiplier: number;
+  difficultyMultiplier: number;
   totalCoinsEarned: number;
 }
 
 export interface TelemetrySnapshot {
   state: GameState;
   mode: GameMode;
+  difficulty: DifficultyTier;
   boardLayout: BoardLayout;
   stage: number;
   coins: number;
@@ -226,6 +240,7 @@ export interface TelemetrySnapshot {
   recommendedDodgeX: number | null;
   bossHp: number;
   bossMaxHp: number;
+  bossEnraged: boolean;
   splitQueueRemaining: number;
   splitRightAlive: number;
   splitClosestThreatZ: number | null;
@@ -235,6 +250,8 @@ export interface TelemetrySnapshot {
   weaponLocksTriggeredThisRun: number;
   enemiesDefeatedThisRun: number;
   bossSalvosDodgedThisRun: number;
+  enemyShotsDodgedThisRun: number;
+  activeEnemyBolts: number;
   activeBullets: number;
   activeParticles: number;
   skinTheme: SkinThemeId;

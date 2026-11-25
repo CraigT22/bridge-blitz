@@ -9,6 +9,7 @@ export function createDefaultSaveData(): SaveDataV1 {
     unlockedStage: 1,
     selectedStage: 1,
     selectedMode: 'CAMPAIGN',
+    difficulty: 'NORMAL',
     splitCausewayStage: 1,
     bestSplitStage: 1,
     upgrades: {
@@ -67,6 +68,13 @@ export function sanitizeSaveData(raw: unknown): SaveDataV1 {
         ? 'SPLIT_CAUSEWAY'
         : 'CAMPAIGN';
 
+  const difficulty =
+    obj.difficulty === 'NIGHTMARE'
+      ? 'NIGHTMARE'
+      : obj.difficulty === 'HARD'
+        ? 'HARD'
+        : 'NORMAL';
+
   const sanitizedSkinTheme =
     rawSettings.skinTheme === 'TACTICAL'
       ? 'TACTICAL'
@@ -80,6 +88,7 @@ export function sanitizeSaveData(raw: unknown): SaveDataV1 {
     unlockedStage,
     selectedStage,
     selectedMode,
+    difficulty,
     splitCausewayStage,
     bestSplitStage,
     upgrades: {

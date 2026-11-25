@@ -109,15 +109,21 @@ jobs:
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v8.1.0
-          name: Bridge Blitz v8.1.0 — Heroic 3/4 Framing, Object Scale & Split Causeway Physics Overhaul APK
+          tag_name: v8.2.0
+          name: Bridge Blitz v8.2.0 — Skill + Progression Difficulty Overhaul APK
           body: |
-            ### Bridge Blitz v8.1.0 — Heroic 3/4 Framing, Object Scale & Split Causeway Physics Overhaul (`versionCode 21`)
-            - **Direct Chrome Download (installs cleanly over v8.0 / v7.4 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=21)
-            - **What's New in v8.1**:
-              - **Heroic 3/4 Over-the-Shoulder Portrait Framing (~22.5° Pitch, 62° FOV & Open Horizon)**: Re-engineered the camera (`LIVE_BRIDGE`, `RUN_TACTICAL`, `BOSS_TACTICAL`) so the Midnight Storm Viaduct sky, full moon, and suspension skyline sit visibly in the top ~16%, the squad anchors at ~60% with ~39% open lower deck for thumb swiping, and responsive `~44%` lateral follow centers outer-lane & Split Causeway action smoothly.
-              - **Larger, Punchier Hero & World Proportions**: Scaled player soldiers (`1.66×`), regular enemies (`1.62×`), heavy captains (`2.10×`), Standard Bridge rolling barrels (`1.24×`), Split Causeway left-column barrels (`1.46×` wide), Holo-Gates (`2.92m`), and magnetized spinning 3D gold coins (`1.44×`) with proportional contact shadows, crisp cel outlines, and matched hitboxes.
-              - **Crisp Shorter Bolts & Early-Squad Shoulder Spacing**: Trimmed Lv1 streaks (`0.94m`) and Lv2–Lv5 arrowheads (`1.06m`) so rapid 40-girl streams stay sharp and readable over enemies and hit-flashes, while giving 2–3 early soldiers clean `1.12m` shoulder-to-shoulder spacing and 4–40 squads a compact `~1.4`-lane honeycomb.
-              - **Split Causeway Conveyor Rhythm & Post-Divider Fan-Out Pursuit**: Centered the Split Causeway Hub squad (`x = 0`), raised the armored divider wall to `3.65m`, tightened the left barrel+gate conveyor (`8.8m` front, `5.45m` spacing) with raised unobstructed `+2`/`×1.5` gate panels, enriched organic enemy cluster jitter, and added natural lateral fan-out pursuit for enemies clearing the divider prow.
-              - **Snappier Close-Quarters Combat**: Tuned active engagement range (`34m` Standard / `38m` Split) while preserving default Girls vs. Boys Unicorn skin, Tactical skin toggle, all `v8.0` mechanics, `>= 42m` gate-to-wave clearance, and `>= 32m` standoff shield.
+            ### Bridge Blitz v8.2.0 — Skill + Progression Difficulty Overhaul (`versionCode 22`)
+            - **Direct Chrome Download (installs cleanly over v8.1 / v8.0 / v7.4 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=22)
+            - **What's New in v8.2**:
+              - **4 Active Combat Threats (Full Parity on Standard Bridge & Split Causeway)**:
+                - **Ranged Enemy Shooters**: Backline units telegraph with a glowing charge orb and fire lane-locked bolts straight down-lane (`vx = 0`) that inflict real casualties unless dodged.
+                - **Armored Lane Chargers**: Heavy vanguard units lock a glowing ground rush lane and sprint at `2.85×` speed (`2.15×` on Split Causeway); stopping them mid-charge awards `1.5×` bonus coins (`CHARGER STOPPED!`), while impact inflicts heavy bonus casualties.
+                - **2-Lane Rolling Barrel Gauntlets & Spiked Hazard Drums**: Coordinated 2-lane rolling walls featuring red-banded 3D **Spiked Hazard Drums** with rotating spikes, crimson `!` warning triangles, lethal-capable crash casualties (no artificial immortality floor), and clean `14m` behind-barricade standoff so rolling drums never clip through standing walls.
+                - **Dilemma & Trap Gates**: Steeper shoot-to-flip resistance, snappier passive decay (`0.32s` grace), and locked crimson penalty gates (`÷2` / `-7..-16`) paired opposite tough shootable gates.
+              - **Mid-Boss & Final Boss Overhaul**:
+                - **Final Bosses**: Alternating **2-lane telegraphed salvos starting from Sector 1** across Campaign, Split Causeway, and Endless modes; **50% HP Enrage Phase** (glowing aura, `• ENRAGED!` Boss HUD, faster salvos & warheads) + periodic **Escort Squad Summons** (and pre-enrage summons at 75% HP on Hard/Nightmare), plus `1.45m` pushback recoil & `0.65s` stagger on Armor Segment break.
+                - **Mid-Boss Brutes**: Faster combat cadence + alternating **Wide 2-Lane Shockwave Slams (`3.10m` radius)** with forward lunge.
+              - **Difficulty Tiers (`NORMAL 1×` / `HARD 1.5×` / `NIGHTMARE 2.25×`) & Smooth Diminishing-Returns Hub Upgrades**:
+                - Selectable Hub Difficulty Tier bar persisted in save data, scaling enemy HP, speed, drum HP, gate cost, boss HP/tempo, shooter/charger cadence, bolt damage, and coin multipliers (`1×` / `1.5×` / `2.25×`) with live top-HUD badge and summary multiplier readout.
+                - Re-calibrated base bullet damage (`3.1`), slower ebb-and-flow squad ramp, and smooth hyperbolic Hub upgrade scaling while preserving all saved coins, upgrades, unlocked stages, `v8.1` heroic framing/scales, Girls vs. Boys Unicorn default skin + Tactical toggle, `>= 42m` gate-to-wave clearance, and persistent Split Causeway Left-Column barrel HP.
           files: BridgeBlitz-Pixel10XL.apk

@@ -9,8 +9,9 @@ import { createAllUnicornBossChassisRigs } from '../rendering/UnicornBossRigFact
 
 export const BOSS_SALVO_LANE_CENTERS = [-3.85, 0.0, 3.85] as const;
 export const BOSS_SALVO_HIT_HALF_WIDTH = 1.72;
-export const BOSS_TELEGRAPH_DURATION = 0.76;
-const BOSS_WARHEAD_SPEED = 30.5;
+export const BOSS_TELEGRAPH_DURATION = 0.62;
+const BOSS_WARHEAD_SPEED = 32.5;
+const BOSS_ENRAGED_WARHEAD_SPEED = 37.5;
 const MAX_BOSS_WARHEADS = 8;
 
 type LaneMask3 = readonly [boolean, boolean, boolean];
@@ -43,22 +44,35 @@ const DUAL_LANE_MASKS_BY_PLAYER: readonly [
   ],
 ];
 
+function getSafeLaneIndex(mask: LaneMask3): number {
+  if (!mask[0]) return 0;
+  if (!mask[1]) return 1;
+  return 2;
+}
+
 /**
  * Pure zero-allocation Boss lane targeting selector:
  * - Always locks onto the player's current lane so AFK standing never avoids Boss salvos.
  * - Strictly guarantees at least 1 safe open lane on every 1-lane and 2-lane salvo.
+ * - Alternates open safe lanes on consecutive 2-lane salvos whenever `prevSafeLaneIndex` is supplied!
  */
 export function selectBossSalvoLaneMask(
   squadX: number,
   salvoLanes: 1 | 2,
-  cycleIndex: number
+  cycleIndex: number,
+  prevSafeLaneIndex = -1
 ): LaneMask3 {
   const playerLane: 0 | 1 | 2 = squadX < -1.45 ? 0 : squadX > 1.45 ? 2 : 1;
   if (salvoLanes === 1) {
     return SINGLE_LANE_MASKS[playerLane];
   }
+  const pair = DUAL_LANE_MASKS_BY_PLAYER[playerLane];
   const parity = Math.abs(Math.floor(cycleIndex)) % 2;
-  return DUAL_LANE_MASKS_BY_PLAYER[playerLane][parity];
+  const candidate = pair[parity];
+  if (prevSafeLaneIndex >= 0 && getSafeLaneIndex(candidate) === prevSafeLaneIndex) {
+    return pair[1 - parity];
+  }
+  return candidate;
 }
 
 interface TelegraphLaneVisual {
@@ -78,9 +92,17 @@ interface BossWarheadSlot {
   x: number;
   z: number;
   damage: number;
+  speed: number;
 }
 
-function createSalvoChevronTexture(): THREE.CanvasTexture {
+function createSalvoChevronTexture(): THREE.Texture {
+  if (typeof document === 'undefined') {
+    const tex = new THREE.DataTexture(new Uint8Array([255, 60, 80, 128]), 1, 1);
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.needsUpdate = true;
+    return tex;
+  }
   const canvas = document.createElement('canvas');
   canvas.width = 128;
   canvas.height = 128;
@@ -121,14 +143,15 @@ export class BossEntity {
   public activeChassis: BossChassisId = 'WARDEN_MECH';
   public active = false;
   public defeated = false;
+  public isEnraged = false;
   public name = 'Sapphire Charger Stallion';
   public maxHp = 1100;
   public currentHp = 1100;
   public segments = 5;
   public advanceSpeed = 1.25;
-  public salvoLanes: 1 | 2 = 1;
-  public salvoInterval = 2.5;
-  public salvoDamage = 5;
+  public salvoLanes: 1 | 2 = 2;
+  public salvoInterval = 1.48;
+  public salvoDamage = 8;
   public rewardCoins = 75;
   public x = 0;
   public z = -280;
@@ -139,17 +162,22 @@ export class BossEntity {
   private hitFlashCooldown = 0;
   private slamTimer = 0;
   private barrelSpin = 0;
+  private staggerTimer = 0;
+  private escortSummonTimer = 0;
+  private preEnrageEscortTriggered = false;
+  private lastSafeLaneIndex = -1;
+  private activeTelegraphDuration = BOSS_TELEGRAPH_DURATION;
 
   // Telegraphed Lane Salvo State (Zero-GC pre-allocated pools)
   private readonly laneVisuals: TelegraphLaneVisual[] = [];
-  private readonly chevronTex: THREE.CanvasTexture;
+  private readonly chevronTex: THREE.Texture;
   private readonly warheads: BossWarheadSlot[] = [];
   private readonly warheadShellMat: THREE.MeshBasicMaterial;
   private readonly warheadWakeMat: THREE.MeshBasicMaterial;
   private readonly warheadGroundHaloMat: THREE.MeshBasicMaterial;
   private lockedLaneMask: LaneMask3 = [false, false, false];
   private telegraphTimer = 0;
-  private salvoCooldown = 0.85;
+  private salvoCooldown = 0.65;
   private salvoCycleIndex = 0;
 
   public lastStepTriggeredShake = false;
@@ -161,6 +189,9 @@ export class BossEntity {
   public lastStepSalvoDodgedCount = 0;
   public lastStepSalvoDodgeX = 0;
   public lastStepSegmentBroken = false;
+  public lastStepEnrageTriggered = false;
+  public lastStepSummonEscorts = false;
+  public lastStepEscortCount = 0;
 
   constructor(scene: THREE.Scene) {
     this.tacticalRigs = createAllBossChassisRigs();
@@ -294,6 +325,7 @@ export class BossEntity {
         x: 0,
         z: 0,
         damage: 5,
+        speed: BOSS_WARHEAD_SPEED,
       });
     }
 
@@ -383,6 +415,7 @@ export class BossEntity {
     this.latestDef = def;
     this.active = true;
     this.defeated = false;
+    this.isEnraged = false;
     this.activeChassis = def.chassis;
     this.maxHp = def.maxHp;
     this.currentHp = def.maxHp;
@@ -393,16 +426,21 @@ export class BossEntity {
     this.salvoDamage = def.salvoDamage;
     this.rewardCoins = def.rewardCoins;
     this.x = 0;
-    this.z = -trackLength - 16.5;
+    this.z = -trackLength - 21.5;
     this.walkPhase = 0;
     this.lastFootstepCycle = 0;
     this.hitFlash = 0;
     this.hitFlashCooldown = 0;
     this.slamTimer = 0;
     this.barrelSpin = 0;
+    this.staggerTimer = 0;
+    this.escortSummonTimer = 0;
+    this.preEnrageEscortTriggered = false;
+    this.lastSafeLaneIndex = -1;
+    this.activeTelegraphDuration = BOSS_TELEGRAPH_DURATION;
 
     this.clearSalvoVisuals();
-    this.salvoCooldown = 0.55;
+    this.salvoCooldown = 0.50;
     this.salvoCycleIndex = 0;
 
     this.syncActiveThemeRigAppearance();
@@ -422,6 +460,7 @@ export class BossEntity {
 
   public hide(): void {
     this.active = false;
+    this.isEnraged = false;
     this.clearSalvoVisuals();
     for (const key of Object.keys(this.tacticalRigs) as BossChassisId[]) {
       this.tacticalRigs[key].root.visible = false;
@@ -432,10 +471,17 @@ export class BossEntity {
   private applyFlash(amount: number): void {
     const rig = this.activeRig;
     const w = amount > 0.15 ? 0.88 : amount * 2.4;
-    rig.primaryMat.emissive.setRGB(w, w, w);
-    rig.darkSteelMat.emissive.setRGB(w * 0.85, w * 0.85, w * 0.85);
-    rig.accentMat.emissive.setRGB(w, w, w);
-    rig.trimMat.emissive.setRGB(w, w, w);
+    const ragePulse =
+      this.isEnraged && amount <= 0.15
+        ? 0.22 + 0.14 * Math.sin(this.barrelSpin * 0.45)
+        : 0;
+    const er = Math.max(w, ragePulse * 1.15);
+    const eg = Math.max(w, ragePulse * 0.25);
+    const eb = Math.max(w, ragePulse * 0.45);
+    rig.primaryMat.emissive.setRGB(er, eg, eb);
+    rig.darkSteelMat.emissive.setRGB(er * 0.8, eg * 0.8, eb * 0.8);
+    rig.accentMat.emissive.setRGB(er, eg, eb);
+    rig.trimMat.emissive.setRGB(Math.max(w, ragePulse * 0.9), Math.max(w, ragePulse * 0.6), eb);
   }
 
   public update(
@@ -443,7 +489,8 @@ export class BossEntity {
     inBossFight: boolean,
     squadX: number,
     squadZ: number,
-    currentSquad: number
+    currentSquad: number,
+    tempoMult = 1.0
   ): void {
     this.lastStepTriggeredShake = false;
     this.lastStepSlamDamage = 0;
@@ -451,11 +498,15 @@ export class BossEntity {
     this.lastStepSalvoLaunched = false;
     this.lastStepSalvoHitDamage = 0;
     this.lastStepSalvoDodgedCount = 0;
+    this.lastStepEnrageTriggered = false;
+    this.lastStepSummonEscorts = false;
+    this.lastStepEscortCount = 0;
 
     if (!this.active || this.defeated) {
       return;
     }
 
+    const safeTempo = Math.max(0.85, tempoMult);
     const rig = this.activeRig;
     const isUnicorn = this.skinTheme === 'UNICORN';
 
@@ -465,10 +516,42 @@ export class BossEntity {
     if (this.hitFlash > 0) {
       this.hitFlash = Math.max(0, this.hitFlash - dt * 24);
       this.applyFlash(this.hitFlash);
+    } else if (this.isEnraged) {
+      this.applyFlash(0);
     }
 
-    // Spin rotary cannons / star-halos / chariot wheels across all chassis (faster spin during telegraph charge-up!)
-    const spinRate = this.telegraphTimer > 0 ? 30.0 : inBossFight ? 18.5 : 3.5;
+    // 50% HP Enrage Trigger & Periodic Escort Squad Summons during BOSS_FIGHT!
+    if (inBossFight && currentSquad > 0) {
+      const hpRatio = this.currentHp / Math.max(1, this.maxHp);
+      if (!this.isEnraged && hpRatio <= 0.50) {
+        this.isEnraged = true;
+        this.lastStepEnrageTriggered = true;
+        this.escortSummonTimer = 0.35;
+        this.salvoCooldown = Math.min(this.salvoCooldown, 0.38);
+      } else if (
+        !this.isEnraged &&
+        !this.preEnrageEscortTriggered &&
+        safeTempo >= 1.15 &&
+        hpRatio <= 0.75
+      ) {
+        this.preEnrageEscortTriggered = true;
+        this.lastStepSummonEscorts = true;
+        this.lastStepEscortCount = safeTempo >= 1.30 ? 8 : 6;
+      }
+
+      if (this.isEnraged && this.z < squadZ - 5.2) {
+        this.escortSummonTimer -= dt;
+        if (this.escortSummonTimer <= 0) {
+          this.escortSummonTimer = Math.max(2.6, 4.6 / safeTempo);
+          this.lastStepSummonEscorts = true;
+          this.lastStepEscortCount = safeTempo >= 1.30 ? 10 : safeTempo >= 1.15 ? 8 : 6;
+        }
+      }
+    }
+
+    // Spin rotary cannons / star-halos / chariot wheels (faster spin during Enrage & telegraph!)
+    const rageSpinBoost = this.isEnraged ? 1.48 : 1.0;
+    const spinRate = (this.telegraphTimer > 0 ? 32.0 : inBossFight ? 19.5 : 3.5) * rageSpinBoost;
     this.barrelSpin += dt * spinRate;
     for (let i = 0; i < rig.spinClusters.length; i++) {
       const sign = i % 2 === 0 ? 1 : -1;
@@ -479,8 +562,9 @@ export class BossEntity {
       }
     }
 
-    // Pulse ground threat ring
-    const ringPulse = 1 + Math.sin(this.barrelSpin * 0.32) * 0.06;
+    // Pulse ground threat ring (wider fiery pulse when Enraged)
+    const ringBase = this.isEnraged ? 1.16 : 1.0;
+    const ringPulse = ringBase + Math.sin(this.barrelSpin * 0.35) * (this.isEnraged ? 0.11 : 0.06);
     rig.hazardRing.scale.set(ringPulse, ringPulse, 1);
 
     const baseBodyY = isUnicorn
@@ -510,18 +594,28 @@ export class BossEntity {
       return;
     }
 
+    if (this.staggerTimer > 0) {
+      this.staggerTimer = Math.max(0, this.staggerTimer - dt);
+    }
+
     const stopZ = squadZ - 2.35;
     if (this.z < stopZ) {
-      this.z = Math.min(stopZ, this.z + this.advanceSpeed * dt);
+      const rageSpeedMul = this.isEnraged ? 1.18 : 1.0;
+      const telegraphSlowMul = this.telegraphTimer > 0 ? 0.48 : 1.0;
+      const staggerMul = this.staggerTimer > 0 ? 0.15 : 1.0;
+      const effAdvanceSpeed =
+        this.advanceSpeed * rageSpeedMul * telegraphSlowMul * staggerMul;
+      this.z = Math.min(stopZ, this.z + effAdvanceSpeed * dt);
       const targetBossX = Math.max(-2.65, Math.min(2.65, squadX * 0.68));
       const dx = targetBossX - this.x;
-      this.x += Math.sign(dx) * Math.min(Math.abs(dx), 1.65 * dt);
+      this.x += Math.sign(dx) * Math.min(Math.abs(dx), 1.85 * rageSpeedMul * dt);
 
-      const phaseRate = isUnicorn
-        ? 5.6
-        : this.activeChassis === 'KRAKEN_WALKER'
-          ? 6.6
-          : 4.6;
+      const phaseRate =
+        (isUnicorn
+          ? 5.8
+          : this.activeChassis === 'KRAKEN_WALKER'
+            ? 6.8
+            : 4.8) * rageSpeedMul;
       this.walkPhase += dt * phaseRate;
       const cycle = Math.floor(this.walkPhase / Math.PI);
       if (cycle !== this.lastFootstepCycle) {
@@ -530,13 +624,16 @@ export class BossEntity {
       }
 
       this.animateChassisAdvance(rig, baseBodyY, squadX);
+      if (this.staggerTimer > 0) {
+        rig.bodyGroup.rotation.x -= Math.sin((this.staggerTimer / 0.65) * Math.PI) * 0.22;
+      }
     } else if (currentSquad > 0) {
       // Boss reached melee range — heavy chassis slam / Giant Unicorn rearing horn-charge!
       this.slamTimer -= dt;
       if (this.slamTimer <= 0) {
-        this.slamTimer = 0.22;
+        this.slamTimer = 0.20;
         this.lastStepTriggeredShake = true;
-        this.lastStepSlamDamage = Math.max(2, Math.ceil(currentSquad * 0.28));
+        this.lastStepSlamDamage = Math.max(3, Math.ceil(currentSquad * 0.34));
       }
       rig.bodyGroup.position.y = baseBodyY + Math.sin(this.slamTimer * 30) * 0.18;
       rig.bodyGroup.rotation.x = 0.15 + Math.sin(this.slamTimer * 30) * 0.09;
@@ -550,32 +647,46 @@ export class BossEntity {
     rig.root.position.set(this.x, 0, this.z);
 
     // Update Telegraphed Lane Salvos & In-Flight Boss Warheads
-    this.updateSalvoAttacks(dt, squadX, squadZ, currentSquad);
+    this.updateSalvoAttacks(dt, squadX, squadZ, currentSquad, safeTempo);
   }
 
   private updateSalvoAttacks(
     dt: number,
     squadX: number,
     squadZ: number,
-    currentSquad: number
+    currentSquad: number,
+    tempoMult: number
   ): void {
+    const rageCadence = this.isEnraged ? 1.28 : 1.0;
+    const effectiveTelegraph = Math.max(
+      0.44,
+      BOSS_TELEGRAPH_DURATION / (tempoMult * (this.isEnraged ? 1.12 : 1.0))
+    );
+    const effectiveInterval = Math.max(
+      0.72,
+      this.salvoInterval / (tempoMult * rageCadence)
+    );
+
     // 1. Trigger or advance Telegraph Phase while Boss is at ranged engagement distance
     if (this.telegraphTimer > 0) {
       this.telegraphTimer += dt;
-      if (this.telegraphTimer >= BOSS_TELEGRAPH_DURATION) {
+      if (this.telegraphTimer >= this.activeTelegraphDuration) {
         this.telegraphTimer = 0;
-        this.salvoCooldown = this.salvoInterval;
+        this.salvoCooldown = effectiveInterval;
         this.spawnSalvoWarheads();
         this.lastStepSalvoLaunched = true;
       }
-    } else if (currentSquad > 0 && this.z < squadZ - 4.5) {
+    } else if (currentSquad > 0 && this.z < squadZ - 4.2) {
       this.salvoCooldown -= dt;
       if (this.salvoCooldown <= 0) {
         this.lockedLaneMask = selectBossSalvoLaneMask(
           squadX,
           this.salvoLanes,
-          this.salvoCycleIndex++
+          this.salvoCycleIndex++,
+          this.lastSafeLaneIndex
         );
+        this.lastSafeLaneIndex = getSafeLaneIndex(this.lockedLaneMask);
+        this.activeTelegraphDuration = effectiveTelegraph;
         this.telegraphTimer = 0.001;
         this.lastStepSalvoWarning = true;
       }
@@ -591,7 +702,7 @@ export class BossEntity {
       if (!w.active) {
         continue;
       }
-      w.z += BOSS_WARHEAD_SPEED * dt;
+      w.z += w.speed * dt;
       w.coreMesh.rotation.z += dt * 15;
       w.coreMesh.rotation.x += dt * 9;
       w.root.position.set(w.x, 0, w.z);
@@ -619,7 +730,7 @@ export class BossEntity {
     // 3. Sync 3 Roadway Telegraph Strip Visuals (pulsing during charge-up + active flight)
     const isCharging = this.telegraphTimer > 0;
     const chargeRatio = isCharging
-      ? Math.min(1, this.telegraphTimer / BOSS_TELEGRAPH_DURATION)
+      ? Math.min(1, this.telegraphTimer / Math.max(0.1, this.activeTelegraphDuration))
       : 1;
     const pulse = isCharging
       ? 0.55 + 0.45 * Math.sin(chargeRatio * Math.PI * 7)
@@ -632,7 +743,7 @@ export class BossEntity {
 
     // Scroll warning chevrons rapidly down locked lanes toward the player squad
     this.chevronTex.repeat.set(1, Math.max(2, stripLen * 0.42));
-    this.chevronTex.offset.y = (this.chevronTex.offset.y + dt * 3.6) % 1;
+    this.chevronTex.offset.y = (this.chevronTex.offset.y + dt * (this.isEnraged ? 4.8 : 3.8)) % 1;
 
     for (let lane = 0; lane < 3; lane++) {
       const vis = this.laneVisuals[lane];
@@ -649,19 +760,23 @@ export class BossEntity {
       vis.carpetGroup.scale.set(1, 1, stripLen);
 
       vis.carpetMat.opacity = isCharging
-        ? 0.38 + 0.42 * chargeRatio * pulse
+        ? 0.40 + 0.44 * chargeRatio * pulse
         : 0.34;
-      vis.railMat.opacity = isCharging ? 0.55 + 0.45 * pulse : 0.48;
+      vis.railMat.opacity = isCharging ? 0.58 + 0.42 * pulse : 0.48;
 
       const retScale = isCharging ? 1.25 - 0.35 * chargeRatio : 0.92;
       vis.reticleRing.position.set(laneX, 0.055, squadZ);
       vis.reticleRing.scale.set(retScale, retScale, 1);
-      vis.reticleMat.opacity = isCharging ? 0.55 + 0.42 * pulse : 0.48;
+      vis.reticleMat.opacity = isCharging ? 0.58 + 0.40 * pulse : 0.48;
     }
   }
 
   private spawnSalvoWarheads(): void {
     const launchZ = this.z + 1.5;
+    const launchSpeed = this.isEnraged ? BOSS_ENRAGED_WARHEAD_SPEED : BOSS_WARHEAD_SPEED;
+    const launchDmg = this.isEnraged
+      ? Math.ceil(this.salvoDamage * 1.2)
+      : this.salvoDamage;
     for (let lane = 0; lane < 3; lane++) {
       if (!this.lockedLaneMask[lane]) {
         continue;
@@ -673,7 +788,8 @@ export class BossEntity {
           w.laneIndex = lane;
           w.x = BOSS_SALVO_LANE_CENTERS[lane];
           w.z = launchZ;
-          w.damage = this.salvoDamage;
+          w.damage = launchDmg;
+          w.speed = launchSpeed;
           w.root.position.set(w.x, 0, w.z);
           w.root.visible = true;
           break;
@@ -706,7 +822,7 @@ export class BossEntity {
           -0.18 + Math.max(-0.30, Math.min(0.30, (squadX - this.x) * 0.12));
         const chargeFrac =
           this.telegraphTimer > 0
-            ? Math.min(1, this.telegraphTimer / BOSS_TELEGRAPH_DURATION)
+            ? Math.min(1, this.telegraphTimer / Math.max(0.1, this.activeTelegraphDuration))
             : 0;
         rig.turretGroup.rotation.y = aimYaw;
         rig.turretGroup.rotation.x =
@@ -832,6 +948,9 @@ export class BossEntity {
 
     if (nextSeg < prevSeg) {
       this.lastStepSegmentBroken = true;
+      this.staggerTimer = 0.65;
+      this.z -= 1.45;
+      this.activeRig.root.position.z = this.z;
     }
 
     return 'HIT';

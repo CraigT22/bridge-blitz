@@ -1,13 +1,20 @@
 import type { EnemyWaveDefinition } from '../core/types';
 import { computeSquadOuterRadius } from '../math/formationMath';
 import type { InstancedBatchRenderer } from '../rendering/InstancedBatchRenderer';
+import {
+  ENEMY_BOLT_BASE_SPEED,
+  type EnemyProjectileSystem,
+} from './EnemyProjectileSystem';
 
 const MAX_UNITS_PER_WAVE = 52;
+const SHOOTER_TELEGRAPH_BASE_SEC = 0.56;
+const CHARGER_TELEGRAPH_BASE_SEC = 0.62;
 
 export interface EliminatedEnemyEvent {
   x: number;
   z: number;
   isHeavy: boolean;
+  stoppedCharger: boolean;
   coinReward: number;
 }
 
@@ -22,12 +29,19 @@ export class EnemyWaveSlot {
   public z = 0;
   public marchPhase = 0;
   public isMarching = false;
+  public lastStepFiredBolt = false;
+  public lastStepStartedCharge = false;
 
-  // Per-unit Struct-of-Arrays for dense 30-50 unit swarms, individual white hit-flashes & damaged mini HP bars!
+  // Per-unit Struct-of-Arrays for dense 30-50 unit swarms, shooters, armored chargers & hit-flashes!
   public readonly unitCountCap = MAX_UNITS_PER_WAVE;
   public readonly unitAlive = new Uint8Array(MAX_UNITS_PER_WAVE);
   public readonly unitIsHeavy = new Uint8Array(MAX_UNITS_PER_WAVE);
   public readonly unitIsVanguard = new Uint8Array(MAX_UNITS_PER_WAVE);
+  public readonly unitIsShooter = new Uint8Array(MAX_UNITS_PER_WAVE);
+  public readonly unitIsCharger = new Uint8Array(MAX_UNITS_PER_WAVE);
+  /** 0 = idle, 1 = telegraphing shot/charge, 2 = actively rushing lane */
+  public readonly unitChargeState = new Uint8Array(MAX_UNITS_PER_WAVE);
+  public readonly unitChargeTimer = new Float32Array(MAX_UNITS_PER_WAVE);
   public readonly unitX = new Float32Array(MAX_UNITS_PER_WAVE);
   public readonly unitZ = new Float32Array(MAX_UNITS_PER_WAVE);
   public readonly unitHp = new Float32Array(MAX_UNITS_PER_WAVE);
@@ -41,11 +55,19 @@ export class EnemyWaveSlot {
 
   private totalConfigured = 0;
   private withinRenderRange = true;
+  private shooterWaveCooldown = 0.85;
+  private chargerWaveCooldown = 1.25;
 
   constructor(waveIndex: number) {
     this.entityId = 800 + waveIndex;
     for (let i = 0; i < 8; i++) {
-      this.lastKills.push({ x: 0, z: 0, isHeavy: false, coinReward: 0 });
+      this.lastKills.push({
+        x: 0,
+        z: 0,
+        isHeavy: false,
+        stoppedCharger: false,
+        coinReward: 0,
+      });
     }
   }
 
@@ -62,6 +84,10 @@ export class EnemyWaveSlot {
     this.isMarching = false;
     this.withinRenderRange = true;
     this.lastKillCount = 0;
+    this.lastStepFiredBolt = false;
+    this.lastStepStartedCharge = false;
+    this.shooterWaveCooldown = 0.65;
+    this.chargerWaveCooldown = 1.05;
 
     const heavyTarget =
       def.heavyCount ?? Math.max(2, Math.floor(this.totalConfigured * 0.24));
@@ -85,13 +111,46 @@ export class EnemyWaveSlot {
     });
     const heavySet = new Set(heavyOrder.slice(0, Math.max(0, heavyTarget)));
 
+    const shooterTarget =
+      def.shooterCount ?? Math.max(2, Math.floor(this.totalConfigured * 0.20));
+    const chargerTarget =
+      def.chargerCount ?? Math.max(1, Math.min(heavyTarget, Math.ceil(heavyTarget * 0.65)));
+
+    let assignedShooters = 0;
+    let assignedChargers = 0;
     let maxConfiguredZ = def.z;
+
     for (let i = 0; i < this.totalConfigured; i++) {
       this.unitAlive[i] = 1;
       const isHeavy = heavySet.has(i) ? 1 : 0;
       this.unitIsHeavy[i] = isHeavy;
       const row = Math.floor(i / cols);
       this.unitIsVanguard[i] = !isHeavy && row < vanguardRowCutoff ? 1 : 0;
+
+      // Designate Armored Chargers from front Heavies
+      if (isHeavy === 1 && assignedChargers < chargerTarget) {
+        this.unitIsCharger[i] = 1;
+        assignedChargers++;
+      } else {
+        this.unitIsCharger[i] = 0;
+      }
+
+      // Designate Ranged Shooters from mid/backline non-heavy units across spread columns
+      if (
+        isHeavy === 0 &&
+        assignedShooters < shooterTarget &&
+        (row >= 1 || this.totalConfigured <= 10) &&
+        (i % 2 === 0 || row >= totalRows - 2)
+      ) {
+        this.unitIsShooter[i] = 1;
+        assignedShooters++;
+      } else {
+        this.unitIsShooter[i] = 0;
+      }
+
+      this.unitChargeState[i] = 0;
+      this.unitChargeTimer[i] = 0;
+
       const col = i % cols;
       const uNorm = cols > 1 ? col / (cols - 1) - 0.5 : 0;
       const rowShift = (row % 2) * 0.32 - 0.16;
@@ -130,8 +189,13 @@ export class EnemyWaveSlot {
     dt: number,
     squadX: number,
     squadZ: number,
-    blockingGateZ: number | null = null
+    blockingGateZ: number | null = null,
+    projectileSystem?: EnemyProjectileSystem,
+    threatCadenceMult = 1.0,
+    boltDamage = 1
   ): void {
+    this.lastStepFiredBolt = false;
+    this.lastStepStartedCharge = false;
     if (!this.active || this.aliveCount <= 0) {
       return;
     }
@@ -146,12 +210,30 @@ export class EnemyWaveSlot {
     const blockedByGate = blockingGateZ !== null && this.z <= blockingGateZ + 1.5;
     const maxAllowedUnitZ =
       blockingGateZ !== null ? blockingGateZ - 32.0 : Infinity;
-    const withinEngage = !blockedByGate && squadZ - this.z < 34;
+    const withinEngage = !blockedByGate && squadZ - this.z < 38;
     this.isMarching = withinEngage;
     if (withinEngage) {
       this.z = Math.min(maxAllowedUnitZ, this.z + this.speed * dt);
-      this.marchPhase += dt * 9.8;
+      this.marchPhase += dt * 10.6;
     }
+
+    const cadence = Math.max(0.6, threatCadenceMult);
+    const shooterTelegraphDur = SHOOTER_TELEGRAPH_BASE_SEC / Math.sqrt(cadence);
+    const chargerTelegraphDur = CHARGER_TELEGRAPH_BASE_SEC / Math.sqrt(cadence);
+    const maxConcurrentShooters = cadence >= 1.55 ? 3 : cadence >= 1.25 ? 2 : 1;
+    const maxConcurrentChargers = cadence >= 1.25 ? 2 : 1;
+
+    if (withinEngage) {
+      this.shooterWaveCooldown = Math.max(0, this.shooterWaveCooldown - dt);
+      this.chargerWaveCooldown = Math.max(0, this.chargerWaveCooldown - dt);
+    }
+
+    let activeTelegraphShooters = 0;
+    let activeChargers = 0;
+    let bestIdleShooterIdx = -1;
+    let bestIdleShooterScore = Infinity;
+    let bestIdleChargerIdx = -1;
+    let bestIdleChargerZ = -999999;
 
     let alive = 0;
     let sumX = 0;
@@ -166,26 +248,100 @@ export class EnemyWaveSlot {
         this.unitHitFlash[i] = Math.max(0, this.unitHitFlash[i] - dt * 26.0);
       }
 
-      if (withinEngage) {
-        const speedMul =
-          this.unitIsHeavy[i] === 1
-            ? 0.90
-            : this.unitIsVanguard[i] === 1
-              ? 1.14
-              : 1.0;
-        this.unitZ[i] = Math.min(
-          maxAllowedUnitZ,
-          this.unitZ[i] + this.speed * speedMul * dt
-        );
+      const uz = this.unitZ[i];
+      const distZ = squadZ - uz;
 
-        // Controlled close-range flank pinch (< 10.5m): pressures center campers while keeping carved breach lanes passable!
-        const distZ = squadZ - this.unitZ[i];
-        if (distZ < 10.5 && distZ > -1.0) {
-          const dx = squadX - this.unitX[i];
-          const lateralRate = this.unitIsVanguard[i] === 1 ? 0.34 : 0.24;
-          this.unitX[i] += Math.sign(dx) * Math.min(Math.abs(dx), lateralRate * dt);
+      if (withinEngage) {
+        const cState = this.unitChargeState[i];
+
+        // 1. Armored Charger state machine (1 = telegraph red lane, 2 = high-speed lane rush!)
+        if (this.unitIsCharger[i] === 1 && cState > 0) {
+          activeChargers++;
+          if (cState === 1) {
+            this.unitChargeTimer[i] -= dt;
+            const progress = 1 - Math.max(0, this.unitChargeTimer[i] / chargerTelegraphDur);
+            this.unitHitFlash[i] = Math.max(this.unitHitFlash[i], 0.35 + progress * 0.45);
+            if (projectileSystem) {
+              projectileSystem.pushChargerLane(
+                this.unitX[i],
+                uz,
+                Math.max(uz + 2.0, squadZ + 0.5),
+                progress,
+                false
+              );
+            }
+            if (this.unitChargeTimer[i] <= 0) {
+              this.unitChargeState[i] = 2;
+              this.lastStepStartedCharge = true;
+            }
+          } else {
+            // Sprint straight down locked lane at 2.85x speed!
+            const rushSpeed = this.speed * 2.85;
+            this.unitZ[i] = Math.min(maxAllowedUnitZ, uz + rushSpeed * dt);
+            this.unitHitFlash[i] = Math.max(this.unitHitFlash[i], 0.42);
+            if (projectileSystem) {
+              projectileSystem.pushChargerLane(
+                this.unitX[i],
+                this.unitZ[i],
+                Math.max(this.unitZ[i] + 2.4, squadZ + 0.5),
+                1.0,
+                true
+              );
+            }
+          }
+        } else {
+          // 2. Standard / Shooter forward advance
+          let speedMul =
+            this.unitIsHeavy[i] === 1
+              ? 0.92
+              : this.unitIsVanguard[i] === 1
+                ? 1.15
+                : 1.0;
+
+          if (this.unitIsShooter[i] === 1 && cState === 1) {
+            activeTelegraphShooters++;
+            speedMul *= 0.35; // Brace briefly while charging lane shot
+            this.unitChargeTimer[i] -= dt;
+            const progress = 1 - Math.max(0, this.unitChargeTimer[i] / shooterTelegraphDur);
+            this.unitHitFlash[i] = Math.max(this.unitHitFlash[i], 0.24 + progress * 0.36);
+            if (projectileSystem) {
+              projectileSystem.pushShooterTelegraph(this.unitX[i], uz, progress);
+            }
+            if (this.unitChargeTimer[i] <= 0) {
+              this.unitChargeState[i] = 0;
+              if (projectileSystem && distZ >= 5.5 && distZ <= 36) {
+                const boltSpeed = ENEMY_BOLT_BASE_SPEED * (0.94 + cadence * 0.14);
+                projectileSystem.spawnBolt(this.unitX[i], uz + 0.65, boltSpeed, boltDamage);
+                this.lastStepFiredBolt = true;
+              }
+            }
+          } else if (this.unitIsShooter[i] === 1 && distZ >= 9.5 && distZ <= 33) {
+            // Bias toward shooters aligned near squadX so camping one lane draws fire!
+            const score = Math.abs(this.unitX[i] - squadX) + distZ * 0.14;
+            if (score < bestIdleShooterScore) {
+              bestIdleShooterScore = score;
+              bestIdleShooterIdx = i;
+            }
+          } else if (this.unitIsCharger[i] === 1 && distZ >= 8.5 && distZ <= 29) {
+            if (uz > bestIdleChargerZ) {
+              bestIdleChargerZ = uz;
+              bestIdleChargerIdx = i;
+            }
+          }
+
+          this.unitZ[i] = Math.min(
+            maxAllowedUnitZ,
+            uz + this.speed * speedMul * dt
+          );
+
+          // Controlled close-range flank pinch (< 11m)
+          if (distZ < 11.0 && distZ > -1.0) {
+            const dx = squadX - this.unitX[i];
+            const lateralRate = this.unitIsVanguard[i] === 1 ? 0.42 : 0.28;
+            this.unitX[i] += Math.sign(dx) * Math.min(Math.abs(dx), lateralRate * dt);
+          }
         }
-      } else if (this.unitZ[i] > maxAllowedUnitZ) {
+      } else if (uz > maxAllowedUnitZ) {
         this.unitZ[i] = maxAllowedUnitZ;
       }
 
@@ -199,6 +355,31 @@ export class EnemyWaveSlot {
       if (this.unitZ[i] > maxZ) {
         maxZ = this.unitZ[i];
       }
+    }
+
+    // Trigger next ranged shooter telegraph if cooldown ready
+    if (
+      withinEngage &&
+      projectileSystem &&
+      this.shooterWaveCooldown <= 0 &&
+      activeTelegraphShooters < maxConcurrentShooters &&
+      bestIdleShooterIdx >= 0
+    ) {
+      this.unitChargeState[bestIdleShooterIdx] = 1;
+      this.unitChargeTimer[bestIdleShooterIdx] = shooterTelegraphDur;
+      this.shooterWaveCooldown = 1.48 / cadence;
+    }
+
+    // Trigger next armored lane charger telegraph if cooldown ready
+    if (
+      withinEngage &&
+      this.chargerWaveCooldown <= 0 &&
+      activeChargers < maxConcurrentChargers &&
+      bestIdleChargerIdx >= 0
+    ) {
+      this.unitChargeState[bestIdleChargerIdx] = 1;
+      this.unitChargeTimer[bestIdleChargerIdx] = chargerTelegraphDur;
+      this.chargerWaveCooldown = 2.85 / cadence;
     }
 
     this.aliveCount = alive;
@@ -220,12 +401,13 @@ export class EnemyWaveSlot {
         continue;
       }
       if (this.unitIsHeavy[i] === 1) {
+        const rushPhaseBoost = this.unitChargeState[i] === 2 ? 2.1 : 1.0;
         renderer.pushHeavyEnemySoldier(
           this.unitX[i],
           this.unitZ[i],
-          this.marchPhase + i * 0.65,
+          this.marchPhase * rushPhaseBoost + i * 0.65,
           this.unitHitFlash[i],
-          marching
+          marching || this.unitChargeState[i] === 2
         );
       } else {
         renderer.pushEnemySoldier(
@@ -268,7 +450,7 @@ export class EnemyWaveSlot {
       if (uEntityId === lastHitId) {
         continue;
       }
-      const hitRad = this.unitIsHeavy[i] === 1 ? 0.80 : 0.56;
+      const hitRad = this.unitIsHeavy[i] === 1 ? 0.82 : 0.56;
       const uz = this.unitZ[i];
       if (uz < segMinZ - hitRad || uz > segMaxZ + hitRad) {
         continue;
@@ -291,13 +473,18 @@ export class EnemyWaveSlot {
     this.unitHp[bestIdx] -= damage;
 
     if (this.unitHp[bestIdx] <= 0) {
+      const wasCharging = this.unitIsCharger[bestIdx] === 1 && this.unitChargeState[bestIdx] === 2;
       this.unitAlive[bestIdx] = 0;
+      this.unitChargeState[bestIdx] = 0;
       this.aliveCount = Math.max(0, this.aliveCount - 1);
       const slot = this.lastKills[0];
       slot.x = this.unitX[bestIdx];
       slot.z = this.unitZ[bestIdx];
       slot.isHeavy = this.unitIsHeavy[bestIdx] === 1;
-      slot.coinReward = this.unitCoins[bestIdx];
+      slot.stoppedCharger = wasCharging;
+      slot.coinReward = wasCharging
+        ? Math.round(this.unitCoins[bestIdx] * 1.5)
+        : this.unitCoins[bestIdx];
       this.lastKillCount = 1;
 
       if (this.aliveCount <= 0) {
@@ -311,13 +498,14 @@ export class EnemyWaveSlot {
 
   /**
    * Resolves physical collisions between surviving enemy troopers and the player's squad rank.
-   * Regular troopers trade 1 commando; Heavy Juggernauts deal 2 commando casualties!
+   * Regular troopers trade 1 commando; Heavy Juggernauts deal 2; rushing Armored Chargers deal 2 + bonus!
    */
   public resolveSquadCollision(
     squadX: number,
     squadZ: number,
-    playerLogicalSquad: number
-  ): { playerLosses: number; hitX: number; hitZ: number } | null {
+    playerLogicalSquad: number,
+    chargerDamageBonus = 1
+  ): { playerLosses: number; hitX: number; hitZ: number; hitByCharger: boolean } | null {
     if (!this.active || this.aliveCount <= 0 || playerLogicalSquad <= 0) {
       return null;
     }
@@ -326,21 +514,32 @@ export class EnemyWaveSlot {
     let totalLosses = 0;
     let impactX = squadX;
     let impactZ = squadZ;
+    let hitByCharger = false;
 
     for (let i = 0; i < this.totalConfigured; i++) {
       if (this.unitAlive[i] === 0) {
         continue;
       }
-      const unitRad = this.unitIsHeavy[i] === 1 ? 0.56 : 0.40;
+      const isHeavy = this.unitIsHeavy[i] === 1;
+      const isRushingCharger = this.unitIsCharger[i] === 1 && this.unitChargeState[i] === 2;
+      const unitRad = isHeavy ? 0.58 : 0.40;
       if (
-        Math.abs(this.unitZ[i] - squadZ) <= 0.74 + unitRad * 0.42 &&
+        Math.abs(this.unitZ[i] - squadZ) <= (isRushingCharger ? 0.92 : 0.74) + unitRad * 0.42 &&
         Math.abs(this.unitX[i] - squadX) <= squadHalfW + unitRad
       ) {
-        const dmg = this.unitIsHeavy[i] === 1 ? 2 : 1;
+        const dmg = isRushingCharger
+          ? 2 + Math.max(1, chargerDamageBonus)
+          : isHeavy
+            ? 2
+            : 1;
+        if (isRushingCharger) {
+          hitByCharger = true;
+        }
         totalLosses += dmg;
         impactX = this.unitX[i];
         impactZ = this.unitZ[i];
         this.unitAlive[i] = 0;
+        this.unitChargeState[i] = 0;
         this.aliveCount = Math.max(0, this.aliveCount - 1);
 
         if (totalLosses >= playerLogicalSquad) {
@@ -360,6 +559,7 @@ export class EnemyWaveSlot {
       playerLosses: Math.min(playerLogicalSquad, totalLosses),
       hitX: impactX,
       hitZ: impactZ,
+      hitByCharger,
     };
   }
 

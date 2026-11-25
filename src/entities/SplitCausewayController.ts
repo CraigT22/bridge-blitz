@@ -24,6 +24,10 @@ import {
   type ShowcaseWeaponRig,
 } from '../rendering/WeaponRigFactory';
 import {
+  ENEMY_BOLT_BASE_SPEED,
+  type EnemyProjectileSystem,
+} from './EnemyProjectileSystem';
+import {
   SHARED_BARREL_GEOS,
   SHARED_DRUM_TEX,
   SHARED_GLOW_TEX,
@@ -45,6 +49,8 @@ const LEFT_GATE_PANEL_WIDTH = 4.44;
 const LEFT_GATE_PANEL_HEIGHT = 2.86;
 const MAX_CAUSEWAY_TROOPERS = 740;
 const CELEBRATION_SPARK_COUNT = 14;
+const SPLIT_SHOOTER_TELEGRAPH_BASE_SEC = 0.58;
+const SPLIT_CHARGER_TELEGRAPH_BASE_SEC = 0.64;
 
 export type SplitBarrelHitResult =
   | { readonly type: 'NONE' }
@@ -94,6 +100,8 @@ export class SplitCausewayController {
   public siegeColumnSpan = 340;
   public marchSpeed = 2.45;
   public marchPhase = 0;
+  public lastStepFiredBolt = false;
+  public lastStepStartedCharge = false;
 
   public queueCursor = 0;
   public queueTotal = 0;
@@ -106,6 +114,11 @@ export class SplitCausewayController {
   public rightAliveCount = 0;
   public readonly unitAlive = new Uint8Array(MAX_CAUSEWAY_TROOPERS);
   public readonly unitRank = new Uint8Array(MAX_CAUSEWAY_TROOPERS);
+  public readonly unitIsShooter = new Uint8Array(MAX_CAUSEWAY_TROOPERS);
+  public readonly unitIsCharger = new Uint8Array(MAX_CAUSEWAY_TROOPERS);
+  /** 0 = idle, 1 = telegraphing shot/charge, 2 = rushing forward */
+  public readonly unitChargeState = new Uint8Array(MAX_CAUSEWAY_TROOPERS);
+  public readonly unitChargeTimer = new Float32Array(MAX_CAUSEWAY_TROOPERS);
   public readonly unitX = new Float32Array(MAX_CAUSEWAY_TROOPERS);
   public readonly unitZ = new Float32Array(MAX_CAUSEWAY_TROOPERS);
   public readonly unitSpeedMul = new Float32Array(MAX_CAUSEWAY_TROOPERS);
@@ -114,7 +127,7 @@ export class SplitCausewayController {
   public readonly unitHitFlash = new Float32Array(MAX_CAUSEWAY_TROOPERS);
   public readonly unitCoins = new Float32Array(MAX_CAUSEWAY_TROOPERS);
 
-  public readonly lastKill = { x: 0, z: 0, isHeavy: false, coinReward: 0 };
+  public readonly lastKill = { x: 0, z: 0, isHeavy: false, stoppedCharger: false, coinReward: 0 };
 
   private skinTheme: SkinThemeId = 'TACTICAL';
   private readonly pylonMat: THREE.MeshStandardMaterial;
@@ -124,6 +137,8 @@ export class SplitCausewayController {
   private advanceLockTimer = 0;
   private spinClock = 0;
   private queueSinkY = 0;
+  private shooterCooldown = 1.1;
+  private chargerCooldown = 1.9;
 
   // Golden Squad Celebration Ring + Rising Starburst (triggered on barrel+gate break!)
   private readonly celebrationGroup = new THREE.Group();
@@ -441,6 +456,10 @@ export class SplitCausewayController {
     this.queueSinkY = 0;
     this.celebrationTimer = 0;
     this.celebrationGroup.visible = false;
+    this.lastStepFiredBolt = false;
+    this.lastStepStartedCharge = false;
+    this.shooterCooldown = 1.05;
+    this.chargerCooldown = 1.85;
 
     this.queueDefs = def.leftQueue;
     this.queueTotal = def.leftQueue.length;
@@ -471,6 +490,10 @@ export class SplitCausewayController {
 
           this.unitAlive[idx] = 1;
           this.unitRank[idx] = ech.rank;
+          this.unitIsShooter[idx] = ech.rank !== 2 && r >= 1 && (c + r) % 3 === 1 ? 1 : 0;
+          this.unitIsCharger[idx] = ech.rank === 2 && (c + r) % 2 === 0 ? 1 : 0;
+          this.unitChargeState[idx] = 0;
+          this.unitChargeTimer[idx] = 0;
           this.unitX[idx] = wx;
           this.unitZ[idx] = wz;
           this.unitSpeedMul[idx] = Math.max(0.65, ech.speed / this.marchSpeed);
@@ -487,6 +510,9 @@ export class SplitCausewayController {
     this.rightAliveCount = idx;
     for (let rest = idx; rest < MAX_CAUSEWAY_TROOPERS; rest++) {
       this.unitAlive[rest] = 0;
+      this.unitIsShooter[rest] = 0;
+      this.unitIsCharger[rest] = 0;
+      this.unitChargeState[rest] = 0;
     }
 
     this.root.visible = true;
@@ -614,8 +640,13 @@ export class SplitCausewayController {
     dt: number,
     squadX: number,
     squadZ: number,
-    combatActive: boolean
+    combatActive: boolean,
+    projectileSystem?: EnemyProjectileSystem,
+    threatCadenceMult = 1.0,
+    boltDamage = 1
   ): void {
+    this.lastStepFiredBolt = false;
+    this.lastStepStartedCharge = false;
     if (!this.active) {
       return;
     }
@@ -748,6 +779,22 @@ export class SplitCausewayController {
     this.siegeDistance = Math.min(this.siegeColumnSpan, this.siegeDistance + stepSpeed * dt);
     this.marchPhase += dt * 13.2 * (speedBoost > 1 ? 1.28 : 1.0);
 
+    const cadence = Math.max(0.6, threatCadenceMult);
+    const shooterTelegraphDur = SPLIT_SHOOTER_TELEGRAPH_BASE_SEC / Math.sqrt(cadence);
+    const chargerTelegraphDur = SPLIT_CHARGER_TELEGRAPH_BASE_SEC / Math.sqrt(cadence);
+    const maxConcurrentShooters = cadence >= 1.55 ? 3 : cadence >= 1.25 ? 2 : 1;
+    const maxConcurrentChargers = cadence >= 1.25 ? 2 : 1;
+
+    this.shooterCooldown = Math.max(0, this.shooterCooldown - dt);
+    this.chargerCooldown = Math.max(0, this.chargerCooldown - dt);
+
+    let activeShooters = 0;
+    let activeChargers = 0;
+    let bestShooterIdx = -1;
+    let bestShooterScore = Infinity;
+    let bestChargerIdx = -1;
+    let bestChargerZ = -999999;
+
     let alive = 0;
     for (let i = 0; i < this.totalTroopers; i++) {
       if (this.unitAlive[i] === 0) {
@@ -757,32 +804,121 @@ export class SplitCausewayController {
         this.unitHitFlash[i] = Math.max(0, this.unitHitFlash[i] - dt * 26.0);
       }
 
+      const uz = this.unitZ[i];
+      const distZ = squadZ - uz;
+      const cState = this.unitChargeState[i];
+      let rushMul = 1.0;
+
+      if (this.unitIsCharger[i] === 1 && cState > 0) {
+        activeChargers++;
+        if (cState === 1) {
+          rushMul = 0.28;
+          this.unitChargeTimer[i] -= dt;
+          const prog = 1 - Math.max(0, this.unitChargeTimer[i] / chargerTelegraphDur);
+          this.unitHitFlash[i] = Math.max(this.unitHitFlash[i], 0.35 + prog * 0.45);
+          if (projectileSystem) {
+            projectileSystem.pushChargerLane(
+              this.unitX[i],
+              uz,
+              Math.max(uz + 2.0, squadZ + 0.5),
+              prog,
+              false
+            );
+          }
+          if (this.unitChargeTimer[i] <= 0) {
+            this.unitChargeState[i] = 2;
+            this.lastStepStartedCharge = true;
+          }
+        } else {
+          rushMul = 2.15;
+          this.unitHitFlash[i] = Math.max(this.unitHitFlash[i], 0.42);
+          if (projectileSystem) {
+            projectileSystem.pushChargerLane(
+              this.unitX[i],
+              uz,
+              Math.max(uz + 2.2, squadZ + 0.5),
+              1.0,
+              true
+            );
+          }
+        }
+      } else if (this.unitIsShooter[i] === 1 && cState === 1) {
+        activeShooters++;
+        rushMul = 0.32;
+        this.unitChargeTimer[i] -= dt;
+        const prog = 1 - Math.max(0, this.unitChargeTimer[i] / shooterTelegraphDur);
+        this.unitHitFlash[i] = Math.max(this.unitHitFlash[i], 0.25 + prog * 0.36);
+        if (projectileSystem) {
+          projectileSystem.pushShooterTelegraph(this.unitX[i], uz, prog);
+        }
+        if (this.unitChargeTimer[i] <= 0) {
+          this.unitChargeState[i] = 0;
+          if (projectileSystem && distZ >= 6.0 && distZ <= 36) {
+            const boltSpeed = ENEMY_BOLT_BASE_SPEED * (0.94 + cadence * 0.14);
+            projectileSystem.spawnBolt(this.unitX[i], uz + 0.65, boltSpeed, boltDamage);
+            this.lastStepFiredBolt = true;
+          }
+        }
+      } else if (this.unitIsShooter[i] === 1 && distZ >= 9.5 && distZ <= 34) {
+        const score = Math.abs(this.unitX[i] - squadX) + distZ * 0.18;
+        if (score < bestShooterScore) {
+          bestShooterScore = score;
+          bestShooterIdx = i;
+        }
+      } else if (this.unitIsCharger[i] === 1 && distZ >= 9.0 && distZ <= 30) {
+        if (uz > bestChargerZ) {
+          bestChargerZ = uz;
+          bestChargerIdx = i;
+        }
+      }
+
       // Once a right-lane trooper clears the nose of the Divider Wall (`dividerTipZ`),
       // they peel left & chase into the open foreground Breach Arena toward `(squadX, squadZ)`
       // with natural per-unit lateral fan-out so front chasers stay readable instead of stacking!
-      if (this.unitZ[i] > this.dividerTipZ + 0.20) {
+      if (uz > this.dividerTipZ + 0.20) {
         const fanOffset = ((i % 5) - 2) * 0.44;
         const targetX = Math.max(
           -SOLDIER_SAFE_LIMIT_X,
           Math.min(SOLDIER_SAFE_LIMIT_X, squadX + fanOffset)
         );
         const dx = targetX - this.unitX[i];
-        const dz = Math.max(0.35, squadZ + 0.25 - this.unitZ[i]);
+        const dz = Math.max(0.35, squadZ + 0.25 - uz);
         const dist = Math.hypot(dx, dz);
-        const breachMul = this.unitRank[i] === 2 ? 1.12 : 1.28;
+        const breachMul = (this.unitRank[i] === 2 ? 1.12 : 1.28) * rushMul;
         const chargeStep = stepSpeed * this.unitSpeedMul[i] * breachMul * dt;
         const inv = 1 / Math.max(0.001, dist);
         this.unitX[i] = Math.max(
           -SOLDIER_SAFE_LIMIT_X,
           Math.min(SOLDIER_SAFE_LIMIT_X, this.unitX[i] + dx * inv * chargeStep)
         );
-        this.unitZ[i] += Math.max(stepSpeed * 0.50 * dt, dz * inv * chargeStep);
+        this.unitZ[i] += Math.max(stepSpeed * 0.50 * rushMul * dt, dz * inv * chargeStep);
       } else {
-        const advance = stepSpeed * this.unitSpeedMul[i] * dt;
+        const advance = stepSpeed * this.unitSpeedMul[i] * rushMul * dt;
         this.unitZ[i] += advance;
       }
 
       alive++;
+    }
+
+    if (
+      projectileSystem &&
+      this.shooterCooldown <= 0 &&
+      activeShooters < maxConcurrentShooters &&
+      bestShooterIdx >= 0
+    ) {
+      this.unitChargeState[bestShooterIdx] = 1;
+      this.unitChargeTimer[bestShooterIdx] = shooterTelegraphDur;
+      this.shooterCooldown = 1.62 / cadence;
+    }
+
+    if (
+      this.chargerCooldown <= 0 &&
+      activeChargers < maxConcurrentChargers &&
+      bestChargerIdx >= 0
+    ) {
+      this.unitChargeState[bestChargerIdx] = 1;
+      this.unitChargeTimer[bestChargerIdx] = chargerTelegraphDur;
+      this.chargerCooldown = 3.1 / cadence;
     }
 
     this.rightAliveCount = alive;
@@ -1000,12 +1136,18 @@ export class SplitCausewayController {
     this.unitHp[bestIdx] -= damage;
 
     if (this.unitHp[bestIdx] <= 0) {
+      const wasCharging =
+        this.unitIsCharger[bestIdx] === 1 && this.unitChargeState[bestIdx] === 2;
       this.unitAlive[bestIdx] = 0;
+      this.unitChargeState[bestIdx] = 0;
       this.rightAliveCount = Math.max(0, this.rightAliveCount - 1);
       this.lastKill.x = this.unitX[bestIdx];
       this.lastKill.z = this.unitZ[bestIdx];
       this.lastKill.isHeavy = this.unitRank[bestIdx] === 2;
-      this.lastKill.coinReward = this.unitCoins[bestIdx];
+      this.lastKill.stoppedCharger = wasCharging;
+      this.lastKill.coinReward = wasCharging
+        ? Math.round(this.unitCoins[bestIdx] * 1.5)
+        : this.unitCoins[bestIdx];
       return { status: 'KILL', entityId: hitEntityId };
     }
 
@@ -1015,8 +1157,9 @@ export class SplitCausewayController {
   public resolveSquadCollision(
     squadX: number,
     squadZ: number,
-    playerLogicalSquad: number
-  ): { playerLosses: number; hitX: number; hitZ: number } | null {
+    playerLogicalSquad: number,
+    chargerDamageBonus = 1
+  ): { playerLosses: number; hitX: number; hitZ: number; hitByCharger: boolean } | null {
     if (!this.active || this.rightAliveCount <= 0 || playerLogicalSquad <= 0) {
       return null;
     }
@@ -1025,6 +1168,7 @@ export class SplitCausewayController {
     let totalLosses = 0;
     let impactX = squadX;
     let impactZ = squadZ;
+    let hitByCharger = false;
 
     for (let i = 0; i < this.totalTroopers; i++) {
       if (this.unitAlive[i] === 0) {
@@ -1033,20 +1177,29 @@ export class SplitCausewayController {
       const uz = this.unitZ[i];
       const ux = this.unitX[i];
       const isHeavy = this.unitRank[i] === 2;
+      const isRushingCharger = this.unitIsCharger[i] === 1 && this.unitChargeState[i] === 2;
       const unitRad = isHeavy ? 0.58 : 0.42;
 
       const directClash =
-        Math.abs(uz - squadZ) <= 0.85 + unitRad * 0.4 &&
+        Math.abs(uz - squadZ) <= (isRushingCharger ? 0.98 : 0.85) + unitRad * 0.4 &&
         Math.abs(ux - squadX) <= squadHalfW + unitRad;
       // Also punish any enemy allowed to breach completely past the defense line (`uz > squadZ + 1.35`)!
       const breachedDefenseLine = uz > squadZ + 1.35;
 
       if (directClash || breachedDefenseLine) {
-        const dmg = isHeavy ? 4 : 2;
+        const dmg = isRushingCharger
+          ? 4 + Math.max(1, chargerDamageBonus)
+          : isHeavy
+            ? 4
+            : 2;
+        if (isRushingCharger) {
+          hitByCharger = true;
+        }
         totalLosses += dmg;
         impactX = directClash ? ux : squadX;
         impactZ = directClash ? uz : squadZ;
         this.unitAlive[i] = 0;
+        this.unitChargeState[i] = 0;
         this.rightAliveCount = Math.max(0, this.rightAliveCount - 1);
 
         if (totalLosses >= playerLogicalSquad) {
@@ -1063,6 +1216,7 @@ export class SplitCausewayController {
       playerLosses: Math.min(playerLogicalSquad, totalLosses),
       hitX: impactX,
       hitZ: impactZ,
+      hitByCharger,
     };
   }
 

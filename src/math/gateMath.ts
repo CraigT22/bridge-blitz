@@ -42,11 +42,11 @@ export interface GateDecayOutcome {
 
 export const MAX_ADD_GATE_VALUE = 99;
 export const MAX_SHOOTABLE_MUL_VALUE = 99.9;
-export const POSITIVE_GATE_RESISTANCE_SLOPE = 0.14;
-export const MUL_GATE_RESISTANCE_SLOPE = 0.13;
-export const GATE_DECAY_GRACE_SECONDS = 0.45;
-export const ADD_GATE_DECAY_STEPS_PER_SEC = 4.5;
-export const MUL_GATE_DECAY_STEPS_PER_SEC = 3.8;
+export const POSITIVE_GATE_RESISTANCE_SLOPE = 0.19;
+export const MUL_GATE_RESISTANCE_SLOPE = 0.18;
+export const GATE_DECAY_GRACE_SECONDS = 0.32;
+export const ADD_GATE_DECAY_STEPS_PER_SEC = 5.8;
+export const MUL_GATE_DECAY_STEPS_PER_SEC = 5.0;
 
 export const SPLIT_SPAN_MIN_X = -6.04;
 export const SPLIT_SPAN_MAX_X = 6.04;
@@ -121,7 +121,7 @@ export function computeGateStepThreshold(
       baseDamagePerIncrement *
       (1 +
         tenthsAboveOne * MUL_GATE_RESISTANCE_SLOPE +
-        tenthsAboveOne * tenthsAboveOne * 0.0045)
+        tenthsAboveOne * tenthsAboveOne * 0.0075)
     );
   }
   if (currentValue < 0) {
@@ -131,7 +131,7 @@ export function computeGateStepThreshold(
     baseDamagePerIncrement *
     (1 +
       currentValue * POSITIVE_GATE_RESISTANCE_SLOPE +
-      currentValue * currentValue * 0.015)
+      currentValue * currentValue * 0.022)
   );
 }
 

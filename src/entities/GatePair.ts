@@ -385,6 +385,8 @@ export class GatePairSlot {
     leftInit: number | null;
     rightInit: number | null;
     fullInit: number | null;
+    leftLocked: boolean;
+    rightLocked: boolean;
   } {
     return {
       z: this.z,
@@ -394,6 +396,8 @@ export class GatePairSlot {
       leftInit: this.leftSlot.active ? this.leftSlot.initialValue : null,
       rightInit: this.rightSlot.active ? this.rightSlot.initialValue : null,
       fullInit: this.fullSlot.active ? this.fullSlot.initialValue : null,
+      leftLocked: this.leftSlot.active && this.leftSlot.isLocked,
+      rightLocked: this.rightSlot.active && this.rightSlot.isLocked,
     };
   }
 

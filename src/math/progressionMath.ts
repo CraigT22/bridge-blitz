@@ -1,4 +1,78 @@
-import type { UpgradeKey, UpgradeLevels } from '../core/types';
+import type { DifficultyTier, UpgradeKey, UpgradeLevels } from '../core/types';
+
+export interface DifficultyProfile {
+  readonly id: DifficultyTier;
+  readonly label: string;
+  readonly shortBadge: string;
+  readonly coinMultiplier: number;
+  readonly enemyHpMult: number;
+  readonly enemySpeedMult: number;
+  readonly drumHpMult: number;
+  readonly gateCostMult: number;
+  readonly bossHpMult: number;
+  readonly bossTempoMult: number;
+  readonly threatCadenceMult: number;
+  readonly enemyBoltDamage: number;
+  readonly chargerDamageBonus: number;
+}
+
+export const DIFFICULTY_ORDER: ReadonlyArray<DifficultyTier> = [
+  'NORMAL',
+  'HARD',
+  'NIGHTMARE',
+];
+
+export const DIFFICULTY_PROFILES: Readonly<Record<DifficultyTier, DifficultyProfile>> = {
+  NORMAL: {
+    id: 'NORMAL',
+    label: 'Normal',
+    shortBadge: 'NORMAL 1×',
+    coinMultiplier: 1.0,
+    enemyHpMult: 1.0,
+    enemySpeedMult: 1.0,
+    drumHpMult: 1.0,
+    gateCostMult: 1.0,
+    bossHpMult: 1.0,
+    bossTempoMult: 1.0,
+    threatCadenceMult: 1.0,
+    enemyBoltDamage: 1,
+    chargerDamageBonus: 1,
+  },
+  HARD: {
+    id: 'HARD',
+    label: 'Hard',
+    shortBadge: 'HARD 1.5×',
+    coinMultiplier: 1.5,
+    enemyHpMult: 1.48,
+    enemySpeedMult: 1.14,
+    drumHpMult: 1.38,
+    gateCostMult: 1.28,
+    bossHpMult: 1.45,
+    bossTempoMult: 1.18,
+    threatCadenceMult: 1.32,
+    enemyBoltDamage: 2,
+    chargerDamageBonus: 2,
+  },
+  NIGHTMARE: {
+    id: 'NIGHTMARE',
+    label: 'Nightmare',
+    shortBadge: 'NIGHTMARE 2.25×',
+    coinMultiplier: 2.25,
+    enemyHpMult: 2.05,
+    enemySpeedMult: 1.26,
+    drumHpMult: 1.82,
+    gateCostMult: 1.58,
+    bossHpMult: 1.95,
+    bossTempoMult: 1.35,
+    threatCadenceMult: 1.65,
+    enemyBoltDamage: 3,
+    chargerDamageBonus: 3,
+  },
+};
+
+export function getDifficultyProfile(tier: DifficultyTier = 'NORMAL'): DifficultyProfile {
+  return DIFFICULTY_PROFILES[tier] ?? DIFFICULTY_PROFILES.NORMAL;
+}
 
 export interface UpgradeSpec {
   readonly key: UpgradeKey;
@@ -10,7 +84,7 @@ export interface UpgradeSpec {
   readonly description: string;
 }
 
-export const UPGRADE_COST_GROWTH = 1.34;
+export const UPGRADE_COST_GROWTH = 1.42;
 export const MAX_STARTING_SQUAD_LEVEL = 8;
 
 export const UPGRADE_SPECS: Readonly<Record<UpgradeKey, UpgradeSpec>> = {
@@ -18,35 +92,35 @@ export const UPGRADE_SPECS: Readonly<Record<UpgradeKey, UpgradeSpec>> = {
     key: 'fireRate',
     title: 'Fire Rate',
     shortcutKey: '1',
-    baseCost: 30,
-    costGrowth: 1.34,
+    baseCost: 40,
+    costGrowth: 1.42,
     maxLevel: 999,
-    description: '+6% volley speed',
+    description: 'Faster volley cadence',
   },
   bulletPower: {
     key: 'bulletPower',
     title: 'Ordnance',
     shortcutKey: '2',
-    baseCost: 35,
-    costGrowth: 1.35,
+    baseCost: 45,
+    costGrowth: 1.44,
     maxLevel: 999,
-    description: '+10% bullet damage',
+    description: 'Higher shot damage',
   },
   warChest: {
     key: 'warChest',
     title: 'Bounty',
     shortcutKey: '3',
-    baseCost: 35,
-    costGrowth: 1.34,
+    baseCost: 45,
+    costGrowth: 1.40,
     maxLevel: 999,
-    description: '+10% coin bounty',
+    description: 'Higher coin bounty',
   },
   startingSquad: {
     key: 'startingSquad',
     title: 'Vanguard',
     shortcutKey: '4',
-    baseCost: 85,
-    costGrowth: 1.65,
+    baseCost: 110,
+    costGrowth: 1.72,
     maxLevel: MAX_STARTING_SQUAD_LEVEL,
     description: '+1 starting commando',
   },
@@ -68,12 +142,22 @@ export function computeUpgradeCost(key: UpgradeKey, currentLevel: number): numbe
   return Math.round(spec.baseCost * Math.pow(spec.costGrowth, safeLevel));
 }
 
+/**
+ * v8.2 Smooth Diminishing-Returns Fire Rate Multiplier:
+ * Punchy early upgrades (+5%/lv) tapering smoothly toward a disciplined ceiling so late-level saves stay exciting.
+ */
 export function getFireRateMultiplier(level: number): number {
-  return 1 + 0.06 * Math.max(0, level);
+  const l = Math.max(0, level);
+  return 1 + (0.055 * l) / (1 + 0.045 * l);
 }
 
+/**
+ * v8.2 Smooth Diminishing-Returns Ordnance Multiplier:
+ * Meaningful per-level punch (+8%/lv early) without runaway 10x steamrolling at high levels.
+ */
 export function getBulletPowerMultiplier(level: number): number {
-  return 1 + 0.10 * Math.max(0, level);
+  const l = Math.max(0, level);
+  return 1 + (0.085 * l) / (1 + 0.038 * l);
 }
 
 export function getStartingSquadCount(level: number): number {
@@ -81,7 +165,8 @@ export function getStartingSquadCount(level: number): number {
 }
 
 export function getWarChestMultiplier(level: number): number {
-  return 1 + 0.10 * Math.max(0, level);
+  const l = Math.max(0, level);
+  return 1 + (0.10 * l) / (1 + 0.025 * l);
 }
 
 export function formatUpgradeStatPreview(key: UpgradeKey, level: number): {
@@ -91,13 +176,13 @@ export function formatUpgradeStatPreview(key: UpgradeKey, level: number): {
   switch (key) {
     case 'fireRate':
       return {
-        currentLabel: `+${Math.round(level * 6)}%`,
-        nextLabel: `+${Math.round((level + 1) * 6)}%`,
+        currentLabel: `+${Math.round((getFireRateMultiplier(level) - 1) * 100)}%`,
+        nextLabel: `+${Math.round((getFireRateMultiplier(level + 1) - 1) * 100)}%`,
       };
     case 'bulletPower':
       return {
-        currentLabel: `+${Math.round(level * 10)}%`,
-        nextLabel: `+${Math.round((level + 1) * 10)}%`,
+        currentLabel: `+${Math.round((getBulletPowerMultiplier(level) - 1) * 100)}%`,
+        nextLabel: `+${Math.round((getBulletPowerMultiplier(level + 1) - 1) * 100)}%`,
       };
     case 'startingSquad': {
       const cur = getStartingSquadCount(level);
@@ -110,7 +195,7 @@ export function formatUpgradeStatPreview(key: UpgradeKey, level: number): {
     case 'warChest':
       return {
         currentLabel: `x${getWarChestMultiplier(level).toFixed(2)}`,
-        nextLabel: `x${getWarChestMultiplier(level + 1) * 1 === getWarChestMultiplier(level + 1) ? getWarChestMultiplier(level + 1).toFixed(2) : '1.00'}`,
+        nextLabel: `x${getWarChestMultiplier(level + 1).toFixed(2)}`,
       };
   }
 }
@@ -123,6 +208,7 @@ export interface RunPayoutInput {
   readonly bossRewardCoins: number;
   readonly clearedStage: boolean;
   readonly warChestLevel: number;
+  readonly difficultyMultiplier?: number;
 }
 
 export interface RunPayoutBreakdown {
@@ -130,6 +216,7 @@ export interface RunPayoutBreakdown {
   readonly killCoins: number;
   readonly bonusCoins: number;
   readonly warChestMultiplier: number;
+  readonly difficultyMultiplier: number;
   readonly totalCoinsEarned: number;
 }
 
@@ -144,15 +231,17 @@ export function computeRunCoinPayout(input: RunPayoutInput): RunPayoutBreakdown 
   const stageClearPart = input.clearedStage ? input.bossRewardCoins : 0;
   const bonusCoins = Math.round(input.bonusCoinsCollected + stageClearPart);
   const warChestMultiplier = getWarChestMultiplier(input.warChestLevel);
+  const difficultyMultiplier = Math.max(1.0, input.difficultyMultiplier ?? 1.0);
 
   const subtotal = distanceCoins + killCoins + bonusCoins;
-  const totalCoinsEarned = Math.round(subtotal * warChestMultiplier);
+  const totalCoinsEarned = Math.round(subtotal * warChestMultiplier * difficultyMultiplier);
 
   return {
     distanceCoins,
     killCoins,
     bonusCoins,
     warChestMultiplier,
+    difficultyMultiplier,
     totalCoinsEarned,
   };
 }

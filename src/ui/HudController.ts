@@ -2,6 +2,7 @@ import type {
   ArmorySubTabId,
   BoardLayout,
   BossChassisId,
+  DifficultyTier,
   GameMode,
   GameState,
   MenuTabId,
@@ -19,6 +20,7 @@ import {
   formatCoinAmount,
   formatObstacleHp,
   formatUpgradeStatPreview,
+  getDifficultyProfile,
   getStartingSquadCount,
   MAX_STARTING_SQUAD_LEVEL,
   UPGRADE_ORDER,
@@ -36,6 +38,7 @@ export interface HudCallbacks {
   onStartMarch: () => void;
   onBuyUpgrade: (key: UpgradeKey) => void;
   onSelectMode: (mode: GameMode) => void;
+  onSelectDifficulty: (tier: DifficultyTier) => void;
   onSelectStageDirect: (stageNumber: number) => void;
   onHubStateChange: (info: {
     tab: MenuTabId;
@@ -105,6 +108,8 @@ export class HudController {
 
   private readonly runProgressCard = mustEl<HTMLElement>('run-progress-card');
   private readonly topWeaponPill = mustEl<HTMLElement>('top-weapon-pill');
+  private readonly topDifficultyPill = mustEl<HTMLElement>('top-difficulty-pill');
+  private readonly topDifficultyLabel = mustEl<HTMLElement>('top-difficulty-label');
   private readonly progressFillEl = mustEl<HTMLElement>('track-progress-fill');
   private readonly progressPctEl = mustEl<HTMLElement>('progress-pct-text');
 
@@ -282,6 +287,15 @@ export class HudController {
       });
     });
 
+    const diffButtons = document.querySelectorAll<HTMLButtonElement>('[data-select-difficulty]');
+    diffButtons.forEach((btn) => {
+      const tier = btn.dataset.selectDifficulty as DifficultyTier;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.callbacks.onSelectDifficulty(tier);
+      });
+    });
+
     // Skin Toggle Controls (Hub 1-Tap Pill, Settings Drawer, Mid-Run Pause Modal)
     this.btnHubSkinToggle.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -402,6 +416,8 @@ export class HudController {
     this.hubStageBannerEl.classList.toggle('is-hidden', !inHub || this.activeTab !== 'BATTLE');
     this.runProgressCard.classList.toggle('is-hidden', inHub);
     this.topWeaponPill.classList.toggle('is-hidden', inHub);
+    const activeDiff = this.latestSaveSnapshot?.difficulty ?? 'NORMAL';
+    this.topDifficultyPill.classList.toggle('is-hidden', inHub || activeDiff === 'NORMAL');
     this.btnPause.classList.toggle('is-hidden', !inMission);
 
     if (!inHub) {
@@ -580,6 +596,15 @@ export class HudController {
       pill.classList.toggle('is-active', pill.dataset.selectMode === save.selectedMode);
     });
 
+    const activeDiff = save.difficulty ?? 'NORMAL';
+    const diffProfile = getDifficultyProfile(activeDiff);
+    const diffPills = document.querySelectorAll<HTMLButtonElement>('[data-select-difficulty]');
+    diffPills.forEach((pill) => {
+      pill.classList.toggle('is-active', pill.dataset.selectDifficulty === activeDiff);
+    });
+    this.topDifficultyLabel.textContent = diffProfile.shortBadge;
+    this.topDifficultyPill.classList.toggle('is-nightmare', activeDiff === 'NIGHTMARE');
+
     if (save.selectedMode === 'SPLIT_CAUSEWAY') {
       this.hubSectorKickerEl.textContent = `SPLIT CAUSEWAY • STAGE ${save.splitCausewayStage}`;
     } else if (save.selectedMode === 'ENDLESS') {
@@ -752,10 +777,10 @@ export class HudController {
       this.armoryItemKicker.textContent = `SECTOR ${st.stageNumber} // ${isUnicorn ? bossProfile.archetypeLabel : CHASSIS_LABELS[boss.chassis]}`;
       this.armoryItemName.textContent = bossProfile.name.toUpperCase();
 
-      const hpPct = Math.min(100, Math.max(10, Math.round((boss.maxHp / 138000) * 100)));
+      const hpPct = Math.min(100, Math.max(12, Math.round((boss.maxHp / 64000) * 100)));
       const segPct = Math.round((boss.segments / 10) * 100);
-      const spdPct = Math.min(100, Math.round((boss.advanceSpeed / 1.72) * 100));
-      const rewPct = Math.min(100, Math.round((boss.rewardCoins / 2800) * 100));
+      const spdPct = Math.min(100, Math.round((boss.advanceSpeed / 1.95) * 100));
+      const rewPct = Math.min(100, Math.round((boss.rewardCoins / 2600) * 100));
       const layoutTag =
         st.boardLayout === 'SPLIT_CAUSEWAY' ? 'Split Causeway Siege' : `${st.trackLength}m Viaduct`;
 
@@ -778,8 +803,8 @@ export class HudController {
         </div>
       `;
       this.armoryItemNote.textContent = isUnicorn
-        ? `Guarding ${st.title} (${layoutTag}). Charges its giant spiral horn to launch ${boss.salvoLanes}-lane star-magic salvos every ${boss.salvoInterval.toFixed(2)}s — steer into the open lane!`
-        : `Guarding ${st.title} (${layoutTag}). Fires ${boss.salvoLanes}-lane telegraphed plasma salvos every ${boss.salvoInterval.toFixed(2)}s — steer into the open lane!`;
+        ? `Guarding ${st.title} (${layoutTag}). Fires alternating ${boss.salvoLanes}-lane star-magic salvos every ${boss.salvoInterval.toFixed(2)}s and ENRAGES at 50% HP with Escort Summons!`
+        : `Guarding ${st.title} (${layoutTag}). Fires alternating ${boss.salvoLanes}-lane plasma salvos every ${boss.salvoInterval.toFixed(2)}s and ENRAGES at 50% HP with Escort Summons!`;
     }
   }
 
@@ -908,7 +933,8 @@ export class HudController {
     bossHp: number,
     bossMaxHp: number,
     bossSegments: number,
-    splitCauseway?: SplitCausewayController
+    splitCauseway?: SplitCausewayController,
+    bossEnraged = false
   ): void {
     const inCombat = state === 'RUNNING' || state === 'BOSS_FIGHT';
 
@@ -1015,7 +1041,10 @@ export class HudController {
     // Boss Segmented Health Bar
     if (bossVisible && bossHp > 0) {
       this.bossHudEl.classList.remove('is-hidden');
-      this.bossNameEl.textContent = bossName.toUpperCase();
+      this.bossHudEl.classList.toggle('is-enraged', bossEnraged);
+      this.bossNameEl.textContent = bossEnraged
+        ? `${bossName.toUpperCase()} • ENRAGED!`
+        : bossName.toUpperCase();
       const hpCeil = Math.max(0, Math.ceil(bossHp));
       this.bossHpEl.textContent = `${formatObstacleHp(hpCeil)} / ${formatObstacleHp(bossMaxHp)}`;
       const hpPct = Math.max(0, Math.min(100, (bossHp / Math.max(1, bossMaxHp)) * 100));
@@ -1032,6 +1061,7 @@ export class HudController {
       }
     } else {
       this.bossHudEl.classList.add('is-hidden');
+      this.bossHudEl.classList.remove('is-enraged');
     }
   }
 
@@ -1052,10 +1082,14 @@ export class HudController {
       summary.mode === 'SPLIT_CAUSEWAY'
         ? `SPLIT CAUSEWAY ${summary.stageNumber}`
         : `SECTOR ${summary.stageNumber}`;
+    const diffSuffix =
+      summary.difficulty && summary.difficulty !== 'NORMAL'
+        ? ` [${summary.difficulty}]`
+        : '';
 
     this.summaryModalEl.classList.add('is-hidden');
     this.unicornCelebration.startVictoryFinale(
-      `${modeLabel} CLEARED!`,
+      `${modeLabel}${diffSuffix} CLEARED!`,
       'UNICORN VICTORY!',
       () => {
         this.showSummaryModal(summary, true);
@@ -1075,10 +1109,14 @@ export class HudController {
         : summary.mode === 'SPLIT_CAUSEWAY'
           ? `SPLIT CAUSEWAY ${summary.stageNumber}`
           : `SECTOR ${summary.stageNumber}`;
+    const diffTag =
+      summary.difficulty && summary.difficulty !== 'NORMAL'
+        ? ` • ${summary.difficulty}`
+        : '';
 
     this.summaryKickerEl.textContent = isVictory
-      ? `${modeLabel} CLEARED!`
-      : `${modeLabel} — ${Math.round(summary.progressRatio * 100)}% PROGRESS`;
+      ? `${modeLabel}${diffTag} CLEARED!`
+      : `${modeLabel}${diffTag} — ${Math.round(summary.progressRatio * 100)}% PROGRESS`;
 
     this.summaryTitleEl.textContent = isVictory
       ? unicornBackdropActive
@@ -1094,9 +1132,10 @@ export class HudController {
     this.sumEnemiesEl.textContent = `${summary.enemiesDefeated}`;
 
     const endBonusEarned = Math.max(0, summary.totalCoinsEarned - summary.liveCoinsEarned);
+    const combinedMult = summary.warChestMultiplier * (summary.difficultyMultiplier ?? 1);
     this.sumLiveCoinsEl.textContent = `+${formatCoinAmount(summary.liveCoinsEarned)}`;
     this.sumBonusCoinsEl.textContent = `+${formatCoinAmount(endBonusEarned)}`;
-    this.sumMultEl.textContent = `×${summary.warChestMultiplier.toFixed(2)}`;
+    this.sumMultEl.textContent = `×${combinedMult.toFixed(2)}`;
     this.btnSummaryContinue.textContent = 'NEXT';
 
     if (this.coinRollupRaf) {

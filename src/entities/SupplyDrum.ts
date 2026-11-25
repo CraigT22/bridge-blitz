@@ -45,32 +45,40 @@ export function obstacleLaneToX(lane: ObstacleLane): number {
 }
 
 /**
- * Pure v8.0 Rolling Barrel Attrition Formula:
- * Colliding with an unbroken rolling barrel deals squad attrition damage (NEVER instant run defeat
- * for squads > 1!) scaled gently by the barrel's remaining HP ratio, while dodged barrels roll
- * harmlessly past your flank.
+ * Pure v8.2 Rolling Barrel Attrition Formula:
+ * - Unbroken normal rolling barrels inflict heavy squad attrition (`2..8`, lethal if squad is low!).
+ * - Red-banded Spiked Hazard Drums (`isHazard = true`) inflict brutal casualties (`3..12`, lethal when low!).
+ * - Dodged barrels roll harmlessly past your flank.
  */
 export function computeRollingBarrelAttrition(
   logicalSquad: number,
   remainingHp: number,
-  initialHp: number
+  initialHp: number,
+  isHazard = false
 ): number {
   if (logicalSquad <= 0) {
     return 0;
   }
   const hpRatio = Math.max(0.25, Math.min(1.0, remainingHp / Math.max(1, initialHp)));
-  const rawAttrition = Math.max(1, Math.min(5, Math.ceil(logicalSquad * 0.22 * (0.55 + 0.45 * hpRatio))));
-  if (logicalSquad > 1) {
-    // Guarantee attrition rather than instant run wipe on multi-soldier squads
-    return Math.min(logicalSquad - 1, rawAttrition);
+  if (isHazard) {
+    const rawHazard = Math.max(
+      3,
+      Math.min(12, Math.ceil(logicalSquad * 0.42 * (0.65 + 0.35 * hpRatio)))
+    );
+    return Math.min(logicalSquad, rawHazard);
   }
-  return 1;
+  const rawAttrition = Math.max(
+    2,
+    Math.min(8, Math.ceil(logicalSquad * 0.28 * (0.60 + 0.40 * hpRatio)))
+  );
+  return Math.min(logicalSquad, rawAttrition);
 }
 
 export interface BarrelSquadCollisionEvent {
   readonly losses: number;
   readonly x: number;
   readonly z: number;
+  readonly isHazard: boolean;
 }
 
 function createFallbackTexture(): THREE.Texture {
@@ -201,9 +209,53 @@ function createPlasmaHaloTexture(): THREE.Texture {
   return new THREE.CanvasTexture(canvas);
 }
 
+function createHazardWarningTexture(): THREE.Texture {
+  if (typeof document === 'undefined') {
+    return createFallbackTexture();
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, 128, 128);
+
+  // Bold crimson-gold caution diamond/triangle with crisp black cel stroke
+  ctx.beginPath();
+  ctx.moveTo(64, 10);
+  ctx.lineTo(118, 110);
+  ctx.lineTo(10, 110);
+  ctx.closePath();
+  ctx.fillStyle = '#ff244c';
+  ctx.fill();
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = '#080e16';
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(64, 24);
+  ctx.lineTo(104, 100);
+  ctx.lineTo(24, 100);
+  ctx.closePath();
+  ctx.strokeStyle = '#ffd240';
+  ctx.lineWidth = 5;
+  ctx.stroke();
+
+  ctx.fillStyle = '#fff5cc';
+  ctx.font = '900 58px "Segoe UI", Roboto, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('!', 64, 72);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 export const SHARED_DRUM_TEX = createRollingBarrelTexture();
 export const SHARED_BARREL_GEOS = createRollingBarrelGeometries();
 export const SHARED_GLOW_TEX = createPlasmaHaloTexture();
+export const SHARED_HAZARD_SIGN_TEX = createHazardWarningTexture();
+export const SHARED_SPIKE_GEO = new THREE.ConeGeometry(0.17, 0.44, 5);
 export const SHARED_HOOP_GEO = (() => {
   const g = new THREE.CylinderGeometry(1.03, 1.03, 0.22, 12, 1, true);
   g.rotateZ(Math.PI / 2);
@@ -220,6 +272,7 @@ export class SupplyDrumSlot {
   public rollSpeed = ROLLING_BARREL_DEFAULT_SPEED;
   public rollAngleX = 0;
   public isRolling = false;
+  public isHazard = false;
   public initialHp = 25;
   public remainingHp = 25;
   public rewardType: DrumRewardType = 'COINS';
@@ -227,12 +280,14 @@ export class SupplyDrumSlot {
 
   private skinTheme: SkinThemeId = 'UNICORN';
   private readonly drumBodyGroup = new THREE.Group();
+  private readonly spikeRingGroup = new THREE.Group();
   private readonly drumMat: THREE.MeshStandardMaterial;
   private readonly hoopMat: THREE.MeshStandardMaterial;
   private readonly hpLabelMesh: THREE.Mesh;
   private readonly hpLabelTex: EditableArcadeHpTexture;
   private readonly pickupPivot = new THREE.Group();
   private readonly glowHaloMesh: THREE.Mesh;
+  private readonly hazardSignMesh: THREE.Mesh;
   private readonly coinGroup: THREE.Group;
   private readonly recruitGroups: Record<SkinThemeId, THREE.Group>;
   private readonly weaponRigsByTheme: Record<SkinThemeId, Record<WeaponTierId, ShowcaseWeaponRig>>;
@@ -286,6 +341,25 @@ export class SupplyDrumSlot {
       this.drumBodyGroup.add(hoop);
     }
 
+    // Protruding iron-crimson hazard spikes around both ends of Spiked Hazard Drums (spin with drumBodyGroup!)
+    const spikeMat = new THREE.MeshStandardMaterial({
+      color: 0xff3b58,
+      emissive: 0x4a0814,
+      roughness: 0.25,
+      metalness: 0.52,
+    });
+    for (const sx of [-0.66, 0.66]) {
+      for (let k = 0; k < 6; k++) {
+        const ang = (k / 6) * Math.PI * 2 + (sx > 0 ? Math.PI / 6 : 0);
+        const spike = new THREE.Mesh(SHARED_SPIKE_GEO, spikeMat);
+        spike.position.set(sx, Math.cos(ang) * 1.12, Math.sin(ang) * 1.12);
+        spike.rotation.x = ang;
+        this.spikeRingGroup.add(spike);
+      }
+    }
+    this.spikeRingGroup.visible = false;
+    this.drumBodyGroup.add(this.spikeRingGroup);
+
     const outlineMesh = new THREE.Mesh(
       SHARED_BARREL_GEOS.outlineGeo,
       new THREE.MeshBasicMaterial({ color: 0x070c14, side: THREE.BackSide })
@@ -322,6 +396,18 @@ export class SupplyDrumSlot {
     );
     this.glowHaloMesh.position.set(0, 0.04, -0.14);
     this.pickupPivot.add(this.glowHaloMesh);
+
+    this.hazardSignMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.48, 1.48),
+      new THREE.MeshBasicMaterial({
+        map: SHARED_HAZARD_SIGN_TEX,
+        transparent: true,
+        depthWrite: false,
+      })
+    );
+    this.hazardSignMesh.position.set(0, 0.08, 0.04);
+    this.hazardSignMesh.visible = false;
+    this.pickupPivot.add(this.hazardSignMesh);
 
     this.coinGroup = createGoldCoinPickupGroup();
     this.pickupPivot.add(this.coinGroup);
@@ -384,12 +470,16 @@ export class SupplyDrumSlot {
   }
 
   private syncSkinVisuals(): void {
-    const isCoins = this.rewardType === 'COINS';
-    const isRecruit = this.rewardType === 'RECRUIT';
-    const isWeapon = this.rewardType === 'WEAPON';
+    const isHazard = this.isHazard;
+    const isCoins = !isHazard && this.rewardType === 'COINS';
+    const isRecruit = !isHazard && this.rewardType === 'RECRUIT';
+    const isWeapon = !isHazard && this.rewardType === 'WEAPON';
     const isUnicorn = this.skinTheme === 'UNICORN';
 
-    if (isWeapon) {
+    if (isHazard) {
+      this.drumMat.color.setHex(0x8a1c2e);
+      this.hoopMat.color.setHex(0xff2e4c);
+    } else if (isWeapon) {
       this.drumMat.color.setHex(isUnicorn ? 0xff70c2 : 0xe2567c);
       this.hoopMat.color.setHex(isUnicorn ? 0xffcf40 : 0xffbe3b);
     } else if (isRecruit) {
@@ -400,6 +490,8 @@ export class SupplyDrumSlot {
       this.hoopMat.color.setHex(0xffb830);
     }
 
+    this.spikeRingGroup.visible = isHazard;
+    this.hazardSignMesh.visible = isHazard;
     this.coinGroup.visible = isCoins;
     this.recruitGroups.TACTICAL.visible = isRecruit && !isUnicorn;
     this.recruitGroups.UNICORN.visible = isRecruit && isUnicorn;
@@ -414,7 +506,9 @@ export class SupplyDrumSlot {
       }
     }
 
-    if (isWeapon) {
+    if (isHazard) {
+      (this.glowHaloMesh.material as THREE.MeshBasicMaterial).color.setHex(0xff2448);
+    } else if (isWeapon) {
       (this.glowHaloMesh.material as THREE.MeshBasicMaterial).color.setHex(
         getWeaponDisplaySpec(wTier, this.skinTheme).colorHex
       );
@@ -435,6 +529,7 @@ export class SupplyDrumSlot {
     this.rollSpeed = def.rollSpeed ?? ROLLING_BARREL_DEFAULT_SPEED;
     this.rollAngleX = 0;
     this.isRolling = false;
+    this.isHazard = Boolean(def.isHazard);
     this.initialHp = Math.max(1, def.hp);
     this.remainingHp = this.initialHp;
     this.rewardType = def.rewardType;
@@ -458,6 +553,7 @@ export class SupplyDrumSlot {
     this.active = false;
     this.broken = true;
     this.isRolling = false;
+    this.isHazard = false;
     this.root.visible = false;
   }
 
@@ -465,7 +561,8 @@ export class SupplyDrumSlot {
     dt: number,
     squadZ: number,
     blockingGateZ: number | null = null,
-    combatActive = true
+    combatActive = true,
+    blockingWallZ: number | null = null
   ): void {
     if (!this.active || this.broken) {
       return;
@@ -486,11 +583,16 @@ export class SupplyDrumSlot {
       return;
     }
 
-    // Roll down-lane (+Z) toward the squad while rotating around local X-axis (respecting uncollected gates!)
+    // Roll down-lane (+Z) toward the squad while rotating around local X-axis
+    // (respecting uncollected gates and any standing tire barricade directly ahead so barrels never clip through walls!)
     const blockedByGate = blockingGateZ !== null && this.z <= blockingGateZ + 1.5;
-    const maxAllowedZ = blockingGateZ !== null ? blockingGateZ - 14.0 : Infinity;
+    const gateMaxZ = blockingGateZ !== null ? blockingGateZ - 14.0 : Infinity;
+    const wallMaxZ = blockingWallZ !== null ? blockingWallZ - 14.0 : Infinity;
+    const maxAllowedZ = Math.min(gateMaxZ, wallMaxZ);
+    const blockedByWall = blockingWallZ !== null && this.z >= wallMaxZ - 0.05;
     const distAhead = squadZ - this.z;
-    const shouldRoll = combatActive && !blockedByGate && distAhead <= ROLLING_BARREL_WAKE_DIST_Z;
+    const shouldRoll =
+      combatActive && !blockedByGate && !blockedByWall && distAhead <= ROLLING_BARREL_WAKE_DIST_Z;
     this.isRolling = shouldRoll;
 
     if (shouldRoll && dt > 0 && this.rollSpeed > 0) {
@@ -509,7 +611,10 @@ export class SupplyDrumSlot {
     this.glowHaloMesh.rotation.z = this.spinAngle * 0.45;
 
     const activeRecruitGroup = this.recruitGroups[this.skinTheme];
-    if (this.coinGroup.visible) {
+    if (this.hazardSignMesh.visible) {
+      const warnPulse = 1 + Math.sin(this.spinAngle * 4.2) * 0.12;
+      this.hazardSignMesh.scale.set(warnPulse, warnPulse, 1);
+    } else if (this.coinGroup.visible) {
       this.coinGroup.rotation.y = Math.sin(this.spinAngle * 1.15) * 0.52;
     } else if (activeRecruitGroup.visible) {
       activeRecruitGroup.rotation.y = Math.sin(this.spinAngle * 0.95) * 0.44;
@@ -585,7 +690,7 @@ export class SupplyDrumSlot {
 
   /**
    * Resolves squad collision against an unbroken rolling barrel:
-   * - Direct lane hit deals squad attrition damage & bursts the barrel (no reward granted).
+   * - Direct lane hit deals squad attrition damage (lethal when low!) & bursts the barrel (no reward granted).
    * - Dodging laterally (`|squadX - x| >= ROLLING_BARREL_CRASH_HALF_X`) lets it roll harmlessly past your flank!
    */
   public resolveSquadCollision(
@@ -607,14 +712,16 @@ export class SupplyDrumSlot {
     const losses = computeRollingBarrelAttrition(
       logicalSquad,
       this.remainingHp,
-      this.initialHp
+      this.initialHp,
+      this.isHazard
     );
     const hitX = this.x;
     const hitZ = this.z;
+    const isHazard = this.isHazard;
     this.broken = true;
     this.active = false;
     this.isRolling = false;
     this.root.visible = false;
-    return { losses, x: hitX, z: hitZ };
+    return { losses, x: hitX, z: hitZ, isHazard };
   }
 }

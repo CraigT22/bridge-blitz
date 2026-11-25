@@ -1,5 +1,6 @@
 import { SoundSynthesizer } from '../audio/SoundSynthesizer';
 import { BossEntity } from '../entities/BossEntity';
+import { EnemyProjectileSystem } from '../entities/EnemyProjectileSystem';
 import { EnemyWaveSlot } from '../entities/EnemyWave';
 import { GatePairSlot } from '../entities/GatePair';
 import { MidBridgeBrute } from '../entities/MidBridgeBrute';
@@ -16,7 +17,9 @@ import {
   attemptPurchaseUpgrade,
   computeRunCoinPayout,
   formatCoinAmount,
+  formatUpgradeStatPreview,
   getBulletPowerMultiplier,
+  getDifficultyProfile,
   getFireRateMultiplier,
   getStartingSquadCount,
   getWarChestMultiplier,
@@ -47,6 +50,7 @@ import { InputController } from './InputController';
 import { BulletPool, ParticlePool, RagdollPool } from './ObjectPool';
 import { SaveManager } from './SaveManager';
 import {
+  applyDifficultyToStage,
   CAMPAIGN_STAGES,
   generateEndlessWaveStage,
   generateSplitCausewayStage,
@@ -55,6 +59,7 @@ import {
 } from './StageData';
 import type {
   BoardLayout,
+  DifficultyTier,
   GameMode,
   MenuTabId,
   MidBridgeBruteDefinition,
@@ -93,6 +98,7 @@ export class BridgeBlitzGame {
   private readonly batchRenderer: InstancedBatchRenderer;
   private readonly vfx: CombatVfxRenderer;
   private readonly flyingWeapons: FlyingWeaponSystem;
+  private readonly enemyProjectiles: EnemyProjectileSystem;
   private readonly combatText: CombatTextOverlay;
 
   private readonly squad = new SquadController();
@@ -190,6 +196,7 @@ export class BridgeBlitzGame {
   private tiresBrokenThisRun = 0;
   private weaponLocksThisRun = 0;
   private bossSalvosDodgedThisRun = 0;
+  private enemyShotsDodgedThisRun = 0;
   private pendingSummary: RunSummary | null = null;
 
   constructor() {
@@ -213,6 +220,7 @@ export class BridgeBlitzGame {
     );
     this.vfx = new CombatVfxRenderer(this.sceneManager.scene);
     this.flyingWeapons = new FlyingWeaponSystem(this.sceneManager.scene);
+    this.enemyProjectiles = new EnemyProjectileSystem(this.sceneManager.scene);
     this.combatText = new CombatTextOverlay(combatTextContainer);
 
     for (let i = 0; i < MAX_SUPPLY_DRUMS; i++) {
@@ -239,12 +247,16 @@ export class BridgeBlitzGame {
     this.sceneManager.scene.add(this.splitCauseway.root);
     this.boss = new BossEntity(this.sceneManager.scene);
 
-    this.activeStageDef = getCampaignStage(initialSave.selectedStage);
+    this.activeStageDef = applyDifficultyToStage(
+      getCampaignStage(initialSave.selectedStage),
+      initialSave.difficulty
+    );
 
     this.hud = new HudController({
       onStartMarch: () => this.startRunIfStaging(),
       onBuyUpgrade: (key) => this.handleBuyUpgrade(key),
       onSelectMode: (mode) => this.handleSelectMode(mode),
+      onSelectDifficulty: (tier) => this.handleSelectDifficulty(tier),
       onSelectStageDirect: (stageNum) => this.handleSelectStageDirect(stageNum),
       onHubStateChange: (info) => {
         this.activeMenuTab = info.tab;
@@ -437,6 +449,7 @@ export class BridgeBlitzGame {
     this.tiresBrokenThisRun = 0;
     this.weaponLocksThisRun = 0;
     this.bossSalvosDodgedThisRun = 0;
+    this.enemyShotsDodgedThisRun = 0;
     this.pendingSummary = null;
     this.coinFountainTimer = 0;
     this.celebrateHopTimer = 0;
@@ -447,16 +460,18 @@ export class BridgeBlitzGame {
     this.ragdollPool.clear();
     this.vfx.clear();
     this.flyingWeapons.clear();
+    this.enemyProjectiles.clear();
     this.combatText.clear();
     this.input.resetFrameDeltas();
     this.simulatedSteerDelta = 0;
 
-    this.activeStageDef =
+    const baseStage =
       save.selectedMode === 'ENDLESS'
         ? generateEndlessWaveStage(1)
         : save.selectedMode === 'SPLIT_CAUSEWAY'
           ? generateSplitCausewayStage(save.splitCausewayStage)
           : getCampaignStage(save.selectedStage);
+    this.activeStageDef = applyDifficultyToStage(baseStage, save.difficulty);
 
     const startTroops = getStartingSquadCount(save.upgrades.startingSquad);
     this.squad.resetForRun(startTroops);
@@ -468,7 +483,6 @@ export class BridgeBlitzGame {
     this.hud.hidePauseModal();
     this.hud.hideSummaryModal();
     this.hud.setStagingVisible(true);
-    this.hud.syncTopHudForState('PRE_RUN');
     this.hud.syncSaveState(
       save,
       this.activeStageDef.title,
@@ -476,6 +490,7 @@ export class BridgeBlitzGame {
       this.endlessWave,
       this.activeBoardLayout
     );
+    this.hud.syncTopHudForState('PRE_RUN');
     this.hud.updateTrackProgress(
       0,
       save.selectedMode,
@@ -721,7 +736,8 @@ export class BridgeBlitzGame {
       return 0;
     }
     const save = this.saveManager.getData();
-    const mult = getWarChestMultiplier(save.upgrades.warChest);
+    const diffMult = getDifficultyProfile(save.difficulty).coinMultiplier;
+    const mult = getWarChestMultiplier(save.upgrades.warChest) * diffMult;
     const earned = Math.max(1, Math.round(rawBaseCoins * mult));
     this.liveCoinsThisRun += earned;
 
@@ -845,12 +861,13 @@ export class BridgeBlitzGame {
       this.vfx.spawnShockwave(this.squad.x, this.squad.z, 2.5, 0.36, fxHex);
       this.vfx.spawnImpactSplash(this.squad.x, 1.1, this.squad.z, 1.35, fxHex);
       this.particlePool.spawnBurst(this.squad.x, 0.9, this.squad.z, 14, 4.6, fxHex);
+      const preview = formatUpgradeStatPreview(key, newLevel - 1);
       const label =
         key === 'fireRate'
-          ? '+6% FIRE RATE!'
+          ? `FIRE RATE ${preview.nextLabel}!`
           : key === 'bulletPower'
-            ? '+10% ORDNANCE!'
-            : '+10% BOUNTY!';
+            ? `ORDNANCE ${preview.nextLabel}!`
+            : `BOUNTY ${preview.nextLabel}!`;
       this.combatText.spawn(
         this.squad.x,
         1.95,
@@ -880,6 +897,22 @@ export class BridgeBlitzGame {
     this.prepareStagingArea();
   }
 
+  private handleSelectDifficulty(tier: DifficultyTier): void {
+    if (this.stateMachine.state !== 'PRE_RUN') {
+      return;
+    }
+    const current = this.saveManager.getData().difficulty;
+    if (current === tier) {
+      return;
+    }
+    this.sound.unlockOnGesture();
+    this.saveManager.update((draft) => {
+      draft.difficulty = tier;
+    });
+    this.sound.playGateTick(tier === 'NIGHTMARE' ? 16 : tier === 'HARD' ? 8 : 2);
+    this.prepareStagingArea();
+  }
+
   private handleSelectStageDirect(stageNumber: number): void {
     if (this.stateMachine.state !== 'PRE_RUN') {
       return;
@@ -896,6 +929,7 @@ export class BridgeBlitzGame {
     this.batchRenderer.setSkinTheme(theme);
     this.sceneManager.setSkinTheme(theme);
     this.flyingWeapons.setSkinTheme(theme);
+    this.enemyProjectiles.setSkinTheme(theme);
     this.splitCauseway.setSkinTheme(theme);
     this.boss.setSkinTheme(theme);
     for (let i = 0; i < MAX_SUPPLY_DRUMS; i++) {
@@ -1076,6 +1110,48 @@ export class BridgeBlitzGame {
     return closestGateZ;
   }
 
+  private spawnBossEscortWave(escortCount: number): void {
+    let slot: EnemyWaveSlot | null = null;
+    for (let i = 0; i < MAX_ENEMY_WAVES; i++) {
+      if (!this.enemyWaves[i].active || this.enemyWaves[i].aliveCount <= 0) {
+        slot = this.enemyWaves[i];
+        break;
+      }
+    }
+    if (!slot) {
+      return;
+    }
+    const save = this.saveManager.getData();
+    const diffProfile = getDifficultyProfile(save.difficulty);
+    const stageScale = Math.pow(1.18, Math.max(0, this.activeStageDef.stageNumber - 1));
+    const baseUnitHp = Math.max(12, Math.round(14 * stageScale * diffProfile.enemyHpMult));
+    const count = Math.max(4, Math.min(12, escortCount));
+    const heavyCount = count >= 8 ? 2 : 1;
+    const shooterCount = count >= 8 ? 2 : 1;
+
+    slot.configure({
+      z: this.boss.z + 2.4,
+      lane: 'CENTER',
+      count,
+      hpPerEnemy: baseUnitHp,
+      speed: Number((3.65 * diffProfile.enemySpeedMult).toFixed(2)),
+      coinPerKill: Math.max(4, Math.round(4 + this.activeStageDef.stageNumber * 1.4)),
+      heavyCount,
+      shooterCount,
+      chargerCount: 1,
+    });
+    const isUnicorn = save.settings.skinTheme === 'UNICORN';
+    this.vfx.spawnShockwave(0, this.boss.z + 2.2, 4.4, 0.36, isUnicorn ? 0x1a88ff : 0xff3b5c);
+    this.combatText.spawn(
+      0,
+      2.6,
+      this.boss.z + 2.2,
+      'ESCORTS INCOMING!',
+      'negative',
+      0.92
+    );
+  }
+
   private fixedUpdate(rawDt: number): void {
     const dt = rawDt * this.stateMachine.timeScale;
     const state = this.stateMachine.state;
@@ -1091,6 +1167,8 @@ export class BridgeBlitzGame {
       this.celebrateHopTimer = Math.max(0, this.celebrateHopTimer - dt);
     }
     const save = this.saveManager.getData();
+    const diffProfile = getDifficultyProfile(save.difficulty);
+    const isUnicorn = save.settings.skinTheme === 'UNICORN';
     const isSplit = this.activeBoardLayout === 'SPLIT_CAUSEWAY';
     const splitDividerActive = isSplit && !this.splitCauseway.retractedForBoss;
     const shotRange = isSplit ? 38 : 34;
@@ -1110,6 +1188,7 @@ export class BridgeBlitzGame {
     }
 
     this.commandoFacingYaw = 0;
+    this.enemyProjectiles.beginTelegraphs();
 
     const haltedByBrute =
       state === 'RUNNING' && this.isAnyBruteHaltingMarch(this.squad.z);
@@ -1144,12 +1223,24 @@ export class BridgeBlitzGame {
       }
 
       if (isSplit) {
-        this.splitCauseway.update(dt, this.squad.x, this.squad.z, true);
+        this.splitCauseway.update(
+          dt,
+          this.squad.x,
+          this.squad.z,
+          true,
+          this.enemyProjectiles,
+          diffProfile.threatCadenceMult,
+          diffProfile.enemyBoltDamage
+        );
+        if (this.splitCauseway.lastStepFiredBolt) {
+          this.sound.playEnemyShot();
+        }
         if (this.squad.logicalCount > 0) {
           const splitClash = this.splitCauseway.resolveSquadCollision(
             this.squad.x,
             this.squad.z,
-            this.squad.logicalCount
+            this.squad.logicalCount,
+            diffProfile.chargerDamageBonus
           );
           if (splitClash && splitClash.playerLosses > 0) {
             const lost = splitClash.playerLosses;
@@ -1160,26 +1251,29 @@ export class BridgeBlitzGame {
                 this.squad.x,
                 this.squad.z,
                 false,
-                0.95
+                splitClash.hitByCharger ? 1.2 : 0.95
               );
             }
-            this.sceneManager.addShake(0.28);
+            this.sceneManager.addShake(splitClash.hitByCharger ? 0.38 : 0.28);
             this.sound.playEnemyPop();
+            if (splitClash.hitByCharger) {
+              this.vfx.spawnShockwave(splitClash.hitX, splitClash.hitZ, 3.0, 0.32, 0xff2854);
+            }
             this.particlePool.spawnBurst(
               splitClash.hitX,
               0.8,
               splitClash.hitZ,
-              14,
-              5.4,
+              splitClash.hitByCharger ? 20 : 14,
+              splitClash.hitByCharger ? 6.2 : 5.4,
               0xff4757
             );
             this.combatText.spawn(
               this.squad.x,
-              1.6,
+              1.68,
               this.squad.z,
-              `-${lost}`,
+              splitClash.hitByCharger ? `-${lost} CHARGED!` : `-${lost}`,
               'negative',
-              0.68
+              splitClash.hitByCharger ? 0.88 : 0.68
             );
             if (this.squad.logicalCount <= 0) {
               this.triggerRunDefeat();
@@ -1254,12 +1348,30 @@ export class BridgeBlitzGame {
     }
 
     if (!isSplit) {
-      // Update Lane-Aligned Rolling Barrels: collision deals squad attrition damage (never instant wipe for >1);
-      // dodged barrels roll harmlessly past your flank!
+      // Update Lane-Aligned Rolling Barrels & Spiked Hazard Drums: lethal-capable casualties on crash;
+      // dodged barrels roll harmlessly past your flank and never clip through standing tire barricades!
       for (let i = 0; i < MAX_SUPPLY_DRUMS; i++) {
         const drum = this.supplyDrums[i];
         const barrelBlockingGateZ = this.findBlockingGateZ(drum.z);
-        drum.update(dt, this.squad.z, barrelBlockingGateZ, state === 'RUNNING');
+        let barrelBlockingWallZ: number | null = null;
+        if (drum.active && !drum.broken) {
+          for (let t = 0; t < MAX_TIRE_STACKS; t++) {
+            const st = this.tireStacks[t];
+            if (!st.active || st.broken) {
+              continue;
+            }
+            if (
+              st.z >= drum.z + 0.5 &&
+              st.z <= this.squad.z + 1.5 &&
+              Math.abs(st.x - drum.x) < 1.8
+            ) {
+              if (barrelBlockingWallZ === null || st.z < barrelBlockingWallZ) {
+                barrelBlockingWallZ = st.z;
+              }
+            }
+          }
+        }
+        drum.update(dt, this.squad.z, barrelBlockingGateZ, state === 'RUNNING', barrelBlockingWallZ);
         if (state === 'RUNNING' && this.squad.logicalCount > 0) {
           const barrelHit = drum.resolveSquadCollision(
             this.squad.x,
@@ -1269,27 +1381,46 @@ export class BridgeBlitzGame {
           if (barrelHit && barrelHit.losses > 0) {
             const lost = Math.min(this.squad.logicalCount, barrelHit.losses);
             this.squad.setLogicalCount(this.squad.logicalCount - lost);
-            const ragBursts = Math.min(4, lost);
+            const ragBursts = Math.min(5, lost);
             for (let r = 0; r < ragBursts; r++) {
               this.ragdollPool.spawnKnockback(
                 this.squad.x + ((r % 3) - 1) * 0.35,
                 this.squad.z,
                 false,
-                1.08
+                barrelHit.isHazard ? 1.24 : 1.08
               );
             }
-            this.sceneManager.addShake(0.36);
-            this.vfx.spawnShockwave(barrelHit.x, barrelHit.z, 2.9, 0.34, 0xff5a36);
-            this.vfx.spawnImpactSplash(barrelHit.x, 1.05, barrelHit.z, 1.5, 0xffaa44);
-            this.particlePool.spawnBurst(barrelHit.x, 0.9, barrelHit.z, 16, 5.6, 0x5c7c9e);
+            this.sceneManager.addShake(barrelHit.isHazard ? 0.46 : 0.36);
+            this.vfx.spawnShockwave(
+              barrelHit.x,
+              barrelHit.z,
+              barrelHit.isHazard ? 3.4 : 2.9,
+              0.36,
+              barrelHit.isHazard ? 0xff2644 : 0xff5a36
+            );
+            this.vfx.spawnImpactSplash(
+              barrelHit.x,
+              1.05,
+              barrelHit.z,
+              barrelHit.isHazard ? 1.8 : 1.5,
+              barrelHit.isHazard ? 0xff3b58 : 0xffaa44
+            );
+            this.particlePool.spawnBurst(
+              barrelHit.x,
+              0.9,
+              barrelHit.z,
+              barrelHit.isHazard ? 22 : 16,
+              barrelHit.isHazard ? 6.4 : 5.6,
+              barrelHit.isHazard ? 0xff3050 : 0x5c7c9e
+            );
             this.sound.playBarrelCrash();
             this.combatText.spawn(
               this.squad.x,
-              1.82,
+              1.85,
               this.squad.z,
-              `-${lost} BARREL!`,
+              barrelHit.isHazard ? `-${lost} SPIKED!` : `-${lost} BARREL!`,
               'negative',
-              0.88
+              barrelHit.isHazard ? 0.96 : 0.88
             );
             if (this.squad.logicalCount <= 0) {
               this.triggerRunDefeat();
@@ -1298,7 +1429,7 @@ export class BridgeBlitzGame {
         }
       }
 
-      // Update Gate Visuals (including v8.0 Passive Decay after 0.45s grace pause) & Squad Gate Passes
+      // Update Gate Visuals (including Passive Decay after 0.32s grace pause) & Squad Gate Passes
       for (let i = 0; i < MAX_GATE_PAIRS; i++) {
         const pair = this.gatePairs[i];
         pair.updateVisuals(dt, this.squad.z);
@@ -1391,54 +1522,119 @@ export class BridgeBlitzGame {
           }
         }
       }
+    }
 
-      // Update Enemy Skirmish Waves & Per-Trooper Collisions
+    // Update Enemy Skirmish Waves (Standard Bridge RUNNING + Boss Enrage Escorts on ALL layouts!)
+    if ((state === 'RUNNING' && !isSplit) || state === 'BOSS_FIGHT') {
       for (let i = 0; i < MAX_ENEMY_WAVES; i++) {
         const wave = this.enemyWaves[i];
-        if (state === 'RUNNING' || state === 'BOSS_FIGHT') {
-          const blockingGateZ = this.findBlockingGateZ(wave.z);
-          wave.update(dt, this.squad.x, this.squad.z, blockingGateZ);
-          if (this.squad.logicalCount > 0) {
-            const collision = wave.resolveSquadCollision(
-              this.squad.x,
-              this.squad.z,
-              this.squad.logicalCount
-            );
-            if (collision && collision.playerLosses > 0) {
-              const lost = collision.playerLosses;
-              this.squad.setLogicalCount(this.squad.logicalCount - lost);
-              const ragBursts = Math.min(4, lost);
-              for (let r = 0; r < ragBursts; r++) {
-                this.ragdollPool.spawnKnockback(this.squad.x, this.squad.z, false, 0.95);
-              }
-              this.sceneManager.addShake(0.28);
-              this.sound.playEnemyPop();
-              this.particlePool.spawnBurst(
-                collision.hitX,
-                0.8,
-                collision.hitZ,
-                14,
-                5.4,
-                0xff4757
-              );
-              this.combatText.spawn(
+        const blockingGateZ = isSplit ? null : this.findBlockingGateZ(wave.z);
+        wave.update(
+          dt,
+          this.squad.x,
+          this.squad.z,
+          blockingGateZ,
+          this.enemyProjectiles,
+          diffProfile.threatCadenceMult,
+          diffProfile.enemyBoltDamage
+        );
+        if (wave.lastStepFiredBolt) {
+          this.sound.playEnemyShot();
+        }
+        if (this.squad.logicalCount > 0) {
+          const collision = wave.resolveSquadCollision(
+            this.squad.x,
+            this.squad.z,
+            this.squad.logicalCount,
+            diffProfile.chargerDamageBonus
+          );
+          if (collision && collision.playerLosses > 0) {
+            const lost = collision.playerLosses;
+            this.squad.setLogicalCount(this.squad.logicalCount - lost);
+            const ragBursts = Math.min(4, lost);
+            for (let r = 0; r < ragBursts; r++) {
+              this.ragdollPool.spawnKnockback(
                 this.squad.x,
-                1.6,
                 this.squad.z,
-                `-${lost}`,
-                'negative',
-                0.65
+                false,
+                collision.hitByCharger ? 1.2 : 0.95
               );
-              if (this.squad.logicalCount <= 0) {
-                this.triggerRunDefeat();
-              }
+            }
+            this.sceneManager.addShake(collision.hitByCharger ? 0.38 : 0.28);
+            this.sound.playEnemyPop();
+            if (collision.hitByCharger) {
+              this.vfx.spawnShockwave(collision.hitX, collision.hitZ, 3.0, 0.32, 0xff2854);
+            }
+            this.particlePool.spawnBurst(
+              collision.hitX,
+              0.8,
+              collision.hitZ,
+              collision.hitByCharger ? 20 : 14,
+              collision.hitByCharger ? 6.2 : 5.4,
+              0xff4757
+            );
+            this.combatText.spawn(
+              this.squad.x,
+              1.68,
+              this.squad.z,
+              collision.hitByCharger ? `-${lost} CHARGED!` : `-${lost}`,
+              'negative',
+              collision.hitByCharger ? 0.88 : 0.65
+            );
+            if (this.squad.logicalCount <= 0) {
+              this.triggerRunDefeat();
             }
           }
         }
       }
     }
 
-    // Update Mid-Bridge / Right-Corridor Riot Goliath Brutes
+    // Finalize enemy telegraphs & update incoming lane-locked enemy bolts
+    this.enemyProjectiles.finishTelegraphs();
+    if (this.stateMachine.state === 'RUNNING' || this.stateMachine.state === 'BOSS_FIGHT') {
+      this.enemyProjectiles.update(dt, this.squad.x, this.squad.z, this.squad.logicalCount);
+      if (this.enemyProjectiles.lastStepDodgedCount > 0) {
+        this.enemyShotsDodgedThisRun += this.enemyProjectiles.lastStepDodgedCount;
+      }
+      if (this.enemyProjectiles.lastStepHitDamage > 0 && this.squad.logicalCount > 0) {
+        const lost = Math.min(this.squad.logicalCount, this.enemyProjectiles.lastStepHitDamage);
+        this.squad.setLogicalCount(this.squad.logicalCount - lost);
+        const ragLost = Math.min(3, lost);
+        for (let r = 0; r < ragLost; r++) {
+          this.ragdollPool.spawnKnockback(this.squad.x, this.squad.z, false, 1.06);
+        }
+        this.sound.playEnemyPop();
+        this.sceneManager.addShake(0.30);
+        this.vfx.spawnShockwave(
+          this.enemyProjectiles.lastStepHitX,
+          this.squad.z,
+          2.4,
+          0.26,
+          isUnicorn ? 0x24d8ff : 0xff3b52
+        );
+        this.particlePool.spawnBurst(
+          this.enemyProjectiles.lastStepHitX,
+          0.95,
+          this.squad.z,
+          12,
+          5.2,
+          isUnicorn ? 0x24d8ff : 0xff4757
+        );
+        this.combatText.spawn(
+          this.squad.x,
+          1.76,
+          this.squad.z,
+          `-${lost} SHOT!`,
+          'negative',
+          0.78
+        );
+        if (this.squad.logicalCount <= 0) {
+          this.triggerRunDefeat();
+        }
+      }
+    }
+
+    // Update Mid-Bridge / Right-Corridor Riot Goliath Brutes (with Alternating Wide Shockwave Slam!)
     if (this.stateMachine.state === 'RUNNING') {
       const dividerZ = splitDividerActive
         ? this.splitCauseway.dividerTipZ
@@ -1463,23 +1659,33 @@ export class BridgeBlitzGame {
           this.squad.z,
           this.squad.logicalCount,
           dividerZ,
-          bruteBlockingGateZ
+          bruteBlockingGateZ,
+          diffProfile.bossTempoMult
         );
         if (bruteSmash) {
-          this.sceneManager.addShake(0.48);
+          this.sceneManager.addShake(bruteSmash.isWideSlam ? 0.56 : 0.48);
           this.vfx.spawnShockwave(
             bruteSmash.impactX,
             bruteSmash.impactZ,
-            3.4,
-            0.36,
+            bruteSmash.isWideSlam ? 4.6 : 3.4,
+            bruteSmash.isWideSlam ? 0.44 : 0.36,
             0xff384c
           );
+          if (bruteSmash.isWideSlam) {
+            this.vfx.spawnShockwave(
+              bruteSmash.impactX,
+              bruteSmash.impactZ,
+              3.1,
+              0.30,
+              0xffc938
+            );
+          }
           this.particlePool.spawnBurst(
             bruteSmash.impactX,
             0.7,
             bruteSmash.impactZ,
-            18,
-            6.2,
+            bruteSmash.isWideSlam ? 24 : 18,
+            bruteSmash.isWideSlam ? 7.2 : 6.2,
             0xff4757
           );
           if (bruteSmash.playerLosses > 0 && this.squad.logicalCount > 0) {
@@ -1494,9 +1700,9 @@ export class BridgeBlitzGame {
               this.squad.x,
               1.85,
               this.squad.z,
-              `-${lost} MAUL!`,
+              bruteSmash.isWideSlam ? `-${lost} SHOCKWAVE!` : `-${lost} MAUL!`,
               'negative',
-              0.95
+              bruteSmash.isWideSlam ? 1.02 : 0.95
             );
             if (this.squad.logicalCount <= 0) {
               this.triggerRunDefeat();
@@ -1516,15 +1722,34 @@ export class BridgeBlitzGame {
       }
     }
 
-    // Update Boss War Machine & Telegraphed Lane Salvos
+    // Update Boss War Machine, Alternating 2-Lane Salvos, 50% HP Enrage & Escort Summons
     if (this.stateMachine.state === 'RUNNING' || this.stateMachine.state === 'BOSS_FIGHT') {
       this.boss.update(
         dt,
         this.stateMachine.state === 'BOSS_FIGHT',
         this.squad.x,
         this.squad.z,
-        this.squad.logicalCount
+        this.squad.logicalCount,
+        diffProfile.bossTempoMult
       );
+      if (this.boss.lastStepEnrageTriggered) {
+        this.sound.playBossEnrage();
+        this.sceneManager.addShake(0.55);
+        this.vfx.spawnShockwave(this.boss.x, this.boss.z + 0.5, 5.8, 0.52, 0xff2848);
+        this.vfx.spawnShockwave(this.boss.x, this.boss.z + 0.5, 3.8, 0.36, 0xffd040);
+        this.particlePool.spawnBurst(this.boss.x, 2.2, this.boss.z + 0.5, 30, 8.2, 0xff2e58, 0.22, 0.65);
+        this.combatText.spawn(
+          this.boss.x,
+          3.8,
+          this.boss.z,
+          isUnicorn ? 'UNICORN RAGE!' : 'BOSS ENRAGED!',
+          'negative',
+          1.25
+        );
+      }
+      if (this.boss.lastStepSummonEscorts && this.boss.lastStepEscortCount > 0) {
+        this.spawnBossEscortWave(this.boss.lastStepEscortCount);
+      }
       if (this.boss.lastStepSalvoWarning) {
         this.sound.playBossSalvoWarning();
         this.combatText.spawn(
@@ -1854,9 +2079,13 @@ export class BridgeBlitzGame {
                 ev.coinReward,
                 ev.x,
                 ev.z,
-                ev.isHeavy,
+                ev.isHeavy && !ev.stoppedCharger,
                 ev.isHeavy ? 4 : 2
               );
+              if (ev.stoppedCharger) {
+                this.vfx.spawnShockwave(ev.x, ev.z, 2.8, 0.30, 0xffd84d);
+                this.combatText.spawn(ev.x, 2.05, ev.z, 'CHARGER STOPPED!', 'gold', 0.92);
+              }
             } else {
               this.vfx.spawnImpactSplash(bx, 0.94, bz, 0.78, weaponSplashHex);
             }
@@ -1995,51 +2224,55 @@ export class BridgeBlitzGame {
             break;
           }
         }
+      }
 
-        // 4. Check Enemy Skirmish Waves (Instant vanish on death into spark bursts + magnetized 3D coins, zero ragdolls!)
-        if (!consumedHit) {
-          for (let w = 0; w < MAX_ENEMY_WAVES; w++) {
-            const wave = this.enemyWaves[w];
-            const kills = wave.tryBulletHit(bx, bz, prevZ, dmg, lastHit);
-            if (kills < 0) {
-              continue;
-            }
-            pool.lastHitEntityId[i] = wave.entityId;
-            consumedHit = true;
-
-            if (kills > 0 && wave.lastKillCount > 0) {
-              const ev = wave.lastKills[0];
-              this.enemiesDefeatedThisRun += kills;
-              this.sound.playEnemyPop();
-              this.vfx.spawnImpactSplash(
-                ev.x,
-                0.96,
-                ev.z,
-                ev.isHeavy ? 1.48 : 1.02,
-                0xffffff
-              );
-              this.particlePool.spawnBurst(
-                ev.x,
-                0.96,
-                ev.z,
-                ev.isHeavy ? 14 : 7,
-                ev.isHeavy ? 6.4 : 4.8,
-                isUnicorn ? 0x249dff : 0xff4757,
-                0.15,
-                0.38
-              );
-              this.awardLiveCoins(
-                ev.coinReward * kills,
-                ev.x,
-                ev.z,
-                ev.isHeavy,
-                ev.isHeavy ? 4 : 2
-              );
-            } else {
-              this.vfx.spawnImpactSplash(bx, 0.94, bz, 0.78, weaponSplashHex);
-            }
-            break;
+      // 4. Check Enemy Skirmish Waves (Standard Bridge + Boss Enrage Escorts on ALL layouts!)
+      if (!consumedHit && (!isSplit || this.stateMachine.state === 'BOSS_FIGHT')) {
+        for (let w = 0; w < MAX_ENEMY_WAVES; w++) {
+          const wave = this.enemyWaves[w];
+          const kills = wave.tryBulletHit(bx, bz, prevZ, dmg, lastHit);
+          if (kills < 0) {
+            continue;
           }
+          pool.lastHitEntityId[i] = wave.entityId;
+          consumedHit = true;
+
+          if (kills > 0 && wave.lastKillCount > 0) {
+            const ev = wave.lastKills[0];
+            this.enemiesDefeatedThisRun += kills;
+            this.sound.playEnemyPop();
+            this.vfx.spawnImpactSplash(
+              ev.x,
+              0.96,
+              ev.z,
+              ev.isHeavy ? 1.48 : 1.02,
+              0xffffff
+            );
+            this.particlePool.spawnBurst(
+              ev.x,
+              0.96,
+              ev.z,
+              ev.isHeavy ? 14 : 7,
+              ev.isHeavy ? 6.4 : 4.8,
+              isUnicorn ? 0x249dff : 0xff4757,
+              0.15,
+              0.38
+            );
+            this.awardLiveCoins(
+              ev.coinReward * kills,
+              ev.x,
+              ev.z,
+              ev.isHeavy && !ev.stoppedCharger,
+              ev.isHeavy ? 4 : 2
+            );
+            if (ev.stoppedCharger) {
+              this.vfx.spawnShockwave(ev.x, ev.z, 2.8, 0.30, 0xffd84d);
+              this.combatText.spawn(ev.x, 2.05, ev.z, 'CHARGER STOPPED!', 'gold', 0.92);
+            }
+          } else {
+            this.vfx.spawnImpactSplash(bx, 0.94, bz, 0.78, weaponSplashHex);
+          }
+          break;
         }
       }
 
@@ -2287,6 +2520,18 @@ export class BridgeBlitzGame {
 
   private handleSupplyDrumShattered(drum: SupplyDrumSlot): void {
     this.drumsBrokenThisRun++;
+    if (drum.isHazard) {
+      this.sceneManager.addShake(0.32);
+      this.sound.playTireBreak(false);
+      this.vfx.spawnCartoonFireball(drum.x, 1.15, drum.z, 2.05);
+      this.vfx.spawnShockwave(drum.x, drum.z, 3.4, 0.36, 0xff2e52);
+      this.vfx.spawnShockwave(drum.x, drum.z, 2.1, 0.24, 0xffaa30);
+      this.particlePool.spawnBurst(drum.x, 1.05, drum.z, 22, 6.8, 0xff4258, 0.18, 0.52);
+      this.awardLiveCoins(drum.rewardValue, drum.x, drum.z, false, 2);
+      this.combatText.spawn(drum.x, 2.05, drum.z, 'HAZARD CLEARED!', 'gold', 0.90);
+      return;
+    }
+
     this.sceneManager.addShake(0.24);
     const isUnicorn = this.saveManager.getData().settings.skinTheme === 'UNICORN';
     this.vfx.spawnShockwave(drum.x, drum.z, 2.7, 0.34, isUnicorn ? 0xff5cb8 : 0x28f8dc);
@@ -2370,6 +2615,12 @@ export class BridgeBlitzGame {
     const save = this.saveManager.getData();
     const isUnicorn = save.settings.skinTheme === 'UNICORN';
 
+    // Clear active enemy bolts and lingering Boss Escorts so victory celebrations are clean
+    this.enemyProjectiles.clear();
+    for (let i = 0; i < MAX_ENEMY_WAVES; i++) {
+      this.enemyWaves[i].hide();
+    }
+
     if (isUnicorn) {
       this.sound.playUnicornVictoryFanfare();
     } else {
@@ -2421,7 +2672,10 @@ export class BridgeBlitzGame {
       }
       this.endlessWave += 1;
       this.sectorBaseZ = this.squad.z;
-      this.activeStageDef = generateEndlessWaveStage(this.endlessWave);
+      this.activeStageDef = applyDifficultyToStage(
+        generateEndlessWaveStage(this.endlessWave),
+        save.difficulty
+      );
       this.populateSectorEntities(this.activeStageDef, this.sectorBaseZ);
       this.stateMachine.transitionTo('RUNNING');
       return;
@@ -2456,6 +2710,7 @@ export class BridgeBlitzGame {
     clearedStage: boolean
   ): RunSummary {
     const save = this.saveManager.getData();
+    const diffProfile = getDifficultyProfile(save.difficulty);
     const sectorProgress = clearedStage ? 1 : this.computeSectorProgressRatio();
     const rawRunDistance =
       this.computeRunDistanceMeters() +
@@ -2486,6 +2741,7 @@ export class BridgeBlitzGame {
       bossRewardCoins: this.boss.rewardCoins,
       clearedStage,
       warChestLevel: save.upgrades.warChest,
+      difficultyMultiplier: diffProfile.coinMultiplier,
     });
 
     const totalRunCoins = this.liveCoinsThisRun + payout.totalCoinsEarned;
@@ -2493,6 +2749,8 @@ export class BridgeBlitzGame {
     const summary: RunSummary = {
       outcome,
       mode: save.selectedMode,
+      difficulty: save.difficulty,
+      difficultyMultiplier: payout.difficultyMultiplier,
       stageNumber: stageNumberForSummary,
       distanceMeters:
         clearedStage && save.selectedMode !== 'ENDLESS'
@@ -2573,6 +2831,11 @@ export class BridgeBlitzGame {
     this.batchRenderer.beginEnemyFrame();
     if (this.activeBoardLayout === 'SPLIT_CAUSEWAY') {
       this.splitCauseway.pushInstances(this.batchRenderer, isMoving);
+      if (state === 'BOSS_FIGHT') {
+        for (let i = 0; i < MAX_ENEMY_WAVES; i++) {
+          this.enemyWaves[i].pushInstances(this.batchRenderer, isMoving);
+        }
+      }
     } else {
       for (let i = 0; i < MAX_ENEMY_WAVES; i++) {
         this.enemyWaves[i].pushInstances(this.batchRenderer, isMoving);
@@ -2630,7 +2893,8 @@ export class BridgeBlitzGame {
       this.boss.currentHp,
       this.boss.maxHp,
       this.boss.segments,
-      this.splitCauseway
+      this.splitCauseway,
+      this.boss.isEnraged
     );
 
     if (state !== 'PAUSED') {
@@ -2715,6 +2979,18 @@ export class BridgeBlitzGame {
         }
       }
     }
+    if (
+      recommendedDodgeX === null &&
+      (this.stateMachine.state === 'RUNNING' || this.stateMachine.state === 'BOSS_FIGHT')
+    ) {
+      const boltThreatX = this.enemyProjectiles.getNearestThreatBoltX(
+        this.squad.x,
+        this.squad.z
+      );
+      if (boltThreatX !== null) {
+        recommendedDodgeX = boltThreatX >= 0 ? -2.5 : 2.5;
+      }
+    }
 
     let splitClosestThreatZ: number | null = null;
     if (
@@ -2738,6 +3014,7 @@ export class BridgeBlitzGame {
     return {
       state: this.stateMachine.state,
       mode: save.selectedMode,
+      difficulty: save.difficulty,
       boardLayout: this.activeBoardLayout,
       skinTheme: save.settings.skinTheme,
       stage: stageNum,
@@ -2753,6 +3030,7 @@ export class BridgeBlitzGame {
         .shortBadge,
       bossHp: this.boss.currentHp,
       bossMaxHp: this.boss.maxHp,
+      bossEnraged: this.boss.isEnraged,
       bruteHp: bruteTelemetry.hp,
       bruteMaxHp: bruteTelemetry.maxHp,
       marchHaltedByBrute:
@@ -2774,6 +3052,8 @@ export class BridgeBlitzGame {
       weaponLocksTriggeredThisRun: this.weaponLocksThisRun,
       enemiesDefeatedThisRun: this.enemiesDefeatedThisRun,
       bossSalvosDodgedThisRun: this.bossSalvosDodgedThisRun,
+      enemyShotsDodgedThisRun: this.enemyShotsDodgedThisRun,
+      activeEnemyBolts: this.enemyProjectiles.activeBoltCount,
       activeBullets: this.bulletPool.activeCount,
       activeParticles: this.particlePool.activeCount,
       upgrades: { ...save.upgrades },
@@ -2781,6 +3061,10 @@ export class BridgeBlitzGame {
   }
 
   public getDebugProbe(): {
+    difficulty: DifficultyTier;
+    bossEnraged: boolean;
+    activeEnemyBolts: number;
+    activeSpikedDrums: number;
     commandoFacingYaw: number;
     legStrafeYaw: number;
     strafeSpeed: number;
@@ -2869,6 +3153,7 @@ export class BridgeBlitzGame {
     }
 
     let activeRollingBarrels = 0;
+    let activeSpikedDrums = 0;
     let frontBarrelZ: number | null = null;
     let frontBarrelRotX = 0;
     if (this.activeBoardLayout !== 'SPLIT_CAUSEWAY') {
@@ -2879,6 +3164,9 @@ export class BridgeBlitzGame {
         }
         if (drum.isRolling) {
           activeRollingBarrels++;
+        }
+        if (drum.isHazard) {
+          activeSpikedDrums++;
         }
         if (drum.z <= this.squad.z + 2 && (frontBarrelZ === null || drum.z > frontBarrelZ)) {
           frontBarrelZ = drum.z;
@@ -2912,6 +3200,10 @@ export class BridgeBlitzGame {
       ((this.debugProjFeet.y - this.debugProjHead.y) / vpH) * 100;
 
     return {
+      difficulty: this.saveManager.getData().difficulty,
+      bossEnraged: this.boss.isEnraged,
+      activeEnemyBolts: this.enemyProjectiles.activeBoltCount,
+      activeSpikedDrums,
       commandoFacingYaw: this.commandoFacingYaw,
       legStrafeYaw: this.squad.legStrafeYaw,
       strafeSpeed: this.squad.strafeSpeed,

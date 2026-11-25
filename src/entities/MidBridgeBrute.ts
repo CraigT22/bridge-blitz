@@ -5,17 +5,20 @@ import { formatObstacleHp } from '../math/progressionMath';
 import { attachWeldedOutlineNormals } from '../rendering/ProceduralGeometries';
 
 const BRUTE_ENTITY_ID = 777;
-const DUEL_HALT_DIST_Z = 8.4;
-const ENGAGE_WAKE_DIST_Z = 34.0;
-const CLUB_WINDUP_DURATION = 0.80;
-const CLUB_RECOVER_DURATION = 0.36;
-const CLUB_COOLDOWN_DURATION = 0.72;
-const CLUB_SMASH_RADIUS_X = 1.84;
+const DUEL_HALT_DIST_Z = 8.8;
+const ENGAGE_WAKE_DIST_Z = 38.0;
+const CLUB_WINDUP_DURATION = 0.66;
+const WIDE_SLAM_WINDUP_DURATION = 0.78;
+const CLUB_RECOVER_DURATION = 0.32;
+const CLUB_COOLDOWN_DURATION = 0.56;
+const CLUB_SMASH_RADIUS_X = 2.06;
+const WIDE_SLAM_RADIUS_X = 3.10;
 
 export interface BruteClubSmashEvent {
   readonly impactX: number;
   readonly impactZ: number;
   readonly playerLosses: number;
+  readonly isWideSlam: boolean;
 }
 
 function traceChamferRect(
@@ -228,6 +231,9 @@ export class MidBridgeBrute {
   private attackState: 'COOLDOWN' | 'WINDUP' | 'RECOVER' = 'COOLDOWN';
   private stateTimer = 0.7;
   private lockedSmashX = 0;
+  private attackCycle = 0;
+  private activeWideSlam = false;
+  private activeWindupDur = CLUB_WINDUP_DURATION;
 
   constructor(slotIndex = 0) {
     this.entityId = BRUTE_ENTITY_ID + slotIndex;
@@ -937,12 +943,16 @@ export class MidBridgeBrute {
     this.hitFlash = 0;
     this.hitFlashCooldown = 0;
     this.attackState = 'COOLDOWN';
-    this.stateTimer = 0.35;
+    this.stateTimer = 0.30;
     this.lockedSmashX = initialX;
+    this.attackCycle = 0;
+    this.activeWideSlam = false;
+    this.activeWindupDur = CLUB_WINDUP_DURATION;
 
     this.root.position.set(this.x, 0, this.z);
     this.root.visible = true;
     this.dangerZoneGroup.visible = false;
+    this.dangerZoneGroup.scale.set(1, 1, 1);
     this.bodyRig.rotation.set(0, 0, 0);
     this.clubArmPivot.rotation.set(0, 0, 0);
     this.uniMountPivot.position.set(0, 0, -0.25);
@@ -971,7 +981,8 @@ export class MidBridgeBrute {
     squadZ: number,
     playerLogicalSquad: number,
     dividerTipZ?: number,
-    blockingGateZ: number | null = null
+    blockingGateZ: number | null = null,
+    tempoMult = 1.0
   ): BruteClubSmashEvent | null {
     if (!this.active || this.defeated || this.hp <= 0) {
       return null;
@@ -983,6 +994,8 @@ export class MidBridgeBrute {
       return null;
     }
     this.root.visible = true;
+
+    const safeTempo = Math.max(0.8, tempoMult);
 
     if (this.hitFlashCooldown > 0) {
       this.hitFlashCooldown = Math.max(0, this.hitFlashCooldown - dt);
@@ -1003,8 +1016,8 @@ export class MidBridgeBrute {
     const insideRightCorridor = dividerTipZ !== undefined && this.z <= dividerTipZ + 0.55;
     const minAllowedX = insideRightCorridor ? 0.45 : -4.25;
     const maxAllowedX = insideRightCorridor ? 4.75 : 4.25;
-    const effectiveDuelDist = dividerTipZ !== undefined ? 6.3 : DUEL_HALT_DIST_Z;
-    const lateralPursueSpeed = dividerTipZ !== undefined && !insideRightCorridor ? 3.85 : 2.35;
+    const effectiveDuelDist = dividerTipZ !== undefined ? 6.5 : DUEL_HALT_DIST_Z;
+    const lateralPursueSpeed = (dividerTipZ !== undefined && !insideRightCorridor ? 4.1 : 2.85) * Math.sqrt(safeTempo);
 
     const blockedByGate =
       dividerTipZ === undefined &&
@@ -1025,7 +1038,7 @@ export class MidBridgeBrute {
           ? blockingGateZ - 30.0
           : Infinity;
       this.z = Math.min(maxBruteZ, this.z + this.speed * dt);
-      this.stridePhase += dt * (dividerTipZ !== undefined ? 7.6 : 6.4);
+      this.stridePhase += dt * (dividerTipZ !== undefined ? 7.8 : 6.8);
       const desiredX = Math.max(minAllowedX, Math.min(maxAllowedX, squadX));
       const dx = desiredX - this.x;
       this.x = Math.max(
@@ -1034,13 +1047,13 @@ export class MidBridgeBrute {
       );
       targetBodyYaw = Math.max(-0.28, Math.min(0.28, Math.atan2(dx, Math.max(3.5, distZ))));
     } else if (inDuelRange) {
-      this.stridePhase += dt * 3.8;
+      this.stridePhase += dt * 4.2;
 
       if (this.attackState === 'COOLDOWN') {
         this.dangerZoneGroup.visible = false;
         const desiredX = Math.max(minAllowedX, Math.min(maxAllowedX, squadX));
         const dx = desiredX - this.x;
-        const duelLateral = dividerTipZ !== undefined ? 3.45 : 2.65;
+        const duelLateral = (dividerTipZ !== undefined ? 3.85 : 3.05) * Math.sqrt(safeTempo);
         this.x = Math.max(
           minAllowedX,
           Math.min(maxAllowedX, this.x + Math.sign(dx) * Math.min(Math.abs(dx), duelLateral * dt))
@@ -1050,75 +1063,93 @@ export class MidBridgeBrute {
         this.stateTimer -= dt;
         if (this.stateTimer <= 0) {
           this.attackState = 'WINDUP';
-          this.stateTimer = CLUB_WINDUP_DURATION;
+          this.activeWideSlam = this.attackCycle % 2 === 1;
+          this.attackCycle++;
+          const baseWindup = this.activeWideSlam
+            ? WIDE_SLAM_WINDUP_DURATION
+            : CLUB_WINDUP_DURATION;
+          this.activeWindupDur = Math.max(0.42, baseWindup / safeTempo);
+          this.stateTimer = this.activeWindupDur;
           this.lockedSmashX = Math.max(-3.35, Math.min(3.35, squadX));
         }
       } else if (this.attackState === 'WINDUP') {
-        const progress = 1 - this.stateTimer / CLUB_WINDUP_DURATION;
-        if (progress < 0.36) {
+        const progress = 1 - this.stateTimer / Math.max(0.1, this.activeWindupDur);
+        if (progress < 0.34) {
           const desiredX = Math.max(minAllowedX, Math.min(maxAllowedX, squadX));
           const dx = desiredX - this.x;
           this.x = Math.max(
             minAllowedX,
-            Math.min(maxAllowedX, this.x + Math.sign(dx) * Math.min(Math.abs(dx), 1.95 * dt))
+            Math.min(maxAllowedX, this.x + Math.sign(dx) * Math.min(Math.abs(dx), 2.25 * dt))
           );
-          this.lockedSmashX = Math.max(-3.35, Math.min(3.35, this.x + (squadX - this.x) * 0.58));
+          this.lockedSmashX = Math.max(-3.35, Math.min(3.35, this.x + (squadX - this.x) * 0.62));
         }
 
         const aimDx = this.lockedSmashX - this.x;
         targetBodyYaw = Math.max(-0.52, Math.min(0.52, Math.atan2(aimDx, Math.max(2.2, distZ))));
 
-        this.clubArmPivot.rotation.x = progress * 1.24;
-        this.clubArmPivot.rotation.z = -progress * 0.18;
-        rearPitch = -progress * 0.54;
-        rearLiftY = progress * 0.42;
+        this.clubArmPivot.rotation.x = progress * (this.activeWideSlam ? 1.44 : 1.24);
+        this.clubArmPivot.rotation.z = -progress * 0.22;
+        rearPitch = -progress * (this.activeWideSlam ? 0.68 : 0.54);
+        rearLiftY = progress * (this.activeWideSlam ? 0.56 : 0.42);
 
+        const slamRadius = this.activeWideSlam ? WIDE_SLAM_RADIUS_X : CLUB_SMASH_RADIUS_X;
+        const zoneScale = slamRadius / CLUB_SMASH_RADIUS_X;
         this.dangerZoneGroup.visible = true;
+        this.dangerZoneGroup.scale.set(zoneScale, 1, zoneScale);
         this.dangerZoneGroup.position.set(
           aimDx,
           0,
           Math.max(2.2, distZ - 0.35)
         );
-        const pulse = 0.65 + 0.35 * Math.sin(progress * Math.PI * 6);
+        const pulse = 0.65 + 0.35 * Math.sin(progress * Math.PI * 7);
         const timingScale = 0.14 + Math.max(0, Math.min(1, progress)) * 0.86;
         this.dangerTimingDisc.scale.set(timingScale, timingScale, 1);
-        this.dangerTimingMat.opacity = 0.26 + progress * 0.38;
-        this.dangerFillMat.opacity = 0.16 + progress * 0.18;
-        this.dangerRingMat.opacity = 0.72 + pulse * 0.28;
+        this.dangerTimingMat.opacity = 0.28 + progress * 0.42;
+        this.dangerFillMat.opacity = 0.18 + progress * 0.22;
+        this.dangerRingMat.opacity = 0.74 + pulse * 0.26;
 
         this.stateTimer -= dt;
         if (this.stateTimer <= 0) {
-          this.clubArmPivot.rotation.x = -1.35;
+          this.clubArmPivot.rotation.x = -1.38;
           this.clubArmPivot.rotation.z = 0.08;
           this.dangerZoneGroup.visible = false;
           this.attackState = 'RECOVER';
-          this.stateTimer = CLUB_RECOVER_DURATION;
+          this.stateTimer = Math.max(0.22, CLUB_RECOVER_DURATION / safeTempo);
+
+          // Subtle aggressive forward lunge on wide shockwave slam!
+          if (this.activeWideSlam && distZ > 3.8) {
+            this.z += 0.45;
+          }
 
           const impactWorldX = this.lockedSmashX;
           const impactWorldZ = squadZ - 0.25;
           const squadHalfW = computeSquadOuterRadius(playerLogicalSquad);
           const hitSquad =
             playerLogicalSquad > 0 &&
-            Math.abs(squadX - impactWorldX) < CLUB_SMASH_RADIUS_X + squadHalfW * 0.24;
+            Math.abs(squadX - impactWorldX) < slamRadius + squadHalfW * 0.24;
+          const rawDmg = this.activeWideSlam
+            ? Math.ceil(this.clubDamage * 1.25)
+            : this.clubDamage;
 
           smashEvent = {
             impactX: impactWorldX,
             impactZ: impactWorldZ,
-            playerLosses: hitSquad ? Math.min(playerLogicalSquad, this.clubDamage) : 0,
+            playerLosses: hitSquad ? Math.min(playerLogicalSquad, rawDmg) : 0,
+            isWideSlam: this.activeWideSlam,
           };
         }
       } else {
         const aimDx = this.lockedSmashX - this.x;
         targetBodyYaw = Math.max(-0.52, Math.min(0.52, Math.atan2(aimDx, Math.max(2.2, distZ))));
         this.stateTimer -= dt;
-        const recT = 1 - Math.max(0, this.stateTimer / CLUB_RECOVER_DURATION);
-        this.clubArmPivot.rotation.x = -1.35 * (1 - recT * 0.85);
+        const recT = 1 - Math.max(0, this.stateTimer / Math.max(0.1, CLUB_RECOVER_DURATION / safeTempo));
+        this.clubArmPivot.rotation.x = -1.38 * (1 - recT * 0.85);
         this.clubArmPivot.rotation.z = 0.08 * (1 - recT);
-        rearPitch = 0.30 * (1 - recT);
+        rearPitch = 0.32 * (1 - recT);
         rearLiftY = -0.06 * (1 - recT);
         if (this.stateTimer <= 0) {
           this.attackState = 'COOLDOWN';
-          this.stateTimer = CLUB_COOLDOWN_DURATION;
+          this.stateTimer = Math.max(0.32, CLUB_COOLDOWN_DURATION / safeTempo);
         }
       }
     }

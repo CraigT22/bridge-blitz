@@ -532,4 +532,46 @@ export class SoundSynthesizer {
 
     this.playFilteredNoise(ctx, burstTime, 0.18, 'bandpass', 2650 * mult, 1.4, 0.046);
   }
+
+  public playEnemyShot(): void {
+    const ctx = this.ensureReady();
+    if (!ctx) {
+      return;
+    }
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(520, now);
+    osc.frequency.exponentialRampToValueAtTime(165, now + 0.085);
+    gain.gain.setValueAtTime(0.038, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.095);
+  }
+
+  public playBossEnrage(): void {
+    this.vibrate(25);
+    const ctx = this.ensureReady();
+    if (!ctx) {
+      return;
+    }
+    const base = ctx.currentTime;
+    const notes = [185, 246.94, 329.63, 440];
+    for (let i = 0; i < notes.length; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      const t = base + i * 0.055;
+      osc.frequency.setValueAtTime(notes[i], t);
+      osc.frequency.exponentialRampToValueAtTime(notes[i] * 1.18, t + 0.22);
+      gain.gain.setValueAtTime(0.068, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.26);
+    }
+    this.playFilteredNoise(ctx, base, 0.28, 'lowpass', 720, 1.2, 0.085);
+  }
 }

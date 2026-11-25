@@ -101,7 +101,7 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(fsm.timeScale).toBe(1.0);
   });
 
-  it('guarantees Boss telegraphed lane salvos target player lane while always leaving >= 1 safe lane', () => {
+  it('guarantees Boss telegraphed lane salvos target player lane, alternate safe lanes, and always leave >= 1 safe lane', () => {
     for (const x of [-3.85, 0.0, 3.85]) {
       const expectedPlayerLane = x < -1.45 ? 0 : x > 1.45 ? 2 : 1;
 
@@ -109,16 +109,23 @@ describe('ObjectPool & Core State Integrity', () => {
       expect(mask1[expectedPlayerLane]).toBe(true);
       expect(mask1.filter(Boolean)).toHaveLength(1);
 
+      let prevSafe = -1;
       for (let cycle = 0; cycle < 4; cycle++) {
-        const mask2 = selectBossSalvoLaneMask(x, 2, cycle);
+        const mask2 = selectBossSalvoLaneMask(x, 2, cycle, prevSafe);
         expect(mask2[expectedPlayerLane]).toBe(true);
         expect(mask2.filter(Boolean)).toHaveLength(2);
-        expect(mask2.some((locked) => !locked)).toBe(true);
+        const safeLane = mask2.findIndex((locked) => !locked);
+        expect(safeLane).toBeGreaterThanOrEqual(0);
+        if (prevSafe >= 0 && prevSafe !== expectedPlayerLane) {
+          // Alternating safe-lane rule forces the player to actually move when they camp the prior safe lane
+          expect(safeLane).not.toBe(prevSafe);
+        }
+        prevSafe = safeLane;
       }
     }
   });
 
-  it('defines 10 valid v6.0 400%-longer (+50% harder) campaign stages alternating Standard Bridge and Split Causeway boards', () => {
+  it('defines 10 valid v8.2 marathon stages with Spiked Hazard Drums, Dilemma Gates, Shooters/Chargers, and 2-lane Boss Salvos while preserving >= 42m gate clearance', () => {
     expect(CAMPAIGN_STAGES).toHaveLength(10);
     const seenChassis = new Set<string>();
     for (let i = 0; i < CAMPAIGN_STAGES.length; i++) {
@@ -128,17 +135,26 @@ describe('ObjectPool & Core State Integrity', () => {
       expect(stage.supplyDrums.length).toBe(60);
       expect(stage.supplyDrums[0].z).toBeGreaterThanOrEqual(-22);
       expect(stage.supplyDrums.every((d) => (d.rollSpeed ?? 0) > 0)).toBe(true);
+      expect(stage.supplyDrums.some((d) => d.isHazard === true)).toBe(true);
       expect(stage.gatePairs.length).toBe(12);
+      expect(
+        stage.gatePairs.some(
+          (g) => (g.left?.isLocked && (g.left.operator === 'DIV' || g.left.initialValue < 0)) ||
+                 (g.right?.isLocked && (g.right.operator === 'DIV' || g.right.initialValue < 0))
+        )
+      ).toBe(true);
       expect(stage.tireStacks.length).toBe(24);
       expect(stage.enemyWaves.length).toBe(16);
-      expect(stage.enemyWaves[1].count).toBeGreaterThanOrEqual(30);
+      expect(stage.enemyWaves[1].count).toBeGreaterThanOrEqual(24);
+      expect(stage.enemyWaves.some((w) => (w.shooterCount ?? 0) > 0)).toBe(true);
+      expect(stage.enemyWaves.some((w) => (w.chargerCount ?? 0) > 0)).toBe(true);
       expect(stage.midBrute).toBeDefined();
       expect(stage.midBrutes?.length).toBe(3);
-      expect(stage.midBrute!.maxHp).toBeGreaterThanOrEqual(10000);
-      expect(stage.boss.maxHp).toBeGreaterThanOrEqual(18750);
-      expect(stage.boss.salvoLanes === 1 || stage.boss.salvoLanes === 2).toBe(true);
-      expect(stage.boss.salvoDamage).toBeGreaterThanOrEqual(6);
-      expect(stage.boss.salvoDamage).toBeLessThanOrEqual(16);
+      expect(stage.midBrute!.maxHp).toBeGreaterThanOrEqual(6000);
+      expect(stage.boss.maxHp).toBeGreaterThanOrEqual(10500);
+      expect(stage.boss.salvoLanes).toBe(2);
+      expect(stage.boss.salvoDamage).toBeGreaterThanOrEqual(7);
+      expect(stage.boss.salvoDamage).toBeLessThanOrEqual(18);
 
       const expectedLayout = stage.stageNumber % 2 === 0 ? 'SPLIT_CAUSEWAY' : 'STANDARD_BRIDGE';
       expect(stage.boardLayout).toBe(expectedLayout);
@@ -152,8 +168,8 @@ describe('ObjectPool & Core State Integrity', () => {
         ).toBeGreaterThanOrEqual(20);
         expect(stage.splitCauseway!.goliathSpawns.length).toBe(3);
         expect(stage.splitCauseway!.marchSpeed).toBeGreaterThanOrEqual(6.80);
-        expect(stage.splitCauseway!.leftQueue[0].barrelHp).toBeGreaterThanOrEqual(40);
-        expect(stage.splitCauseway!.leftQueue[27].barrelHp).toBeGreaterThanOrEqual(140000);
+        expect(stage.splitCauseway!.leftQueue[0].barrelHp).toBeGreaterThanOrEqual(35);
+        expect(stage.splitCauseway!.leftQueue[27].barrelHp).toBeGreaterThanOrEqual(40000);
         expect(stage.splitCauseway!.goliathSpawns[0].speed).toBeGreaterThanOrEqual(4.60);
       }
 
@@ -172,7 +188,7 @@ describe('ObjectPool & Core State Integrity', () => {
       operator: 'ADD',
       value: 2,
     });
-    expect(split1.boss.salvoLanes).toBe(1);
+    expect(split1.boss.salvoLanes).toBe(2);
     expect(split2.boss.salvoLanes).toBe(2);
     expect(split1.splitCauseway!.marchSpeed).toBeGreaterThanOrEqual(6.80);
     expect(split6.splitCauseway!.marchSpeed).toBeGreaterThan(split1.splitCauseway!.marchSpeed);
@@ -188,7 +204,7 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(wave1.tireStacks.length).toBe(24);
     expect(wave1.midBrute).toBeDefined();
     expect(wave5.boss.maxHp).toBeGreaterThan(wave1.boss.maxHp);
-    expect(wave1.boss.salvoLanes).toBe(1);
+    expect(wave1.boss.salvoLanes).toBe(2);
     expect(wave2.boss.salvoLanes).toBe(2);
     expect(wave5.boss.salvoLanes).toBe(2);
     expect(wave4.boss.chassis).toBe('SOVEREIGN_TITAN');
@@ -207,16 +223,18 @@ describe('ObjectPool & Core State Integrity', () => {
     }
   });
 
-  it('defaults to UNICORN skin in v7.2 while preserving explicit TACTICAL/UNICORN toggles and Boss visual profiles', () => {
+  it('defaults to UNICORN skin & NORMAL difficulty while sanitizing HARD/NIGHTMARE saves and Boss visual profiles', () => {
     const fresh = createDefaultSaveData();
     expect(fresh.settings.skinTheme).toBe('UNICORN');
     expect(fresh.settings.skinDefaultV72Applied).toBe(true);
+    expect(fresh.difficulty).toBe('NORMAL');
 
     const clean = sanitizeSaveData({
       coins: 150.9,
       unlockedStage: 99,
       selectedStage: -4,
       selectedMode: 'SPLIT_CAUSEWAY',
+      difficulty: 'NIGHTMARE',
       splitCausewayStage: 7.8,
       bestSplitStage: -2,
       upgrades: { fireRate: 3, bulletPower: 'bad' },
@@ -225,6 +243,7 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(clean.unlockedStage).toBe(10);
     expect(clean.selectedStage).toBe(1);
     expect(clean.selectedMode).toBe('SPLIT_CAUSEWAY');
+    expect(clean.difficulty).toBe('NIGHTMARE');
     expect(clean.splitCausewayStage).toBe(7);
     expect(clean.bestSplitStage).toBe(7);
     expect(clean.upgrades.fireRate).toBe(3);
@@ -232,7 +251,11 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(clean.settings.skinTheme).toBe('UNICORN');
     expect(clean.settings.skinDefaultV72Applied).toBe(false);
 
+    const invalidDiff = sanitizeSaveData({ difficulty: 'IMPOSSIBLE_MODE' });
+    expect(invalidDiff.difficulty).toBe('NORMAL');
+
     const tacticalClean = sanitizeSaveData({
+      difficulty: 'HARD',
       settings: {
         muted: true,
         haptics: false,
@@ -240,6 +263,7 @@ describe('ObjectPool & Core State Integrity', () => {
         skinDefaultV72Applied: true,
       },
     });
+    expect(tacticalClean.difficulty).toBe('HARD');
     expect(tacticalClean.settings.skinTheme).toBe('TACTICAL');
     expect(tacticalClean.settings.skinDefaultV72Applied).toBe(true);
     expect(tacticalClean.settings.muted).toBe(true);
@@ -287,33 +311,39 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(wave.z).toBeGreaterThan(initialFrontZ);
   });
 
-  it('rolls lane barrels toward the squad, applies non-fatal squad attrition on collision, lets dodged barrels pass, and breaks for rewards', async () => {
+  it('rolls lane barrels & Spiked Hazard Drums toward squad with lethal-capable casualties, dodged pass-through, and break rewards', async () => {
     const {
       computeRollingBarrelAttrition,
       ROLLING_BARREL_CRASH_HALF_X,
       SupplyDrumSlot,
     } = await import('../src/entities/SupplyDrum');
 
-    // Pure attrition formula never instant-wipes a multi-soldier squad
-    for (const squadSize of [2, 6, 15, 40]) {
-      const lossFull = computeRollingBarrelAttrition(squadSize, 100, 100);
-      const lossLow = computeRollingBarrelAttrition(squadSize, 20, 100);
-      expect(lossFull).toBeGreaterThanOrEqual(1);
-      expect(lossFull).toBeLessThan(squadSize);
+    // v8.2 Attrition scales with remaining HP and removes artificial immortality floor on depleted squads,
+    // while Spiked Hazard Drums deal strictly heavier damage than standard barrels!
+    for (const squadSize of [6, 15, 40]) {
+      const lossFull = computeRollingBarrelAttrition(squadSize, 100, 100, false);
+      const lossLow = computeRollingBarrelAttrition(squadSize, 20, 100, false);
+      const lossSpiked = computeRollingBarrelAttrition(squadSize, 100, 100, true);
+      expect(lossFull).toBeGreaterThanOrEqual(2);
       expect(lossLow).toBeLessThanOrEqual(lossFull);
+      expect(lossSpiked).toBeGreaterThan(lossFull);
     }
-    expect(computeRollingBarrelAttrition(1, 50, 50)).toBe(1);
+    // Small 2-soldier squad hit by a full-HP barrel can be wiped out (no artificial immortality!)
+    expect(computeRollingBarrelAttrition(2, 100, 100, false)).toBe(2);
+    expect(computeRollingBarrelAttrition(1, 50, 50, false)).toBe(1);
 
     // Rolling physics: translates +Z and rotates around local X-axis during combat
     const barrel = new SupplyDrumSlot(0);
     barrel.configure({
       z: -24,
       lane: 'CENTER',
-      hp: 40,
-      rewardType: 'RECRUIT',
-      rewardValue: 2,
-      rollSpeed: 3.2,
+      hp: 68,
+      rewardType: 'COINS',
+      rewardValue: 4,
+      rollSpeed: 3.4,
+      isHazard: true,
     });
+    expect(barrel.isHazard).toBe(true);
     const startZ = barrel.z;
     barrel.update(0.5, 0, null, true);
     expect(barrel.isRolling).toBe(true);
@@ -325,11 +355,11 @@ describe('ObjectPool & Core State Integrity', () => {
       barrel.resolveSquadCollision(ROLLING_BARREL_CRASH_HALF_X + 0.4, barrel.z, 10)
     ).toBeNull();
 
-    // Direct center collision: deals squad attrition damage (not instant wipe) and consumes barrel
+    // Direct center collision: flags isHazard=true, deals heavy casualties, and consumes barrel
     const crash = barrel.resolveSquadCollision(0, barrel.z, 10);
     expect(crash).not.toBeNull();
-    expect(crash!.losses).toBeGreaterThanOrEqual(1);
-    expect(crash!.losses).toBeLessThan(10);
+    expect(crash!.isHazard).toBe(true);
+    expect(crash!.losses).toBeGreaterThanOrEqual(3);
     expect(barrel.broken).toBe(true);
 
     // Breaking a rolling barrel with bullets returns 'SHATTERED' with reward preserved
@@ -346,6 +376,90 @@ describe('ObjectPool & Core State Integrity', () => {
     expect(rewardBarrel.tryBulletHit(rewardBarrel.x, -18, -16, 15, -1)).toBe('SHATTERED');
     expect(rewardBarrel.rewardType).toBe('WEAPON');
     expect(rewardBarrel.rewardValue).toBe(2);
+  });
+
+  it('simulates Ranged Enemy Shooters firing lane-locked bolts and Armored Lane Chargers rushing with 1.5x stop bonus', async () => {
+    const THREE = await import('three');
+    const {
+      doesEnemyBoltHitSquad,
+      EnemyProjectileSystem,
+    } = await import('../src/entities/EnemyProjectileSystem');
+
+    // Pure hit-test geometry: direct hit vs. lateral dodge
+    expect(doesEnemyBoltHitSquad(0, 0, 10)).toBe(true);
+    expect(doesEnemyBoltHitSquad(-2.6, 2.6, 10)).toBe(false);
+
+    const scene = new THREE.Scene();
+    const proj = new EnemyProjectileSystem(scene);
+    const wave = new EnemyWaveSlot(2);
+    wave.configure({
+      z: -24,
+      lane: 'CENTER',
+      count: 14,
+      hpPerEnemy: 18,
+      speed: 3.0,
+      heavyCount: 3,
+      shooterCount: 4,
+      chargerCount: 2,
+      coinPerKill: 10,
+    });
+
+    let sawBoltFired = false;
+    let sawChargeStart = false;
+    for (let step = 0; step < 65; step++) {
+      proj.beginTelegraphs();
+      wave.update(0.05, 0, 0, null, proj, 1.35, 2);
+      proj.finishTelegraphs();
+      if (wave.lastStepFiredBolt) sawBoltFired = true;
+      if (wave.lastStepStartedCharge) sawChargeStart = true;
+      // Keep squad dodged far away so we can inspect bolts & rushing chargers cleanly
+      proj.update(0.05, 4.8, 0, 12);
+    }
+
+    expect(sawBoltFired).toBe(true);
+    expect(sawChargeStart).toBe(true);
+
+    // Direct bolt hit deducts exact bolt damage
+    proj.clear();
+    proj.spawnBolt(0, -1.0, 20, 3);
+    proj.update(0.05, 0, 0, 10);
+    expect(proj.lastStepHitDamage).toBe(3);
+
+    // Dodged bolt increments lastStepDodgedCount with zero hit damage
+    proj.spawnBolt(-3.5, 0.9, 20, 2);
+    proj.update(0.05, 3.2, 0, 10);
+    expect(proj.lastStepHitDamage).toBe(0);
+    expect(proj.lastStepDodgedCount).toBe(1);
+  });
+
+  it('triggers Boss 50% HP Enrage Phase, Escort Squad Summons, and Armor Segment pushback recoil', async () => {
+    const THREE = await import('three');
+    const { BossEntity } = await import('../src/entities/BossEntity');
+    const scene = new THREE.Scene();
+    const boss = new BossEntity(scene);
+    boss.configure(CAMPAIGN_STAGES[0].boss, 100);
+
+    const startZ = boss.z;
+    // Break first armor segment (>20% of 5-segment boss HP) -> triggers recoil pushback (-Z)
+    boss.tryBulletHit(0, boss.z, boss.z + 2, boss.maxHp * 0.25, 1.0, -1);
+    expect(boss.lastStepSegmentBroken).toBe(true);
+    expect(boss.z).toBeLessThan(startZ);
+
+    // Drop below 50% HP -> triggers Enrage on next update & periodic Escort Summon shortly after
+    boss.tryBulletHit(0, boss.z, boss.z + 2, boss.maxHp * 0.30, 1.0, -1);
+    boss.update(0.05, true, 0, -100, 20, 1.0);
+    expect(boss.isEnraged).toBe(true);
+    expect(boss.lastStepEnrageTriggered).toBe(true);
+
+    let summonedEscorts = false;
+    for (let step = 0; step < 25; step++) {
+      boss.update(0.05, true, 0, -100, 20, 1.0);
+      if (boss.lastStepSummonEscorts && boss.lastStepEscortCount >= 6) {
+        summonedEscorts = true;
+        break;
+      }
+    }
+    expect(summonedEscorts).toBe(true);
   });
 
   it('keeps Split Causeway Left-Column power-up barrel HP damage persistent with zero passive decay', async () => {

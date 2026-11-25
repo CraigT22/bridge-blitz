@@ -7,7 +7,7 @@ export const MAX_VISUAL_SOLDIERS = 40;
 export const MAX_ACTIVE_VOLLEY_EMITTERS = 26;
 export const OVERFLOW_SQUAD_COIN_BONUS = 10;
 export const COMMANDO_MODEL_SCALE = 1.66;
-export const BASE_SOLDIER_BULLET_DAMAGE = 4.4;
+export const BASE_SOLDIER_BULLET_DAMAGE = 3.1;
 export const PARALLEL_SHOT_RANGE = 48.0;
 
 export interface ParallelShotTrajectory {

@@ -423,9 +423,114 @@ button {
   box-shadow: 0 2px 8px rgba(40, 248, 220, 0.32);
 }
 
+/* Hub Difficulty Tier Selector (Normal / Hard / Nightmare) */
+.hub-difficulty-bar {
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2.5px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(255, 186, 66, 0.38);
+  background: rgba(8, 13, 24, 0.92);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.52);
+  pointer-events: auto;
+}
+
+.hub-diff-pill {
+  padding: 3.5px 7px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: var(--font-display);
+  font-size: 8.8px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  color: #9cb8d4;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 80ms ease, background 120ms ease;
+}
+
+.hub-diff-pill:active {
+  transform: scale(0.95);
+}
+
+.hub-diff-pill--normal.is-active {
+  border-color: rgba(154, 255, 228, 0.92);
+  background: linear-gradient(180deg, #2ee89a 0%, #109e6b 100%);
+  color: #041510;
+  box-shadow: 0 2px 8px rgba(46, 232, 154, 0.36);
+}
+
+.hub-diff-pill--hard.is-active {
+  border-color: rgba(255, 222, 128, 0.95);
+  background: linear-gradient(180deg, #ffb830 0%, #e06b12 100%);
+  color: #1c0b02;
+  box-shadow: 0 2px 10px rgba(255, 168, 36, 0.45);
+}
+
+.hub-diff-pill--nightmare.is-active {
+  border-color: rgba(255, 166, 198, 0.95);
+  background: linear-gradient(180deg, #ff3366 0%, #9e0b3e 100%);
+  color: #fff6fa;
+  box-shadow: 0 2px 12px rgba(255, 42, 102, 0.58);
+}
+
+.top-run-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.top-difficulty-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 3px;
+  clip-path: polygon(6px 0, calc(100% - 6px) 0, 100% 50%, calc(100% - 6px) 100%, 6px 100%, 0 50%);
+  background: rgba(34, 14, 10, 0.94);
+  border-top: 1.5px solid #ffb830;
+  border-bottom: 1.5px solid #ffb830;
+}
+
+.top-difficulty-pill__label {
+  font-family: var(--font-display);
+  font-size: 9.8px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  color: #ffd059;
+}
+
+.top-difficulty-pill.is-nightmare {
+  background: rgba(46, 8, 22, 0.95);
+  border-top-color: #ff386b;
+  border-bottom-color: #ff386b;
+}
+
+.top-difficulty-pill.is-nightmare .top-difficulty-pill__label {
+  color: #ff7ba0;
+}
+
+.boss-hud.is-enraged {
+  border-color: #ffcf38;
+  box-shadow:
+    inset 0 0 18px rgba(255, 56, 76, 0.42),
+    0 0 22px rgba(255, 42, 92, 0.62),
+    0 10px 26px rgba(0, 0, 0, 0.78);
+}
+
+.boss-hud.is-enraged .boss-hud__name {
+  color: #ffe054;
+}
+
+.boss-hud.is-enraged .boss-hud__fill {
+  background: linear-gradient(90deg, #ff1644, #ff6c1e, #ffe045);
+}
+
 /* 1-Tap Girls vs. Boys Unicorn Magic Skin Toggle Pill */
 .hub-skin-toggle {
-  margin-top: 5px;
+  margin-top: 4px;
   pointer-events: auto;
   display: inline-flex;
   align-items: center;

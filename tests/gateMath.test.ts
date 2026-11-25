@@ -48,7 +48,7 @@ describe('gateMath', () => {
     expect(posHit.deltaIncrements).toBe(1);
   });
 
-  it('allows shootable ADD gates to climb smoothly past +10 (+2 -> +12+) without a low ceiling', () => {
+  it('allows shootable ADD gates to climb smoothly past +10 (+2 -> +12+) under sustained DPS with v8.2 steeper resistance', () => {
     const res = applyGateBulletHit(
       {
         operator: 'ADD',
@@ -57,7 +57,7 @@ describe('gateMath', () => {
         damagePerIncrement: 4,
         isLocked: false,
       },
-      120
+      165
     );
     expect(res.value).toBeGreaterThanOrEqual(12);
     expect(res.value).toBeLessThanOrEqual(MAX_ADD_GATE_VALUE);
@@ -90,7 +90,7 @@ describe('gateMath', () => {
     // Sustained DPS pushes freely past X3.5+
     const stepUncapped = applyGateBulletHit(
       { ...startRed, value: 1.9, hitAccumulator: 0 },
-      900
+      1150
     );
     expect(stepUncapped.value).toBeGreaterThan(3.5);
     expect(stepUncapped.value).toBeLessThanOrEqual(MAX_SHOOTABLE_MUL_VALUE);
@@ -141,10 +141,11 @@ describe('gateMath', () => {
     expect(step3.flippedToPositive).toBe(true);
   });
 
-  it('applies exact squad count arithmetic for ADD and fractional MUL gates up to 40-commando crowd cap', () => {
+  it('applies exact squad count arithmetic for ADD, DIV, and fractional MUL gates up to 40-commando crowd cap', () => {
     expect(resolveGateSquadCount(14, 'ADD', 12)).toBe(26);
     expect(resolveGateSquadCount(32, 'ADD', 15)).toBe(40);
     expect(resolveGateSquadCount(4, 'ADD', -25)).toBe(0);
+    expect(resolveGateSquadCount(20, 'DIV', 2)).toBe(10);
     expect(resolveGateSquadCount(20, 'MUL', 0.35)).toBe(7);
     expect(resolveGateSquadCount(12, 'MUL', 2.5)).toBe(30);
     expect(resolveGateSquadCount(20, 'MUL', 2.8)).toBe(40);
@@ -154,6 +155,7 @@ describe('gateMath', () => {
     expect(formatGateLabel('ADD', 3)).toBe('+3');
     expect(formatGateLabel('ADD', 0)).toBe('+0');
     expect(formatGateLabel('ADD', -18)).toBe('-18');
+    expect(formatGateLabel('DIV', 2, true)).toBe('÷2');
     expect(formatGateLabel('MUL', 0.05, false)).toBe('X0.05');
     expect(formatGateLabel('MUL', 0.65, false)).toBe('X0.65');
     expect(formatGateLabel('MUL', 1.0, false)).toBe('X1.0');
@@ -163,13 +165,15 @@ describe('gateMath', () => {
     expect(formatGateLabel('MUL', 1.5, true)).toBe('X1.5');
   });
 
-  it('decays shootable ADD & MUL gates back toward spawn value after the ~0.45s grace pause (including blue->red reversion)', async () => {
+  it('decays shootable ADD & MUL gates back toward spawn value after the v8.2 0.32s grace pause (including blue->red reversion)', async () => {
     const {
       GATE_DECAY_GRACE_SECONDS,
       stepGatePassiveDecay,
     } = await import('../src/math/gateMath');
 
-    // 1. Flipped red (-8) -> blue (+3) ADD gate holds value during 0.45s grace pause, then ticks down & flips back to red!
+    expect(GATE_DECAY_GRACE_SECONDS).toBeCloseTo(0.32, 2);
+
+    // 1. Flipped red (-8) -> blue (+3) ADD gate holds value during 0.32s grace pause, then ticks down & flips back to red!
     let addState = {
       operator: 'ADD' as const,
       initialValue: -8,
