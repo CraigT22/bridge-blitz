@@ -16,9 +16,6 @@ jobs:
   deploy-pwa:
     name: Build & Deploy GitHub Pages PWA
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -46,25 +43,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           publish_branch: gh-pages
-
-      - name: Auto-enable GitHub Pages (Actions source)
-        id: pages_cfg
-        continue-on-error: true
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - name: Upload Pages artifact
-        if: steps.pages_cfg.outcome == 'success'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./dist
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        if: steps.pages_cfg.outcome == 'success'
-        continue-on-error: true
-        uses: actions/deploy-pages@v4
+          keep_files: true
 
   build-pixel-apk:
     name: Compile Android APK (Pixel 10 XL)
