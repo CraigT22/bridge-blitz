@@ -12,6 +12,7 @@ export class SoundSynthesizer {
   private settings: GameSettings;
   private lastShotSoundTime = 0;
   private lastGateTickTime = 0;
+  private lastGateDecayTime = 0;
   private lastCoinSoundTime = 0;
   private noiseCursor = 0;
 
@@ -196,6 +197,56 @@ export class SoundSynthesizer {
     osc.connect(gain).connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.052);
+  }
+
+  public playGateDecayTick(currentValue: number): void {
+    const ctx = this.ensureReady();
+    if (!ctx) {
+      return;
+    }
+    const now = ctx.currentTime;
+    if (now - this.lastGateDecayTime < 0.058) {
+      return;
+    }
+    this.lastGateDecayTime = now;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    const clampedVal = Math.max(-25, Math.min(35, currentValue));
+    const baseFreq =
+      currentValue > 0 && currentValue < 4
+        ? 440 + (currentValue - 1.0) * 190
+        : 360 + (clampedVal + 25) * 7.5;
+    osc.frequency.setValueAtTime(baseFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(140, baseFreq * 0.78), now + 0.044);
+
+    gain.gain.setValueAtTime(0.032, now);
+    gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.048);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.052);
+  }
+
+  public playBarrelCrash(): void {
+    this.vibrate(18);
+    const ctx = this.ensureReady();
+    if (!ctx) {
+      return;
+    }
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(170, now);
+    osc.frequency.exponentialRampToValueAtTime(48, now + 0.16);
+    gain.gain.setValueAtTime(0.11, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.18);
+
+    this.playFilteredNoise(ctx, now, 0.12, 'bandpass', 780, 0.9, 0.075);
   }
 
   public playGateFlipChime(): void {

@@ -21,18 +21,22 @@ import {
   type ShowcaseWeaponRig,
 } from '../rendering/WeaponRigFactory';
 
-const DRUM_HIT_RADIUS_X = 1.34;
+export const DRUM_HIT_RADIUS_X = 1.55;
+export const ROLLING_BARREL_DEFAULT_SPEED = 3.2;
+export const ROLLING_BARREL_WAKE_DIST_Z = 48.0;
+export const ROLLING_BARREL_CRASH_HALF_X = 1.18;
+const BARREL_ROLL_RADIUS = 0.98;
 
 export function obstacleLaneToX(lane: ObstacleLane): number {
   switch (lane) {
     case 'LEFT':
-      return -3.15;
+      return -3.85;
     case 'RIGHT':
-      return 3.15;
+      return 3.85;
     case 'LEFT_MID':
-      return -1.68;
+      return -1.92;
     case 'RIGHT_MID':
-      return 1.68;
+      return 1.92;
     case 'CENTER':
     default:
       return 0;
@@ -40,46 +44,85 @@ export function obstacleLaneToX(lane: ObstacleLane): number {
 }
 
 /**
- * Brushed Carbon-Titanium Hexagonal Ordnance Pod Armor Texture
- * (replaces oak wooden stave barrel planks while keeping SHARED_DRUM_TEX export).
+ * Pure v8.0 Rolling Barrel Attrition Formula:
+ * Colliding with an unbroken rolling barrel deals squad attrition damage (NEVER instant run defeat
+ * for squads > 1!) scaled gently by the barrel's remaining HP ratio, while dodged barrels roll
+ * harmlessly past your flank.
  */
-function createHexOrdnancePodTexture(): THREE.CanvasTexture {
+export function computeRollingBarrelAttrition(
+  logicalSquad: number,
+  remainingHp: number,
+  initialHp: number
+): number {
+  if (logicalSquad <= 0) {
+    return 0;
+  }
+  const hpRatio = Math.max(0.25, Math.min(1.0, remainingHp / Math.max(1, initialHp)));
+  const rawAttrition = Math.max(1, Math.min(5, Math.ceil(logicalSquad * 0.22 * (0.55 + 0.45 * hpRatio))));
+  if (logicalSquad > 1) {
+    // Guarantee attrition rather than instant run wipe on multi-soldier squads
+    return Math.min(logicalSquad - 1, rawAttrition);
+  }
+  return 1;
+}
+
+export interface BarrelSquadCollisionEvent {
+  readonly losses: number;
+  readonly x: number;
+  readonly z: number;
+}
+
+function createFallbackTexture(): THREE.Texture {
+  const data = new Uint8Array([255, 255, 255, 255]);
+  const tex = new THREE.DataTexture(data, 1, 1);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Ribbed Titanium-Armor Rolling Barrel Texture with high-contrast circumferential stripes & rivets
+ * so local X-axis rolling motion reads unmistakably on mobile screens!
+ */
+function createRollingBarrelTexture(): THREE.Texture {
+  if (typeof document === 'undefined') {
+    return createFallbackTexture();
+  }
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 256;
   const ctx = canvas.getContext('2d')!;
 
-  // Brushed metallic titanium-slate gradient from left bulkhead (0) -> center -> right bulkhead (256)
   const grad = ctx.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, '#2c3d52');
-  grad.addColorStop(0.20, '#465d78');
-  grad.addColorStop(0.50, '#5a7696');
-  grad.addColorStop(0.80, '#465d78');
-  grad.addColorStop(1, '#2c3d52');
+  grad.addColorStop(0, '#2a3c54');
+  grad.addColorStop(0.20, '#46607e');
+  grad.addColorStop(0.50, '#6280a2');
+  grad.addColorStop(0.80, '#46607e');
+  grad.addColorStop(1, '#2a3c54');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 256, 256);
 
-  // 6 armored facet panel seams + flush structural rivets around circumference (U)
-  const facetW = 256 / 6;
-  for (let i = 0; i < 6; i++) {
-    const x = i * facetW;
-    ctx.fillStyle = i % 2 === 0 ? 'rgba(180, 224, 255, 0.10)' : 'rgba(12, 20, 32, 0.10)';
-    ctx.fillRect(x, 0, facetW, 256);
+  // 8 circumferential ribbed barrel staves + alternating high-contrast warning chevrons so spin pops!
+  const panelCount = 8;
+  const panelW = 256 / panelCount;
+  for (let i = 0; i < panelCount; i++) {
+    const x = i * panelW;
+    ctx.fillStyle = i % 2 === 0 ? 'rgba(215, 240, 255, 0.16)' : 'rgba(10, 18, 30, 0.22)';
+    ctx.fillRect(x, 0, panelW, 256);
 
-    // Deep facet seam
-    ctx.fillStyle = 'rgba(10, 16, 26, 0.72)';
+    // Dark axial stave groove
+    ctx.fillStyle = 'rgba(8, 14, 24, 0.82)';
     ctx.fillRect(x, 0, 4, 256);
 
-    // Glowing cyan plasma seam accent along center of pod
-    ctx.fillStyle = 'rgba(64, 248, 224, 0.55)';
-    ctx.fillRect(x + 8, 124, facetW - 14, 8);
+    // Glowing cyan/gold rolling marker bands (alternating every stave for crisp spin visibility)
+    ctx.fillStyle = i % 2 === 0 ? 'rgba(64, 248, 224, 0.72)' : 'rgba(255, 206, 68, 0.68)';
+    ctx.fillRect(x + 7, 118, panelW - 12, 20);
 
-    // Corner hex bolts
-    ctx.fillStyle = 'rgba(204, 232, 255, 0.65)';
-    ctx.fillRect(x + 10, 44, 5, 5);
-    ctx.fillRect(x + facetW - 14, 44, 5, 5);
-    ctx.fillRect(x + 10, 206, 5, 5);
-    ctx.fillRect(x + facetW - 14, 206, 5, 5);
+    // Corner rivets
+    ctx.fillStyle = 'rgba(220, 240, 255, 0.72)';
+    ctx.fillRect(x + 8, 36, 5, 5);
+    ctx.fillRect(x + panelW - 12, 36, 5, 5);
+    ctx.fillRect(x + 8, 214, 5, 5);
+    ctx.fillRect(x + panelW - 12, 214, 5, 5);
   }
 
   const tex = new THREE.CanvasTexture(canvas);
@@ -90,40 +133,41 @@ function createHexOrdnancePodTexture(): THREE.CanvasTexture {
 }
 
 /**
- * Faceted 6-Sided Chamfered Hexagonal Ordnance Pod Geometries
- * (replaces round bulged wooden barrel while preserving SHARED_BARREL_GEOS export).
+ * 12-Sided Ribbed Rolling Barrel Geometries (exports preserved as SHARED_BARREL_GEOS
+ * for drop-in SplitCausewayController compatibility).
  */
-function createHexOrdnancePodGeometries(): {
+function createRollingBarrelGeometries(): {
   bodyGeo: THREE.BufferGeometry;
   outlineGeo: THREE.BufferGeometry;
 } {
-  const buildHexPod = (inflate: number): THREE.BufferGeometry => {
+  const buildBarrel = (inflate: number): THREE.BufferGeometry => {
     const pts: THREE.Vector2[] = [
-      new THREE.Vector2(0.0, -1.14 - inflate),
-      new THREE.Vector2(0.74 + inflate, -1.14 - inflate),
-      new THREE.Vector2(0.96 + inflate, -0.94 - inflate * 0.35),
-      new THREE.Vector2(0.99 + inflate, -0.36),
-      new THREE.Vector2(1.02 + inflate, 0.0),
-      new THREE.Vector2(0.99 + inflate, 0.36),
-      new THREE.Vector2(0.96 + inflate, 0.94 + inflate * 0.35),
-      new THREE.Vector2(0.74 + inflate, 1.14 + inflate),
-      new THREE.Vector2(0.0, 1.14 + inflate),
+      new THREE.Vector2(0.0, -1.16 - inflate),
+      new THREE.Vector2(0.76 + inflate, -1.16 - inflate),
+      new THREE.Vector2(0.95 + inflate, -0.96 - inflate * 0.35),
+      new THREE.Vector2(0.98 + inflate, -0.42),
+      new THREE.Vector2(1.03 + inflate, 0.0),
+      new THREE.Vector2(0.98 + inflate, 0.42),
+      new THREE.Vector2(0.95 + inflate, 0.96 + inflate * 0.35),
+      new THREE.Vector2(0.76 + inflate, 1.16 + inflate),
+      new THREE.Vector2(0.0, 1.16 + inflate),
     ];
-    const geo = new THREE.LatheGeometry(pts, 6);
+    const geo = new THREE.LatheGeometry(pts, 12);
     geo.rotateZ(Math.PI / 2);
-    geo.rotateX(Math.PI / 6); // Align crisp flat hex armor face directly toward camera!
-    geo.scale(1.0, 1.02, 1.0);
     geo.computeVertexNormals();
     return geo;
   };
 
   return {
-    bodyGeo: buildHexPod(0),
-    outlineGeo: buildHexPod(0.056),
+    bodyGeo: buildBarrel(0),
+    outlineGeo: buildBarrel(0.056),
   };
 }
 
-function createPlasmaHaloTexture(): THREE.CanvasTexture {
+function createPlasmaHaloTexture(): THREE.Texture {
+  if (typeof document === 'undefined') {
+    return createFallbackTexture();
+  }
   const canvas = document.createElement('canvas');
   canvas.width = 128;
   canvas.height = 128;
@@ -137,7 +181,6 @@ function createPlasmaHaloTexture(): THREE.CanvasTexture {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 128, 128);
 
-  // Crisp 6-spoke hexagonal tech reticle behind reward pickup
   ctx.save();
   ctx.translate(64, 64);
   ctx.strokeStyle = 'rgba(220, 252, 255, 0.48)';
@@ -157,14 +200,12 @@ function createPlasmaHaloTexture(): THREE.CanvasTexture {
   return new THREE.CanvasTexture(canvas);
 }
 
-export const SHARED_DRUM_TEX = createHexOrdnancePodTexture();
-export const SHARED_BARREL_GEOS = createHexOrdnancePodGeometries();
+export const SHARED_DRUM_TEX = createRollingBarrelTexture();
+export const SHARED_BARREL_GEOS = createRollingBarrelGeometries();
 export const SHARED_GLOW_TEX = createPlasmaHaloTexture();
 export const SHARED_HOOP_GEO = (() => {
-  const g = new THREE.CylinderGeometry(1.02, 1.02, 0.22, 6, 1, true);
+  const g = new THREE.CylinderGeometry(1.03, 1.03, 0.22, 12, 1, true);
   g.rotateZ(Math.PI / 2);
-  g.rotateX(Math.PI / 6);
-  g.scale(1.0, 1.025, 1.005);
   return g;
 })();
 
@@ -175,12 +216,15 @@ export class SupplyDrumSlot {
   public broken = false;
   public x = 0;
   public z = 0;
+  public rollSpeed = ROLLING_BARREL_DEFAULT_SPEED;
+  public rollAngleX = 0;
+  public isRolling = false;
   public initialHp = 25;
   public remainingHp = 25;
   public rewardType: DrumRewardType = 'COINS';
   public rewardValue = 20;
 
-  private skinTheme: SkinThemeId = 'TACTICAL';
+  private skinTheme: SkinThemeId = 'UNICORN';
   private readonly drumBodyGroup = new THREE.Group();
   private readonly drumMat: THREE.MeshStandardMaterial;
   private readonly hoopMat: THREE.MeshStandardMaterial;
@@ -200,9 +244,9 @@ export class SupplyDrumSlot {
   constructor(slotIndex: number) {
     this.entityId = 300 + slotIndex;
 
-    // Grounded hexagonal contact shadow
+    // Grounded contact shadow beneath rolling barrel
     const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(1.38, 8),
+      new THREE.CircleGeometry(1.42, 10),
       new THREE.MeshBasicMaterial({
         color: 0x05080d,
         transparent: true,
@@ -217,8 +261,8 @@ export class SupplyDrumSlot {
     this.drumMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       map: SHARED_DRUM_TEX,
-      roughness: 0.38,
-      metalness: 0.36,
+      roughness: 0.36,
+      metalness: 0.34,
       emissive: 0x000000,
     });
     this.hoopMat = new THREE.MeshStandardMaterial({
@@ -228,14 +272,15 @@ export class SupplyDrumSlot {
       emissive: 0x000000,
     });
 
-    // Faceted 6-sided Armored Hexagonal Ordnance Pod + Bolted Titanium Collars + Cel-Outline!
+    // Center drumBodyGroup at y = 1.02 so local X-axis rotation spins the barrel cleanly in place!
+    this.drumBodyGroup.position.set(0, 1.02, 0);
+
     const podMesh = new THREE.Mesh(SHARED_BARREL_GEOS.bodyGeo, this.drumMat);
-    podMesh.position.y = 1.02;
     this.drumBodyGroup.add(podMesh);
 
     for (const hoopX of [-0.68, 0.68]) {
       const hoop = new THREE.Mesh(SHARED_HOOP_GEO, this.hoopMat);
-      hoop.position.set(hoopX, 1.02, 0);
+      hoop.position.set(hoopX, 0, 0);
       this.drumBodyGroup.add(hoop);
     }
 
@@ -243,12 +288,11 @@ export class SupplyDrumSlot {
       SHARED_BARREL_GEOS.outlineGeo,
       new THREE.MeshBasicMaterial({ color: 0x070c14, side: THREE.BackSide })
     );
-    outlineMesh.position.y = 1.02;
     this.drumBodyGroup.add(outlineMesh);
 
     this.root.add(this.drumBodyGroup);
 
-    // Chamfered Dark-Glass Tactical HUD HP Plaque on front face
+    // Chamfered Dark-Glass Tactical HUD HP Plaque (stays upright on front face while barrel spins!)
     this.hpLabelTex = new EditableArcadeHpTexture();
     this.hpLabelMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(2.26, 1.32),
@@ -258,11 +302,11 @@ export class SupplyDrumSlot {
         depthWrite: false,
       })
     );
-    this.hpLabelMesh.position.set(0, 1.00, 1.12);
+    this.hpLabelMesh.position.set(0, 1.02, 1.15);
     this.root.add(this.hpLabelMesh);
 
-    // Perched Top Reward Pivot (Octagonal Bullion, 3D Weapon, or Stealth / Pink Unicorn Helm)
-    this.pickupPivot.position.set(0, 2.56, 0);
+    // Perched Top Reward Pivot (stays upright above rolling barrel!)
+    this.pickupPivot.position.set(0, 2.58, 0);
     this.root.add(this.pickupPivot);
 
     this.glowHaloMesh = new THREE.Mesh(
@@ -316,7 +360,7 @@ export class SupplyDrumSlot {
     for (const theme of ['TACTICAL', 'UNICORN'] as const) {
       for (const t of [1, 2, 3, 4, 5] as const) {
         const rig = this.weaponRigsByTheme[theme][t];
-        rig.root.scale.setScalar(1.56);
+        rig.root.scale.setScalar(1.62);
         rig.root.rotation.z = 0.14;
         rig.root.visible = false;
         this.pickupPivot.add(rig.root);
@@ -343,7 +387,6 @@ export class SupplyDrumSlot {
     const isWeapon = this.rewardType === 'WEAPON';
     const isUnicorn = this.skinTheme === 'UNICORN';
 
-    // Distinct Armored Hex Pod color-coding (zero oak-wood brown!)
     if (isWeapon) {
       this.drumMat.color.setHex(isUnicorn ? 0xff70c2 : 0xe2567c);
       this.hoopMat.color.setHex(isUnicorn ? 0xffcf40 : 0xffbe3b);
@@ -387,6 +430,9 @@ export class SupplyDrumSlot {
     this.broken = false;
     this.z = def.z;
     this.x = obstacleLaneToX(def.lane);
+    this.rollSpeed = def.rollSpeed ?? ROLLING_BARREL_DEFAULT_SPEED;
+    this.rollAngleX = 0;
+    this.isRolling = false;
     this.initialHp = Math.max(1, def.hp);
     this.remainingHp = this.initialHp;
     this.rewardType = def.rewardType;
@@ -397,36 +443,62 @@ export class SupplyDrumSlot {
 
     this.root.position.set(this.x, 0, this.z);
     this.root.visible = true;
+    this.drumBodyGroup.rotation.x = 0;
     this.drumBodyGroup.scale.set(1, 1, 1);
     this.drumMat.emissive.setRGB(0, 0, 0);
     this.hoopMat.emissive.setRGB(0, 0, 0);
 
     this.syncSkinVisuals();
-
     this.hpLabelTex.redrawIfDirty(this.remainingHp, 0);
   }
 
   public hide(): void {
     this.active = false;
     this.broken = true;
+    this.isRolling = false;
     this.root.visible = false;
   }
 
-  public update(dt: number, squadZ: number): void {
+  public update(
+    dt: number,
+    squadZ: number,
+    blockingGateZ: number | null = null,
+    combatActive = true
+  ): void {
     if (!this.active || this.broken) {
       return;
     }
     if (squadZ - this.z > 128 && squadZ >= this.z) {
       this.root.visible = false;
+      this.isRolling = false;
       return;
     }
     this.root.visible = true;
-    if (squadZ < this.z - 12.5) {
+
+    // Dodged rolling barrel rolled harmlessly past the player's flank -> sink & recycle cleanly
+    if (this.z > squadZ + 11.5) {
       this.root.position.y -= dt * 16.0;
-      if (this.root.position.y <= -3.5 || squadZ < this.z - 15.2) {
+      if (this.root.position.y <= -3.5 || this.z > squadZ + 14.5) {
         this.hide();
       }
       return;
+    }
+
+    // Roll down-lane (+Z) toward the squad while rotating around local X-axis (respecting uncollected gates!)
+    const blockedByGate = blockingGateZ !== null && this.z <= blockingGateZ + 1.5;
+    const maxAllowedZ = blockingGateZ !== null ? blockingGateZ - 14.0 : Infinity;
+    const distAhead = squadZ - this.z;
+    const shouldRoll = combatActive && !blockedByGate && distAhead <= ROLLING_BARREL_WAKE_DIST_Z;
+    this.isRolling = shouldRoll;
+
+    if (shouldRoll && dt > 0 && this.rollSpeed > 0) {
+      const nextZ = Math.min(maxAllowedZ, this.z + this.rollSpeed * dt);
+      const deltaZ = Math.max(0, nextZ - this.z);
+      this.z = nextZ;
+      this.root.position.z = this.z;
+      // Exact no-slip rolling rotation around local X-axis (+X rotation rolls forward toward +Z!)
+      this.rollAngleX += deltaZ / BARREL_ROLL_RADIUS;
+      this.drumBodyGroup.rotation.x = this.rollAngleX;
     }
 
     this.spinAngle += dt * 2.4;
@@ -453,9 +525,9 @@ export class SupplyDrumSlot {
     }
 
     if (this.flashTimer > 0) {
-      this.flashTimer = Math.max(0, this.flashTimer - dt * 9.5);
-      this.drumMat.emissive.setRGB(this.flashTimer * 0.12, this.flashTimer * 0.42, this.flashTimer * 0.48);
-      this.hoopMat.emissive.setRGB(this.flashTimer * 0.36, this.flashTimer * 0.28, 0.05);
+      this.flashTimer = Math.max(0, this.flashTimer - dt * 14.0);
+      this.drumMat.emissive.setRGB(this.flashTimer * 0.42, this.flashTimer * 0.42, this.flashTimer * 0.46);
+      this.hoopMat.emissive.setRGB(this.flashTimer * 0.42, this.flashTimer * 0.36, this.flashTimer * 0.25);
       const pop = 1 + this.flashTimer * 0.05;
       this.drumBodyGroup.scale.set(pop, 1 - this.flashTimer * 0.03, pop);
     } else {
@@ -477,8 +549,8 @@ export class SupplyDrumSlot {
     if (!this.active || this.broken || lastHitId === this.entityId) {
       return 'NONE';
     }
-    const minZ = Math.min(bz, prevBz) - 1.05;
-    const maxZ = Math.max(bz, prevBz) + 1.05;
+    const minZ = Math.min(bz, prevBz) - 1.15;
+    const maxZ = Math.max(bz, prevBz) + 1.15;
     if (this.z < minZ || this.z > maxZ) {
       return 'NONE';
     }
@@ -489,13 +561,14 @@ export class SupplyDrumSlot {
     this.remainingHp -= damage;
     if (this.flashCooldown <= 0) {
       this.flashTimer = 1.0;
-      this.flashCooldown = 0.14;
+      this.flashCooldown = 0.12;
     }
 
     if (this.remainingHp <= 0) {
       this.remainingHp = 0;
       this.broken = true;
       this.active = false;
+      this.isRolling = false;
       this.root.visible = false;
       return 'SHATTERED';
     }
@@ -504,11 +577,38 @@ export class SupplyDrumSlot {
     return 'HIT';
   }
 
-  public checkCoreLaneCrash(squadX: number, squadZ: number): boolean {
-    if (!this.active || this.broken) {
-      return false;
+  /**
+   * Resolves squad collision against an unbroken rolling barrel:
+   * - Direct lane hit deals squad attrition damage & bursts the barrel (no reward granted).
+   * - Dodging laterally (`|squadX - x| >= ROLLING_BARREL_CRASH_HALF_X`) lets it roll harmlessly past your flank!
+   */
+  public resolveSquadCollision(
+    squadX: number,
+    squadZ: number,
+    logicalSquad: number
+  ): BarrelSquadCollisionEvent | null {
+    if (!this.active || this.broken || logicalSquad <= 0) {
+      return null;
     }
     const dz = squadZ - this.z;
-    return dz > -0.20 && dz < 0.92 && Math.abs(squadX - this.x) < 0.92;
+    if (dz < -0.95 || dz > 1.05) {
+      return null;
+    }
+    if (Math.abs(squadX - this.x) >= ROLLING_BARREL_CRASH_HALF_X) {
+      return null;
+    }
+
+    const losses = computeRollingBarrelAttrition(
+      logicalSquad,
+      this.remainingHp,
+      this.initialHp
+    );
+    const hitX = this.x;
+    const hitZ = this.z;
+    this.broken = true;
+    this.active = false;
+    this.isRolling = false;
+    this.root.visible = false;
+    return { losses, x: hitX, z: hitZ };
   }
 }

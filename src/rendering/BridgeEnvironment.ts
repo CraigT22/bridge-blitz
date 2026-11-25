@@ -96,7 +96,7 @@ const CHUNK_COUNT = 10; // 5 seamless 80m cable-stayed naval viaduct spans!
 function sampleCatenaryY(spanPhase: 0 | 1, localZ: number): number {
   const u = Math.max(0, Math.min(1, -localZ / CHUNK_LENGTH));
   const sag = spanPhase === 0 ? 1 - u : u;
-  return 3.85 + 17.95 * sag * sag;
+  return 4.2 + 27.6 * sag * sag;
 }
 
 function createCatenaryCableGeometry(spanPhase: 0 | 1, sideX: number): THREE.TubeGeometry {
@@ -424,37 +424,37 @@ export class BridgeEnvironment {
       group.add(pier);
 
       for (const sign of [-1, 1]) {
-        // Stepped Industrial Tower Legs (raised portal height for elevated tactical camera!)
-        const lowerLeg = new THREE.Mesh(new THREE.BoxGeometry(1.55, 17.2, 1.75), towerMat);
-        lowerLeg.position.set(sign * 7.30, 7.05, 0);
+        // Towering Industrial Suspension Legs (raised portal clearance >= 26.2m above 35° v8.0 camera!)
+        const lowerLeg = new THREE.Mesh(new THREE.BoxGeometry(1.55, 25.0, 1.75), towerMat);
+        lowerLeg.position.set(sign * 7.30, 11.0, 0);
         lowerLeg.castShadow = true;
         lowerLeg.receiveShadow = true;
         group.add(lowerLeg);
 
-        const upperLeg = new THREE.Mesh(new THREE.BoxGeometry(1.22, 9.2, 1.4), towerMat);
-        upperLeg.position.set(sign * 7.30, 19.3, 0);
+        const upperLeg = new THREE.Mesh(new THREE.BoxGeometry(1.22, 10.6, 1.4), towerMat);
+        upperLeg.position.set(sign * 7.30, 28.4, 0);
         upperLeg.castShadow = true;
         group.add(upperLeg);
 
         // Steel Cable Saddle & Aviation Warning Beacon on Peak
         const saddle = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.55, 1.65), gunmetalMat);
-        saddle.position.set(sign * 7.30, 24.05, 0);
+        saddle.position.set(sign * 7.30, 33.8, 0);
         group.add(saddle);
 
-        const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), beaconGlowMat);
-        beacon.position.set(sign * 7.30, 24.52, 0);
+        const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), beaconGlowMat);
+        beacon.position.set(sign * 7.30, 34.3, 0);
         group.add(beacon);
       }
 
-      // Portal Crossbeams + Diagonal Steel X-Bracing Trusses (raised >= 16.2m so elevated camera never clips!)
-      for (const beamY of [16.2, 19.5, 22.8]) {
+      // Portal Crossbeams + Diagonal Steel X-Bracing Trusses (raised >= 26.2m so 35° elevated camera never clips!)
+      for (const beamY of [26.2, 29.5, 32.8]) {
         const beam = new THREE.Mesh(new THREE.BoxGeometry(16.0, 0.90, 1.12), towerMat);
         beam.position.set(0, beamY, 0);
         beam.castShadow = true;
         group.add(beam);
       }
 
-      for (const bayMidY of [17.85, 21.15]) {
+      for (const bayMidY of [27.85, 31.15]) {
         for (const diagSign of [-1, 1]) {
           const strut = new THREE.Mesh(new THREE.BoxGeometry(14.0, 0.26, 0.34), gunmetalMat);
           strut.position.set(0, bayMidY, 0);

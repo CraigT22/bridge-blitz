@@ -125,8 +125,9 @@ describe('ObjectPool & Core State Integrity', () => {
       const stage = CAMPAIGN_STAGES[i];
       expect(stage.stageNumber).toBe(i + 1);
       expect(stage.trackLength).toBeGreaterThanOrEqual(1120);
-      expect(stage.supplyDrums.length).toBe(36);
+      expect(stage.supplyDrums.length).toBe(60);
       expect(stage.supplyDrums[0].z).toBeGreaterThanOrEqual(-22);
+      expect(stage.supplyDrums.every((d) => (d.rollSpeed ?? 0) > 0)).toBe(true);
       expect(stage.gatePairs.length).toBe(12);
       expect(stage.tireStacks.length).toBe(24);
       expect(stage.enemyWaves.length).toBe(16);
@@ -183,7 +184,7 @@ describe('ObjectPool & Core State Integrity', () => {
     const wave5 = generateEndlessWaveStage(5);
     expect(wave1.boardLayout).toBe('STANDARD_BRIDGE');
     expect(wave2.boardLayout).toBe('SPLIT_CAUSEWAY');
-    expect(wave1.supplyDrums.length).toBe(36);
+    expect(wave1.supplyDrums.length).toBe(60);
     expect(wave1.tireStacks.length).toBe(24);
     expect(wave1.midBrute).toBeDefined();
     expect(wave5.boss.maxHp).toBeGreaterThan(wave1.boss.maxHp);
@@ -284,5 +285,91 @@ describe('ObjectPool & Core State Integrity', () => {
     wave.update(0.5, 0, -86, null);
     expect(wave.isMarching).toBe(true);
     expect(wave.z).toBeGreaterThan(initialFrontZ);
+  });
+
+  it('rolls lane barrels toward the squad, applies non-fatal squad attrition on collision, lets dodged barrels pass, and breaks for rewards', async () => {
+    const {
+      computeRollingBarrelAttrition,
+      ROLLING_BARREL_CRASH_HALF_X,
+      SupplyDrumSlot,
+    } = await import('../src/entities/SupplyDrum');
+
+    // Pure attrition formula never instant-wipes a multi-soldier squad
+    for (const squadSize of [2, 6, 15, 40]) {
+      const lossFull = computeRollingBarrelAttrition(squadSize, 100, 100);
+      const lossLow = computeRollingBarrelAttrition(squadSize, 20, 100);
+      expect(lossFull).toBeGreaterThanOrEqual(1);
+      expect(lossFull).toBeLessThan(squadSize);
+      expect(lossLow).toBeLessThanOrEqual(lossFull);
+    }
+    expect(computeRollingBarrelAttrition(1, 50, 50)).toBe(1);
+
+    // Rolling physics: translates +Z and rotates around local X-axis during combat
+    const barrel = new SupplyDrumSlot(0);
+    barrel.configure({
+      z: -24,
+      lane: 'CENTER',
+      hp: 40,
+      rewardType: 'RECRUIT',
+      rewardValue: 2,
+      rollSpeed: 3.2,
+    });
+    const startZ = barrel.z;
+    barrel.update(0.5, 0, null, true);
+    expect(barrel.isRolling).toBe(true);
+    expect(barrel.z).toBeGreaterThan(startZ);
+    expect(barrel.rollAngleX).toBeGreaterThan(0);
+
+    // Dodged laterally: returns null so barrel rolls harmlessly past flank
+    expect(
+      barrel.resolveSquadCollision(ROLLING_BARREL_CRASH_HALF_X + 0.4, barrel.z, 10)
+    ).toBeNull();
+
+    // Direct center collision: deals squad attrition damage (not instant wipe) and consumes barrel
+    const crash = barrel.resolveSquadCollision(0, barrel.z, 10);
+    expect(crash).not.toBeNull();
+    expect(crash!.losses).toBeGreaterThanOrEqual(1);
+    expect(crash!.losses).toBeLessThan(10);
+    expect(barrel.broken).toBe(true);
+
+    // Breaking a rolling barrel with bullets returns 'SHATTERED' with reward preserved
+    const rewardBarrel = new SupplyDrumSlot(1);
+    rewardBarrel.configure({
+      z: -18,
+      lane: 'RIGHT',
+      hp: 25,
+      rewardType: 'WEAPON',
+      rewardValue: 2,
+      rollSpeed: 3.0,
+    });
+    expect(rewardBarrel.tryBulletHit(rewardBarrel.x, -18, -16, 15, -1)).toBe('HIT');
+    expect(rewardBarrel.tryBulletHit(rewardBarrel.x, -18, -16, 15, -1)).toBe('SHATTERED');
+    expect(rewardBarrel.rewardType).toBe('WEAPON');
+    expect(rewardBarrel.rewardValue).toBe(2);
+  });
+
+  it('keeps Split Causeway Left-Column power-up barrel HP damage persistent with zero passive decay', async () => {
+    const {
+      LEFT_LANE_CENTER_X,
+      SplitCausewayController,
+    } = await import('../src/entities/SplitCausewayController');
+
+    const splitStage = generateSplitCausewayStage(1);
+    const ctrl = new SplitCausewayController();
+    ctrl.configure(splitStage.splitCauseway!, 0);
+
+    const startHp = ctrl.getFrontLeftBarrelHp();
+    expect(startHp).toBeGreaterThan(20);
+
+    const hit = ctrl.tryLeftQueueBulletHit(LEFT_LANE_CENTER_X, -10.4, -8.0, 14, -1);
+    expect(hit.type).toBe('BARREL_HIT');
+    const damagedHp = ctrl.getFrontLeftBarrelHp();
+    expect(damagedHp).toBeCloseTo(startHp - 14, 3);
+
+    // Shift squad right for 3 full seconds while fighting Right-Column enemies: Left barrel HP NEVER regenerates!
+    for (let i = 0; i < 60; i++) {
+      ctrl.update(0.05, 2.8, 0, true);
+    }
+    expect(ctrl.getFrontLeftBarrelHp()).toBeCloseTo(damagedHp, 4);
   });
 });

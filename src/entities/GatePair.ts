@@ -8,6 +8,7 @@ import {
   resolveGateSquadCount,
   SPLIT_SPAN_MAX_X,
   SPLIT_SPAN_MIN_X,
+  stepGatePassiveDecay,
 } from '../math/gateMath';
 import { EditableGateTexture } from '../rendering/CanvasLabelCache';
 import { createPadlockMesh } from '../rendering/ProceduralGeometries';
@@ -25,6 +26,7 @@ interface SingleGateSlot {
   readonly labelTex: EditableGateTexture;
   active: boolean;
   operator: GateOperator;
+  initialValue: number;
   value: number;
   hitAccumulator: number;
   damagePerIncrement: number;
@@ -33,6 +35,9 @@ interface SingleGateSlot {
   flashTimer: number;
   flashCooldown: number;
   popTimer: number;
+  timeSinceLastHit: number;
+  decayAccumulator: number;
+  decayPulseTimer: number;
 }
 
 export interface GateBulletImpactEvent {
@@ -72,6 +77,10 @@ export class GatePairSlot {
   public isFullSpan = false;
   public currentSplitX = 0;
   public targetSplitX = 0;
+  public lastStepDecayTicks = 0;
+  public lastStepDecayValue = 0;
+  public lastStepFlippedBackToRed = false;
+  public lastStepDecayX = 0;
 
   private appliedSplitX = Number.NaN;
   private readonly centerPostGroup = new THREE.Group();
@@ -194,6 +203,7 @@ export class GatePairSlot {
       labelTex,
       active: false,
       operator: 'ADD',
+      initialValue: 0,
       value: 0,
       hitAccumulator: 0,
       damagePerIncrement: 1,
@@ -202,6 +212,9 @@ export class GatePairSlot {
       flashTimer: 0,
       flashCooldown: 0,
       popTimer: 0,
+      timeSinceLastHit: 0,
+      decayAccumulator: 0,
+      decayPulseTimer: 0,
     };
   }
 
@@ -332,6 +345,7 @@ export class GatePairSlot {
     slot.active = true;
     slot.group.visible = true;
     slot.operator = def.operator;
+    slot.initialValue = def.initialValue;
     slot.value = def.initialValue;
     slot.hitAccumulator = 0;
     slot.damagePerIncrement = def.damagePerIncrement;
@@ -340,6 +354,9 @@ export class GatePairSlot {
     slot.flashTimer = 0;
     slot.flashCooldown = 0;
     slot.popTimer = 0;
+    slot.timeSinceLastHit = 0;
+    slot.decayAccumulator = 0;
+    slot.decayPulseTimer = 0;
     slot.panelMesh.scale.y = 1.0;
     slot.panelMesh.position.y = 1.28;
     slot.padlockGroup.visible = def.isLocked;
@@ -349,7 +366,8 @@ export class GatePairSlot {
       def.isLocked,
       0,
       0,
-      slot.panelWidth
+      slot.panelWidth,
+      0
     );
   }
 
@@ -359,7 +377,29 @@ export class GatePairSlot {
     this.root.visible = false;
   }
 
+  public getDebugValues(): {
+    z: number;
+    left: number | null;
+    right: number | null;
+    full: number | null;
+    leftInit: number | null;
+    rightInit: number | null;
+    fullInit: number | null;
+  } {
+    return {
+      z: this.z,
+      left: this.leftSlot.active ? this.leftSlot.value : null,
+      right: this.rightSlot.active ? this.rightSlot.value : null,
+      full: this.fullSlot.active ? this.fullSlot.value : null,
+      leftInit: this.leftSlot.active ? this.leftSlot.initialValue : null,
+      rightInit: this.rightSlot.active ? this.rightSlot.initialValue : null,
+      fullInit: this.fullSlot.active ? this.fullSlot.initialValue : null,
+    };
+  }
+
   public updateVisuals(dt: number, squadZ: number): void {
+    this.lastStepDecayTicks = 0;
+    this.lastStepFlippedBackToRed = false;
     if (!this.active) {
       return;
     }
@@ -401,22 +441,74 @@ export class GatePairSlot {
     if (slot.flashTimer > 0) {
       slot.flashTimer = Math.max(0, slot.flashTimer - dt * 11.0);
     }
+    if (slot.decayPulseTimer > 0) {
+      slot.decayPulseTimer = Math.max(0, slot.decayPulseTimer - dt * 8.5);
+    }
+
+    // v8.0 Shoot-to-Charge Gate Passive Decay after ~0.45s grace pause (zero-alloc fast path when at initial value)
+    if (
+      !this.triggered &&
+      !slot.isLocked &&
+      dt > 0 &&
+      (slot.value > slot.initialValue + 1e-6 || slot.hitAccumulator > 0)
+    ) {
+      const decay = stepGatePassiveDecay(
+        {
+          operator: slot.operator,
+          value: slot.value,
+          initialValue: slot.initialValue,
+          hitAccumulator: slot.hitAccumulator,
+          damagePerIncrement: slot.damagePerIncrement,
+          isLocked: slot.isLocked,
+          timeSinceLastHit: slot.timeSinceLastHit,
+          decayAccumulator: slot.decayAccumulator,
+        },
+        dt
+      );
+      slot.value = decay.value;
+      slot.hitAccumulator = decay.hitAccumulator;
+      slot.timeSinceLastHit = decay.timeSinceLastHit;
+      slot.decayAccumulator = decay.decayAccumulator;
+      slot.ringProgress = decay.ringProgress;
+
+      if (decay.deltaDecrements > 0) {
+        slot.decayPulseTimer = 1.0;
+        this.lastStepDecayTicks += decay.deltaDecrements;
+        this.lastStepDecayValue = decay.value;
+        this.lastStepDecayX = slot.centerX;
+        if (decay.flippedBackToNegative) {
+          this.lastStepFlippedBackToRed = true;
+        }
+        this.syncPylonColors();
+        if (!this.isFullSpan) {
+          this.recomputeTargetSplitX();
+        }
+      }
+    }
+
     if (slot.popTimer > 0) {
       slot.popTimer = Math.max(0, slot.popTimer - dt * 9.5);
       const pop = Math.sin(slot.popTimer * Math.PI) * 0.055;
       slot.panelMesh.scale.y = 1 + pop;
       slot.panelMesh.position.y = 1.28 + pop * (PANEL_HEIGHT * 0.5);
+    } else if (slot.decayPulseTimer > 0) {
+      // Crisp downward tick-down pulse when value decays back toward spawn
+      const dip = Math.sin(slot.decayPulseTimer * Math.PI) * 0.068;
+      slot.panelMesh.scale.y = 1 - dip;
+      slot.panelMesh.position.y = 1.28 - dip * (PANEL_HEIGHT * 0.5);
     } else {
       slot.panelMesh.scale.y = 1.0;
       slot.panelMesh.position.y = 1.28;
     }
+
     slot.labelTex.redrawIfDirty(
       slot.operator,
       slot.value,
       slot.isLocked,
       slot.ringProgress,
       slot.flashTimer,
-      slot.panelWidth
+      slot.panelWidth,
+      slot.decayPulseTimer
     );
   }
 
@@ -451,6 +543,11 @@ export class GatePairSlot {
       return null;
     }
 
+    // Active fire resets passive decay grace timer & accumulator immediately!
+    targetSlot.timeSinceLastHit = 0;
+    targetSlot.decayAccumulator = 0;
+    targetSlot.decayPulseTimer = 0;
+
     const res = applyGateBulletHit(
       {
         operator: targetSlot.operator,
@@ -483,7 +580,8 @@ export class GatePairSlot {
       targetSlot.isLocked,
       targetSlot.ringProgress,
       targetSlot.flashTimer,
-      targetSlot.panelWidth
+      targetSlot.panelWidth,
+      0
     );
 
     return {

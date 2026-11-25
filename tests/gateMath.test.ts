@@ -162,4 +162,100 @@ describe('gateMath', () => {
     expect(formatGateLabel('MUL', 2, true)).toBe('X2');
     expect(formatGateLabel('MUL', 1.5, true)).toBe('X1.5');
   });
+
+  it('decays shootable ADD & MUL gates back toward spawn value after the ~0.45s grace pause (including blue->red reversion)', async () => {
+    const {
+      GATE_DECAY_GRACE_SECONDS,
+      stepGatePassiveDecay,
+    } = await import('../src/math/gateMath');
+
+    // 1. Flipped red (-8) -> blue (+3) ADD gate holds value during 0.45s grace pause, then ticks down & flips back to red!
+    let addState = {
+      operator: 'ADD' as const,
+      initialValue: -8,
+      value: 3,
+      hitAccumulator: 5,
+      damagePerIncrement: 10,
+      isLocked: false,
+      timeSinceLastHit: 0,
+      decayAccumulator: 0,
+    };
+
+    const duringGrace = stepGatePassiveDecay(addState, GATE_DECAY_GRACE_SECONDS - 0.05);
+    expect(duringGrace.value).toBe(3);
+    expect(duringGrace.deltaDecrements).toBe(0);
+    expect(duringGrace.flippedBackToNegative).toBe(false);
+
+    addState = {
+      ...addState,
+      value: duringGrace.value,
+      hitAccumulator: duringGrace.hitAccumulator,
+      timeSinceLastHit: duringGrace.timeSinceLastHit,
+      decayAccumulator: duringGrace.decayAccumulator,
+    };
+
+    // After 3.0s more idle time, decays cleanly across 0 back into negative red!
+    let sawRedFlip = false;
+    for (let s = 0; s < 30; s++) {
+      const res = stepGatePassiveDecay(addState, 0.1);
+      if (res.flippedBackToNegative) {
+        sawRedFlip = true;
+      }
+      addState = {
+        ...addState,
+        value: res.value,
+        hitAccumulator: res.hitAccumulator,
+        timeSinceLastHit: res.timeSinceLastHit,
+        decayAccumulator: res.decayAccumulator,
+      };
+    }
+    expect(sawRedFlip).toBe(true);
+    expect(addState.value).toBe(-8); // Never decays below initialValue!
+    expect(addState.hitAccumulator).toBe(0);
+
+    // 2. Flipped red (X0.25) -> blue (X1.20) MUL gate decays smoothly back toward X0.25 & flips red below X1.00
+    let mulState = {
+      operator: 'MUL' as const,
+      initialValue: 0.25,
+      value: 1.2,
+      hitAccumulator: 0,
+      damagePerIncrement: 10,
+      isLocked: false,
+      timeSinceLastHit: 0,
+      decayAccumulator: 0,
+    };
+    let sawMulRedFlip = false;
+    for (let s = 0; s < 70; s++) {
+      const res = stepGatePassiveDecay(mulState, 0.1);
+      if (res.flippedBackToNegative) {
+        sawMulRedFlip = true;
+      }
+      mulState = {
+        ...mulState,
+        value: res.value,
+        hitAccumulator: res.hitAccumulator,
+        timeSinceLastHit: res.timeSinceLastHit,
+        decayAccumulator: res.decayAccumulator,
+      };
+    }
+    expect(sawMulRedFlip).toBe(true);
+    expect(mulState.value).toBeCloseTo(0.25, 2);
+
+    // 3. Locked gates never decay
+    const lockedRes = stepGatePassiveDecay(
+      {
+        operator: 'ADD',
+        initialValue: 2,
+        value: 8,
+        hitAccumulator: 0,
+        damagePerIncrement: 10,
+        isLocked: true,
+        timeSinceLastHit: 5,
+        decayAccumulator: 0,
+      },
+      1.0
+    );
+    expect(lockedRes.value).toBe(8);
+    expect(lockedRes.deltaDecrements).toBe(0);
+  });
 });

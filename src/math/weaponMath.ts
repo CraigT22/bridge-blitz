@@ -8,35 +8,28 @@ export const MAX_ACTIVE_VOLLEY_EMITTERS = 26;
 export const OVERFLOW_SQUAD_COIN_BONUS = 10;
 export const COMMANDO_MODEL_SCALE = 1.02;
 export const BASE_SOLDIER_BULLET_DAMAGE = 4.4;
-export const FOCAL_CONVERGENCE_DISTANCE = 23.5;
+export const PARALLEL_SHOT_RANGE = 48.0;
 
-export interface ConvergingShotTrajectory {
+export interface ParallelShotTrajectory {
   vx: number;
   vz: number;
   maxAge: number;
 }
 
 /**
- * Computes inward-angled velocity `(vx, vz)` and exact apex lifetime `maxAge` from a commando's
- * gun muzzle `(muzzleX, muzzleZ)` to a single forward focal apex `(focalX, focalZ)` so:
- * 1. All guns across 1..40 commandos (including Lv4 Minigun twin rotary streams) come to a sharp point, and
- * 2. `maxAge = dist / speed` terminates bullets right at the apex so rays NEVER cross over past the tip!
+ * v8.0 Strictly Parallel Straight-Ahead "Garden Hose" Shot Trajectory:
+ * Every bullet travels purely along world -Z (`vx = 0`, zero gravity, zero inherited lateral velocity)
+ * so lateral swipes paint a crisp diagonal sweeping ribbon across the bridge!
  */
-export function computeConvergingShotTrajectory(
-  muzzleX: number,
-  muzzleZ: number,
-  focalX: number,
-  focalZ: number,
+export function computeParallelShotTrajectory(
   projectileSpeed: number,
-  out: ConvergingShotTrajectory
+  maxRangeMeters = PARALLEL_SHOT_RANGE,
+  out: ParallelShotTrajectory
 ): void {
-  const dx = focalX - muzzleX;
-  const dz = Math.min(-2.5, focalZ - muzzleZ);
-  const dist = Math.hypot(dx, dz);
   const safeSpeed = Math.max(1, projectileSpeed);
-  out.vx = (dx / dist) * safeSpeed;
-  out.vz = (dz / dist) * safeSpeed;
-  out.maxAge = dist / safeSpeed;
+  out.vx = 0;
+  out.vz = -safeSpeed;
+  out.maxAge = Math.max(0.15, maxRangeMeters / safeSpeed);
 }
 
 export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {

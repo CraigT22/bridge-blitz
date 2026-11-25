@@ -1,48 +1,61 @@
 import type { BulletPool } from '../core/ObjectPool';
 import type { SkinThemeId, WeaponTierId } from '../core/types';
 import {
+  clampBulletSpawnX,
   clampSquadCenterX,
   getEliteFormationOffset,
-  SOLDIER_SAFE_LIMIT_X,
-  SPLIT_DIVIDER_X,
+  SOLDIER_VISUAL_OVERHANG_LIMIT_X,
 } from '../math/formationMath';
 import {
   COMMANDO_MODEL_SCALE,
-  computeConvergingShotTrajectory,
+  computeParallelShotTrajectory,
   computeSquadVolleyPlan,
-  FOCAL_CONVERGENCE_DISTANCE,
   getWeaponDisplaySpec,
   MAX_SQUAD_COUNT,
   MAX_VISUAL_SOLDIERS,
+  PARALLEL_SHOT_RANGE,
   WEAPON_SPECS,
-  type ConvergingShotTrajectory,
+  type ParallelShotTrajectory,
 } from '../math/weaponMath';
 
-export const SQUAD_MARCH_SPEED = 6.5;
+/** v8.0 Forward march speed (+18.5% snappier arcade momentum over v7.4's 6.5 m/s). */
+export const SQUAD_MARCH_SPEED = 7.7;
 
+const GOLDEN_RATIO_CONJ = 0.6180339887498949;
 const _slotOffset = { x: 0, z: 0 };
-const _shotTraj: ConvergingShotTrajectory = { vx: 0, vz: 0, maxAge: 1 };
+const _shotTraj: ParallelShotTrajectory = { vx: 0, vz: -31, maxAge: 1.5 };
 
 export class SquadController {
   public logicalCount = 1;
   public peakCount = 1;
   public weaponTier: WeaponTierId = 1;
-  public skinTheme: SkinThemeId = 'TACTICAL';
+  public skinTheme: SkinThemeId = 'UNICORN';
   public x = 0;
   public z = 0;
   public marchPhase = 0;
   public steerBankAngle = 0;
+  /** Decoupled lower-body yaw (radians around +Y) turning legs diagonally toward strafe direction. */
+  public legStrafeYaw = 0;
+  /** Instantaneous smoothed lateral strafe speed (m/s) used to drive diagonal leg stride amplitude. */
+  public strafeSpeed = 0;
   public recoilImpulse = 0;
   public barrelSpinAngle = 0;
 
   public readonly soldierWorldX = new Float32Array(MAX_VISUAL_SOLDIERS);
   public readonly soldierWorldZ = new Float32Array(MAX_VISUAL_SOLDIERS);
+  private readonly soldierVelX = new Float32Array(MAX_VISUAL_SOLDIERS);
+  private readonly soldierVelZ = new Float32Array(MAX_VISUAL_SOLDIERS);
 
-  private fireCooldown = 0;
-  private emitterCursor = 0;
-  private pendingBurstTimer = -1;
-  private pendingBurstDamage = 0;
-  private pendingBurstEmitters = 0;
+  // Per-soldier staggered fire timers & pending BURST_2 second-shot timers (zero-GC SoA)
+  private readonly soldierFireTimer = new Float32Array(MAX_VISUAL_SOLDIERS);
+  private readonly soldierBurstTimer = new Float32Array(MAX_VISUAL_SOLDIERS);
+  private readonly soldierBurstDamage = new Float32Array(MAX_VISUAL_SOLDIERS);
+
+  // Zero-GC list of soldier indices that fired during the latest updateAutoFire tick (for muzzle VFX)
+  public readonly lastFiredSoldierIndices = new Uint8Array(MAX_VISUAL_SOLDIERS);
+  public readonly lastFiredMuzzleX = new Float32Array(MAX_VISUAL_SOLDIERS);
+  public readonly lastFiredMuzzleZ = new Float32Array(MAX_VISUAL_SOLDIERS);
+  public lastFiredCount = 0;
 
   public resetForRun(startingSquad: number): void {
     this.logicalCount = Math.max(1, Math.min(MAX_SQUAD_COUNT, Math.floor(startingSquad)));
@@ -52,11 +65,22 @@ export class SquadController {
     this.z = 0;
     this.marchPhase = 0;
     this.steerBankAngle = 0;
+    this.legStrafeYaw = 0;
+    this.strafeSpeed = 0;
     this.recoilImpulse = 0;
     this.barrelSpinAngle = 0;
-    this.fireCooldown = 0.06;
-    this.emitterCursor = 0;
-    this.pendingBurstTimer = -1;
+    this.lastFiredCount = 0;
+
+    const baseInterval = 1 / WEAPON_SPECS[1].fireRate;
+    for (let i = 0; i < MAX_VISUAL_SOLDIERS; i++) {
+      this.soldierVelX[i] = 0;
+      this.soldierVelZ[i] = 0;
+      // Golden-ratio phase stagger so any subset 1..40 emits an organic continuous ribbon!
+      const phase = i === 0 ? 0.04 : ((i * GOLDEN_RATIO_CONJ) % 1);
+      this.soldierFireTimer[i] = phase * baseInterval;
+      this.soldierBurstTimer[i] = -1;
+      this.soldierBurstDamage[i] = 0;
+    }
 
     const vis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
     for (let i = 0; i < vis; i++) {
@@ -67,7 +91,7 @@ export class SquadController {
   }
 
   /**
-   * Updates elite squad count (clamped to MAX_SQUAD_COUNT = 40) and returns any overflow commandos
+   * Updates squad count (clamped to MAX_SQUAD_COUNT = 40) and returns any overflow soldiers
    * above the cap so the caller can convert excess reinforcements into bonus War Chest coins!
    */
   public setLogicalCount(nextCount: number): number {
@@ -81,11 +105,16 @@ export class SquadController {
     }
     this.x = clampSquadCenterX(this.x, this.logicalCount);
 
+    const baseInterval = 1 / Math.max(0.5, WEAPON_SPECS[this.weaponTier].fireRate);
     const nextVis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
     for (let i = prevVis; i < nextVis; i++) {
       getEliteFormationOffset(i, nextVis, _slotOffset);
-      this.soldierWorldX[i] = this.x + _slotOffset.x * 0.25;
-      this.soldierWorldZ[i] = this.z + _slotOffset.z * 0.25;
+      this.soldierWorldX[i] = this.x + _slotOffset.x * 0.35;
+      this.soldierWorldZ[i] = this.z + _slotOffset.z * 0.35;
+      this.soldierVelX[i] = 0;
+      this.soldierVelZ[i] = 0;
+      this.soldierFireTimer[i] = ((i * GOLDEN_RATIO_CONJ) % 1) * baseInterval;
+      this.soldierBurstTimer[i] = -1;
     }
 
     return overflow;
@@ -96,7 +125,7 @@ export class SquadController {
     horizontalDelta: number,
     advanceForward: boolean,
     animateMarch: boolean,
-    splitDividerActive = false
+    _splitDividerActive = false
   ): void {
     if (this.logicalCount <= 0) {
       return;
@@ -105,8 +134,16 @@ export class SquadController {
     const prevX = this.x;
     this.x = clampSquadCenterX(this.x + horizontalDelta, this.logicalCount);
     const actualVelX = dt > 0 ? (this.x - prevX) / dt : 0;
-    const targetBank = Math.max(-0.22, Math.min(0.22, actualVelX * 0.02));
+
+    // Subtle body bank + decoupled lower-body diagonal strafe yaw (legs turn into swipe while torso stays locked straight!)
+    const targetBank = Math.max(-0.14, Math.min(0.14, actualVelX * 0.012));
     this.steerBankAngle += (targetBank - this.steerBankAngle) * Math.min(1, dt * 14);
+
+    // Rotating local -Z toward +X (right strafe) around +Y requires negative yaw; toward -X (left) requires positive yaw
+    const targetLegYaw = Math.max(-0.74, Math.min(0.74, -actualVelX * 0.088));
+    this.legStrafeYaw += (targetLegYaw - this.legStrafeYaw) * Math.min(1, dt * 16);
+    const absVel = Math.abs(actualVelX);
+    this.strafeSpeed += (absVel - this.strafeSpeed) * Math.min(1, dt * 14);
 
     if (this.recoilImpulse > 0) {
       this.recoilImpulse = Math.max(0, this.recoilImpulse - dt * 9.5);
@@ -115,53 +152,70 @@ export class SquadController {
     if (advanceForward) {
       this.z -= SQUAD_MARCH_SPEED * dt;
     }
-    if (animateMarch) {
-      this.marchPhase += dt;
-      this.barrelSpinAngle += dt * (this.weaponTier === 4 ? 24.0 : 4.0);
+    if (animateMarch || absVel > 0.35) {
+      const strideRate = animateMarch ? 1.12 : Math.min(1.05, 0.4 + absVel * 0.12);
+      this.marchPhase += dt * strideRate;
+      this.barrelSpinAngle += dt * (this.weaponTier === 4 ? 26.0 : 4.2);
     } else {
       this.marchPhase += dt * 0.35;
       this.barrelSpinAngle += dt * 3.2;
     }
 
-    // On Split Causeway boards while the off-center divider (-0.88) is raised, smoothly pack outer squad ranks
-    // into the active 25%-narrower Left Power-Up Column or wider Right Enemy Column with zero wall/curb clipping!
-    let laneMinX = -SOLDIER_SAFE_LIMIT_X;
-    let laneMaxX = SOLDIER_SAFE_LIMIT_X;
-    let spreadScaleX = 1.0;
-    if (splitDividerActive) {
-      if (this.x < SPLIT_DIVIDER_X - 0.24) {
-        spreadScaleX = 0.62;
-        const commit = Math.min(1, (SPLIT_DIVIDER_X - 0.24 - this.x) / 0.80);
-        laneMaxX =
-          SOLDIER_SAFE_LIMIT_X + (SPLIT_DIVIDER_X - 0.30 - SOLDIER_SAFE_LIMIT_X) * commit;
-      } else if (this.x > SPLIT_DIVIDER_X + 0.24) {
-        spreadScaleX = 0.80;
-        const commit = Math.min(1, (this.x - (SPLIT_DIVIDER_X + 0.24)) / 0.80);
-        laneMinX =
-          -SOLDIER_SAFE_LIMIT_X + (SPLIT_DIVIDER_X + 0.30 - -SOLDIER_SAFE_LIMIT_X) * commit;
-      } else {
-        spreadScaleX = 0.70;
+    // Soft concentric spring flocking into a compact circular/oval blob (~1.25 lanes wide at 40 soldiers):
+    // - Outer flanking soldiers are allowed to push visually slightly past the bridge curb (±6.24m)
+    // - On Split Causeway, squad is NOT compressed onto one side so straddling SPLIT_DIVIDER_X (-0.88m)
+    //   naturally splits parallel fire across the Left Power-Up Column and Right Enemy Column simultaneously!
+    const vis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
+    if (dt <= 0) {
+      for (let i = 0; i < vis; i++) {
+        getEliteFormationOffset(i, vis, _slotOffset);
+        this.soldierWorldX[i] = Math.max(
+          -SOLDIER_VISUAL_OVERHANG_LIMIT_X,
+          Math.min(SOLDIER_VISUAL_OVERHANG_LIMIT_X, this.x + _slotOffset.x)
+        );
+        this.soldierWorldZ[i] = this.z + _slotOffset.z;
       }
+      return;
     }
 
-    const vis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
-    const followFactor = Math.min(1, dt * 15);
+    const stiffness = 175.0;
+    const damping = 23.0;
+    const safeDt = Math.min(0.05, dt);
+
     for (let i = 0; i < vis; i++) {
       getEliteFormationOffset(i, vis, _slotOffset);
-      const rawTargetX = this.x + _slotOffset.x * spreadScaleX;
-      const jitter = (i % 3) * 0.06;
-      const clampedTargetX = Math.max(
-        laneMinX + jitter,
-        Math.min(laneMaxX - jitter, rawTargetX)
-      );
+      const targetX = this.x + _slotOffset.x;
       const targetZ = this.z + _slotOffset.z;
-      this.soldierWorldX[i] += (clampedTargetX - this.soldierWorldX[i]) * followFactor;
-      this.soldierWorldZ[i] += (targetZ - this.soldierWorldZ[i]) * followFactor;
+
+      // Keep Z tightly locked to forward march pace while X flows with soft concentric spring flocking
+      const dx = targetX - this.soldierWorldX[i];
+      const dz = targetZ - this.soldierWorldZ[i];
+
+      const ax = dx * stiffness - this.soldierVelX[i] * damping;
+      const az = dz * (stiffness * 1.25) - this.soldierVelZ[i] * (damping * 1.15);
+
+      this.soldierVelX[i] += ax * safeDt;
+      this.soldierVelZ[i] += az * safeDt;
+
+      let nx = this.soldierWorldX[i] + this.soldierVelX[i] * safeDt;
+      const nz = this.soldierWorldZ[i] + this.soldierVelZ[i] * safeDt;
+
+      // Soft visual overhang limit only (outer flankers can push slightly past the bridge curb at ±6.24m!)
+      if (nx < -SOLDIER_VISUAL_OVERHANG_LIMIT_X) {
+        nx = -SOLDIER_VISUAL_OVERHANG_LIMIT_X;
+        this.soldierVelX[i] = 0;
+      } else if (nx > SOLDIER_VISUAL_OVERHANG_LIMIT_X) {
+        nx = SOLDIER_VISUAL_OVERHANG_LIMIT_X;
+        this.soldierVelX[i] = 0;
+      }
+
+      this.soldierWorldX[i] = nx;
+      this.soldierWorldZ[i] = nz;
     }
   }
 
   /**
-   * Smoothly funnels outer crowd soldiers around standing unbroken barrels & sibling Tire Stacks
+   * Smoothly funnels outer crowd soldiers around standing unbroken barricades
    * when the squad marches through an adjacent breached corridor!
    */
   public funnelAroundStandingObstacle(
@@ -191,218 +245,167 @@ export class SquadController {
       if (Math.abs(dx) < padX) {
         const edgeX = obsX + pushSign * (padX + (i % 3) * 0.07);
         const safeEdgeX = Math.max(
-          -SOLDIER_SAFE_LIMIT_X,
-          Math.min(SOLDIER_SAFE_LIMIT_X, edgeX)
+          -SOLDIER_VISUAL_OVERHANG_LIMIT_X,
+          Math.min(SOLDIER_VISUAL_OVERHANG_LIMIT_X, edgeX)
         );
         this.soldierWorldX[i] += (safeEdgeX - sx) * blend;
       }
     }
   }
 
+  /**
+   * v8.0 Parallel Straight-Ahead "Garden Hose" Staggered Auto-Fire:
+   * - Every soldier ticks their own staggered fire timer (no synchronized horizontal bars!)
+   * - Every bullet flies strictly parallel along world -Z (`vx = 0`, zero convergence, zero lateral drift!)
+   * - Off-curb flanking soldier bullet spawns clamp onto ±BULLET_PLAYABLE_RAIL_X (±5.10m) for 100% outer-lane DPS!
+   */
   public updateAutoFire(
     dt: number,
     fireRateMultiplier: number,
     bulletPowerMultiplier: number,
     bulletPool: BulletPool,
-    focalX = this.x,
-    focalZ = this.z - FOCAL_CONVERGENCE_DISTANCE,
-    marchingForward = true
+    maxRangeMeters = PARALLEL_SHOT_RANGE
   ): boolean {
-    if (this.logicalCount <= 0) {
+    this.lastFiredCount = 0;
+    if (this.logicalCount <= 0 || dt <= 0) {
       return false;
     }
 
-    let firedAny = false;
-    const spec = WEAPON_SPECS[this.weaponTier];
-
-    if (this.pendingBurstTimer >= 0) {
-      this.pendingBurstTimer -= dt;
-      if (this.pendingBurstTimer <= 0) {
-        this.pendingBurstTimer = -1;
-        this.emitVolleyStream(
-          this.pendingBurstEmitters,
-          this.pendingBurstDamage,
-          spec.spreadRadians,
-          false,
-          bulletPool,
-          focalX,
-          focalZ,
-          marchingForward
-        );
-        firedAny = true;
-      }
+    const vis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
+    if (vis <= 0) {
+      return false;
     }
 
-    this.fireCooldown -= dt;
-    if (this.fireCooldown <= 0) {
-      const plan = computeSquadVolleyPlan(
-        this.logicalCount,
-        this.weaponTier,
-        fireRateMultiplier,
-        bulletPowerMultiplier
-      );
-      this.fireCooldown = Math.max(0.03, plan.intervalSeconds);
+    const plan = computeSquadVolleyPlan(
+      this.logicalCount,
+      this.weaponTier,
+      fireRateMultiplier,
+      bulletPowerMultiplier
+    );
+    const spec = getWeaponDisplaySpec(this.weaponTier, this.skinTheme);
+    const interval = Math.max(0.035, plan.intervalSeconds);
+    // Preserve exact total squad DPS from computeSquadVolleyPlan across all `vis` staggered emitters
+    const damagePerShot = (plan.damagePerProjectile * plan.activeEmitters) / vis;
+    const speed = spec.projectileSpeed;
+    const muzzleLocalX = 0.255 * COMMANDO_MODEL_SCALE;
+    const muzzleY = 0.548 * COMMANDO_MODEL_SCALE;
+    const muzzleLocalZ = -0.68 * COMMANDO_MODEL_SCALE;
+    const bulletScale = 1.22;
 
-      if (spec.pattern === 'BURST_2') {
-        this.emitVolleyStream(
-          plan.activeEmitters,
-          plan.damagePerProjectile,
-          spec.spreadRadians,
-          false,
-          bulletPool,
-          focalX,
-          focalZ,
-          marchingForward
+    computeParallelShotTrajectory(speed, maxRangeMeters, _shotTraj);
+
+    let firedAny = false;
+
+    for (let i = 0; i < vis; i++) {
+      // 1. Check pending BURST_2 second round for this soldier
+      if (this.soldierBurstTimer[i] >= 0) {
+        this.soldierBurstTimer[i] -= dt;
+        if (this.soldierBurstTimer[i] <= 0) {
+          this.soldierBurstTimer[i] = -1;
+          const sx = clampBulletSpawnX(this.soldierWorldX[i] + muzzleLocalX, i);
+          const sz = this.soldierWorldZ[i] + muzzleLocalZ;
+          bulletPool.spawn(
+            sx,
+            muzzleY,
+            sz,
+            0,
+            _shotTraj.vz,
+            this.soldierBurstDamage[i],
+            spec.pierceCount,
+            _shotTraj.maxAge,
+            bulletScale,
+            this.weaponTier,
+            spec.colorHex
+          );
+          this.recordMuzzleEvent(i, sx, sz);
+          firedAny = true;
+        }
+      }
+
+      // 2. Tick staggered primary fire timer for soldier `i`
+      this.soldierFireTimer[i] -= dt;
+      if (this.soldierFireTimer[i] > 0) {
+        continue;
+      }
+
+      // Catch-up modulo without snapping all soldiers back into phase
+      this.soldierFireTimer[i] += interval;
+      if (this.soldierFireTimer[i] <= 0) {
+        this.soldierFireTimer[i] = (((i * GOLDEN_RATIO_CONJ) % 1) * 0.25 + 0.75) * interval;
+      }
+
+      const rawMuzzleX = this.soldierWorldX[i] + muzzleLocalX;
+      const sx = clampBulletSpawnX(rawMuzzleX, i);
+      const sz = this.soldierWorldZ[i] + muzzleLocalZ;
+
+      if (spec.pattern === 'TWIN_CONVERGE') {
+        // Twin strictly parallel streams (left & right rotary barrels, vx = 0!)
+        const leftX = clampBulletSpawnX(rawMuzzleX - 0.085, i);
+        const rightX = clampBulletSpawnX(rawMuzzleX + 0.085, i + 1);
+        const leadZ = -0.34;
+        bulletPool.spawn(
+          leftX,
+          muzzleY,
+          sz,
+          0,
+          _shotTraj.vz,
+          damagePerShot,
+          spec.pierceCount,
+          _shotTraj.maxAge,
+          bulletScale,
+          this.weaponTier,
+          spec.colorHex
         );
-        this.pendingBurstTimer = 0.062;
-        this.pendingBurstDamage = plan.damagePerProjectile;
-        this.pendingBurstEmitters = plan.activeEmitters;
-      } else if (spec.pattern === 'TWIN_CONVERGE') {
-        this.emitVolleyStream(
-          plan.activeEmitters,
-          plan.damagePerProjectile,
-          spec.spreadRadians,
-          true,
-          bulletPool,
-          focalX,
-          focalZ,
-          marchingForward
+        bulletPool.spawn(
+          rightX,
+          muzzleY,
+          sz + leadZ,
+          0,
+          _shotTraj.vz,
+          damagePerShot,
+          spec.pierceCount,
+          Math.max(0.08, _shotTraj.maxAge - Math.abs(leadZ) / speed),
+          bulletScale,
+          this.weaponTier,
+          spec.colorHex
         );
       } else {
-        this.emitVolleyStream(
-          plan.activeEmitters,
-          plan.damagePerProjectile,
-          spec.spreadRadians,
-          false,
-          bulletPool,
-          focalX,
-          focalZ,
-          marchingForward
+        bulletPool.spawn(
+          sx,
+          muzzleY,
+          sz,
+          0,
+          _shotTraj.vz,
+          damagePerShot,
+          spec.pierceCount,
+          _shotTraj.maxAge,
+          bulletScale,
+          this.weaponTier,
+          spec.colorHex
         );
+        if (spec.pattern === 'BURST_2') {
+          this.soldierBurstTimer[i] = 0.058;
+          this.soldierBurstDamage[i] = damagePerShot;
+        }
       }
+
+      this.recordMuzzleEvent(i, sx, sz);
       firedAny = true;
     }
 
     if (firedAny) {
-      this.recoilImpulse = 1.0;
+      this.recoilImpulse = 0.92;
     }
 
     return firedAny;
   }
 
-  private emitVolleyStream(
-    emitterCount: number,
-    damagePerProjectile: number,
-    apexJitterMeters: number,
-    twinStream: boolean,
-    bulletPool: BulletPool,
-    focalX: number,
-    focalZ: number,
-    marchingForward: boolean
-  ): void {
-    const vis = Math.min(this.logicalCount, MAX_VISUAL_SOLDIERS);
-    if (vis <= 0 || emitterCount <= 0) {
-      return;
+  private recordMuzzleEvent(soldierIdx: number, muzzleX: number, muzzleZ: number): void {
+    if (this.lastFiredCount < MAX_VISUAL_SOLDIERS) {
+      const idx = this.lastFiredCount++;
+      this.lastFiredSoldierIndices[idx] = soldierIdx;
+      this.lastFiredMuzzleX[idx] = muzzleX;
+      this.lastFiredMuzzleZ[idx] = muzzleZ;
     }
-
-    const spec = getWeaponDisplaySpec(this.weaponTier, this.skinTheme);
-    const speed = spec.projectileSpeed;
-    const bulletScale = 1.24;
-    const muzzleLocalX = 0.255 * COMMANDO_MODEL_SCALE;
-    const muzzleY = 0.548 * COMMANDO_MODEL_SCALE;
-    const muzzleLocalZ = -0.68 * COMMANDO_MODEL_SCALE;
-    const frontMuzzleZ = this.z + muzzleLocalZ;
-
-    for (let e = 0; e < emitterCount; e++) {
-      const soldierIdx = (this.emitterCursor + e) % vis;
-      const soldierX = this.soldierWorldX[soldierIdx];
-      const soldierZ = this.soldierWorldZ[soldierIdx];
-
-      const gunYaw = Math.max(
-        -0.38,
-        Math.min(0.38, -Math.atan2(focalX - soldierX, Math.max(5.5, soldierZ - focalZ)))
-      );
-      const cy = Math.cos(gunYaw);
-      const sy = Math.sin(gunYaw);
-      const sx = soldierX + muzzleLocalX * cy + muzzleLocalZ * sy;
-      const sz = soldierZ - muzzleLocalX * sy + muzzleLocalZ * cy;
-
-      // Compensate rear ranks for forward march speed so all 1..40 crowd ranks meet at the exact same focal tip!
-      const rowLagZ = Math.max(0, sz - frontMuzzleZ);
-      const marchApexZ = marchingForward
-        ? focalZ - rowLagZ * (SQUAD_MARCH_SPEED / speed)
-        : focalZ;
-      const tipJitter =
-        apexJitterMeters > 0
-          ? (((soldierIdx * 7 + e * 3) % 5) - 2) * 0.5 * apexJitterMeters
-          : 0;
-      const tipX = focalX + tipJitter;
-
-      if (twinStream) {
-        const leftMuzzleX = sx - 0.085;
-        computeConvergingShotTrajectory(
-          leftMuzzleX,
-          sz,
-          tipX,
-          marchApexZ,
-          speed,
-          _shotTraj
-        );
-        bulletPool.spawn(
-          leftMuzzleX,
-          muzzleY,
-          sz,
-          _shotTraj.vx,
-          _shotTraj.vz,
-          damagePerProjectile,
-          spec.pierceCount,
-          _shotTraj.maxAge,
-          bulletScale,
-          this.weaponTier,
-          spec.colorHex
-        );
-
-        const rightMuzzleX = sx + 0.085;
-        computeConvergingShotTrajectory(
-          rightMuzzleX,
-          sz,
-          tipX,
-          marchApexZ,
-          speed,
-          _shotTraj
-        );
-        const leadTime = Math.min(_shotTraj.maxAge * 0.42, 0.36 / speed);
-        bulletPool.spawn(
-          rightMuzzleX + _shotTraj.vx * leadTime,
-          muzzleY,
-          sz + _shotTraj.vz * leadTime,
-          _shotTraj.vx,
-          _shotTraj.vz,
-          damagePerProjectile,
-          spec.pierceCount,
-          Math.max(0.05, _shotTraj.maxAge - leadTime),
-          bulletScale,
-          this.weaponTier,
-          spec.colorHex
-        );
-      } else {
-        computeConvergingShotTrajectory(sx, sz, tipX, marchApexZ, speed, _shotTraj);
-        bulletPool.spawn(
-          sx,
-          muzzleY,
-          sz,
-          _shotTraj.vx,
-          _shotTraj.vz,
-          damagePerProjectile,
-          spec.pierceCount,
-          _shotTraj.maxAge,
-          bulletScale,
-          this.weaponTier,
-          spec.colorHex
-        );
-      }
-    }
-
-    this.emitterCursor = (this.emitterCursor + emitterCount) % Math.max(1, vis);
   }
 }

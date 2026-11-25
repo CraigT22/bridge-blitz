@@ -38,7 +38,7 @@ export const RIGHT_LANE_CENTER_X = 2.62;
 const VISIBLE_QUEUE_SLOTS = 4;
 const QUEUE_FRONT_OFFSET_Z = 9.8;
 const QUEUE_SLOT_SPACING_Z = 7.35;
-const BARREL_HIT_HALF_WIDTH_X = 1.90;
+const BARREL_HIT_HALF_WIDTH_X = 2.34;
 const LEFT_GATE_PANEL_WIDTH = 4.36;
 const LEFT_GATE_PANEL_HEIGHT = 2.62;
 const MAX_CAUSEWAY_TROOPERS = 740;
@@ -451,7 +451,7 @@ export class SplitCausewayController {
       const ech = def.rightEchelons[e];
       const cols = Math.max(2, ech.cols);
       const rows = Math.max(1, ech.rows);
-      const minX = ech.rank === 2 ? -0.05 : -0.26;
+      const minX = ech.rank === 2 ? -0.14 : -0.36;
       const maxX = ech.rank === 2 ? 5.30 : 5.54;
       const rowSpacingZ = ech.rank === 2 ? 1.48 : 1.06;
 
@@ -739,7 +739,7 @@ export class SplitCausewayController {
         continue;
       }
       if (this.unitHitFlash[i] > 0) {
-        this.unitHitFlash[i] = Math.max(0, this.unitHitFlash[i] - dt * 6.8);
+        this.unitHitFlash[i] = Math.max(0, this.unitHitFlash[i] - dt * 26.0);
       }
 
       // Once a right-lane trooper clears the nose of the Divider Wall (`dividerTipZ`),
@@ -1080,5 +1080,9 @@ export class SplitCausewayController {
         );
       }
     }
+  }
+
+  public getFrontLeftBarrelHp(): number {
+    return this.active && this.queueCursor < this.queueTotal ? this.frontBarrelHp : 0;
   }
 }

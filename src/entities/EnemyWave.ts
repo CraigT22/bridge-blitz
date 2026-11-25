@@ -67,7 +67,7 @@ export class EnemyWaveSlot {
       def.heavyCount ?? Math.max(2, Math.floor(this.totalConfigured * 0.24));
     const vanguardRatio = def.vanguardRatio ?? 0.34;
     const baseCoin = def.coinPerKill ?? 8;
-    const spanHalfX = def.lane === 'CENTER' ? 3.85 : 2.35;
+    const spanHalfX = def.lane === 'CENTER' ? 4.65 : 2.35;
 
     const cols = def.lane === 'CENTER' ? 7 : 5;
     const totalRows = Math.max(1, Math.ceil(this.totalConfigured / cols));
@@ -99,8 +99,8 @@ export class EnemyWaveSlot {
       const staggerZ = (((i * 13 + 3) % 9) - 4) * 0.12;
 
       const wx = Math.max(
-        -4.22,
-        Math.min(4.22, this.x + uNorm * spanHalfX * 2 + staggerX)
+        -5.02,
+        Math.min(5.02, this.x + uNorm * spanHalfX * 2 + staggerX)
       );
       const wz = def.z - row * 0.96 + staggerZ;
 
@@ -146,7 +146,7 @@ export class EnemyWaveSlot {
     const blockedByGate = blockingGateZ !== null && this.z <= blockingGateZ + 1.5;
     const maxAllowedUnitZ =
       blockingGateZ !== null ? blockingGateZ - 32.0 : Infinity;
-    const withinEngage = !blockedByGate && squadZ - this.z < 36;
+    const withinEngage = !blockedByGate && squadZ - this.z < 40;
     this.isMarching = withinEngage;
     if (withinEngage) {
       this.z = Math.min(maxAllowedUnitZ, this.z + this.speed * dt);
@@ -162,7 +162,8 @@ export class EnemyWaveSlot {
         continue;
       }
       if (this.unitHitFlash[i] > 0) {
-        this.unitHitFlash[i] = Math.max(0, this.unitHitFlash[i] - dt * 6.5);
+        // Crisp 1-2 frame solid-white hit-flash (~0.038s)
+        this.unitHitFlash[i] = Math.max(0, this.unitHitFlash[i] - dt * 26.0);
       }
 
       if (withinEngage) {

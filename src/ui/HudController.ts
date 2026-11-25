@@ -67,16 +67,16 @@ const CHASSIS_LABELS: Readonly<Record<BossChassisId, string>> = {
 };
 
 const PATTERN_LABELS: Readonly<Record<string, string>> = {
-  SINGLE: 'FOCUSED CONE AUTO',
-  BURST_2: '2-ROUND FOCUSED BURST',
-  TWIN_CONVERGE: '6-BARREL FOCUSED CONE',
-  PIERCING: 'PLASMA PIERCE CONE (×2)',
+  SINGLE: 'PARALLEL STREAM AUTO',
+  BURST_2: '2-ROUND PARALLEL BURST',
+  TWIN_CONVERGE: '6-BARREL PARALLEL STREAM',
+  PIERCING: 'PLASMA PARALLEL PIERCE (×2)',
 };
 
 const UNICORN_PATTERN_LABELS: Readonly<Record<string, string>> = {
-  SINGLE: 'STARLIGHT MAGIC CONE',
-  BURST_2: 'TWIN WING SPARKLE BURST',
-  TWIN_CONVERGE: '6-HORN RAINBOW CAROUSEL',
+  SINGLE: 'PARALLEL RAINBOW STREAM',
+  BURST_2: 'TWIN WING RAINBOW BURST',
+  TWIN_CONVERGE: '6-HORN RAINBOW STREAM',
   PIERCING: 'ROYAL ALICORN PIERCE (×2)',
 };
 
@@ -109,6 +109,7 @@ export class HudController {
   private readonly progressPctEl = mustEl<HTMLElement>('progress-pct-text');
 
   private readonly coinCountEl = mustEl<HTMLElement>('coin-count');
+  private readonly coinPillEl: HTMLElement;
   private readonly liveCoinTickerEl = mustEl<HTMLElement>('live-coin-ticker');
   private readonly btnSettings = mustEl<HTMLButtonElement>('btn-settings');
   private readonly btnPause = mustEl<HTMLButtonElement>('btn-pause');
@@ -189,9 +190,12 @@ export class HudController {
   private coinRollupRaf = 0;
 
   private liveTickerAccum = 0;
+  private displayedWalletCoins = 0;
+  private lastCoinPopTs = 0;
 
   constructor(callbacks: HudCallbacks) {
     this.callbacks = callbacks;
+    this.coinPillEl = this.coinCountEl.closest<HTMLElement>('.coin-pill') ?? this.coinCountEl;
     this.unicornCelebration = new UnicornCelebrationOverlay({
       onFireworkLaunchSound: (pitchStep) => {
         this.callbacks.onFireworkLaunchSound?.(pitchStep);
@@ -436,7 +440,70 @@ export class HudController {
     this.pauseModalEl.classList.add('is-hidden');
   }
 
+  private cachedCoinNdcX = 0.82;
+  private cachedCoinNdcY = 0.89;
+  private cachedNdcViewportW = 0;
+  private cachedNdcViewportH = 0;
+
+  /** Returns normalized device coordinates [-1, 1] of the top-right HUD coin counter (zero-GC). */
+  public getCoinPillNdc(out: { x: number; y: number }): void {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    if (w > 0 && h > 0 && (w !== this.cachedNdcViewportW || h !== this.cachedNdcViewportH)) {
+      const rect = this.coinPillEl.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        this.cachedCoinNdcX = ((rect.left + rect.width * 0.5) / w) * 2 - 1;
+        this.cachedCoinNdcY = 1 - ((rect.top + rect.height * 0.5) / h) * 2;
+        this.cachedNdcViewportW = w;
+        this.cachedNdcViewportH = h;
+      }
+    }
+    out.x = this.cachedCoinNdcX;
+    out.y = this.cachedCoinNdcY;
+  }
+
+  public recordMagnetizedCoinArrival(
+    arrivedAmount: number,
+    trueWalletCoins: number,
+    trueRunCoins: number
+  ): void {
+    if (arrivedAmount <= 0) {
+      return;
+    }
+    this.displayedWalletCoins = Math.min(
+      trueWalletCoins,
+      this.displayedWalletCoins + arrivedAmount
+    );
+    this.liveTickerAccum = Math.min(trueRunCoins, this.liveTickerAccum + arrivedAmount);
+    this.coinCountEl.textContent = formatCoinAmount(this.displayedWalletCoins);
+    this.liveCoinTickerEl.textContent = `+${formatCoinAmount(this.liveTickerAccum)}`;
+    this.liveCoinTickerEl.classList.remove('is-hidden');
+
+    const now = performance.now();
+    if (now - this.lastCoinPopTs >= 85) {
+      this.lastCoinPopTs = now;
+      this.coinPillEl.classList.remove('is-coin-pop');
+      this.liveCoinTickerEl.classList.remove('is-coin-pop');
+      void this.coinPillEl.offsetWidth;
+      this.coinPillEl.classList.add('is-coin-pop');
+      this.liveCoinTickerEl.classList.add('is-coin-pop');
+    }
+  }
+
+  public flushDisplayedCoins(trueWalletCoins: number, trueRunCoins: number): void {
+    this.displayedWalletCoins = trueWalletCoins;
+    this.coinCountEl.textContent = formatCoinAmount(trueWalletCoins);
+    this.liveTickerAccum = trueRunCoins;
+    if (trueRunCoins > 0) {
+      this.liveCoinTickerEl.textContent = `+${formatCoinAmount(trueRunCoins)}`;
+      this.liveCoinTickerEl.classList.remove('is-hidden');
+    } else {
+      this.liveCoinTickerEl.classList.add('is-hidden');
+    }
+  }
+
   public flashLiveCoinGain(addedAmount: number, totalWalletCoins: number): void {
+    this.displayedWalletCoins = totalWalletCoins;
     this.coinCountEl.textContent = formatCoinAmount(totalWalletCoins);
     if (addedAmount <= 0) {
       return;
@@ -472,6 +539,7 @@ export class HudController {
     boardLayout: BoardLayout = 'STANDARD_BRIDGE'
   ): void {
     this.latestSaveSnapshot = save;
+    this.displayedWalletCoins = save.coins;
     this.coinCountEl.textContent = formatCoinAmount(save.coins);
 
     const skinTheme: SkinThemeId =
@@ -806,6 +874,7 @@ export class HudController {
   }
 
   public updateCoins(coins: number): void {
+    this.displayedWalletCoins = coins;
     this.coinCountEl.textContent = formatCoinAmount(coins);
   }
 

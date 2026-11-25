@@ -24,13 +24,26 @@ function traceChamferRect(
   ctx.closePath();
 }
 
+function createHeadlessTexture(): THREE.CanvasTexture {
+  const data = new Uint8Array([255, 255, 255, 255]);
+  const tex = new THREE.DataTexture(data, 1, 1);
+  tex.needsUpdate = true;
+  return tex as unknown as THREE.CanvasTexture;
+}
+
 export class EditableGateTexture {
-  public readonly canvas: HTMLCanvasElement;
-  public readonly ctx: CanvasRenderingContext2D;
+  public readonly canvas: HTMLCanvasElement | null;
+  public readonly ctx: CanvasRenderingContext2D | null;
   public readonly texture: THREE.CanvasTexture;
   private lastSignature = '';
 
   constructor(wide = false) {
+    if (typeof document === 'undefined') {
+      this.canvas = null;
+      this.ctx = null;
+      this.texture = createHeadlessTexture();
+      return;
+    }
     this.canvas = document.createElement('canvas');
     this.canvas.width = wide ? 1024 : 640;
     this.canvas.height = 264;
@@ -51,12 +64,17 @@ export class EditableGateTexture {
     isLocked: boolean,
     _ringProgress: number,
     flashIntensity: number,
-    panelWidthMeters = 4.76
+    panelWidthMeters = 4.76,
+    decayFlashIntensity = 0
   ): void {
+    if (!this.ctx || !this.canvas) {
+      return;
+    }
     const valKey = operator === 'MUL' ? Math.round(value * 100) : Math.round(value);
     const flashFlag = flashIntensity > 0.15 ? 1 : 0;
+    const decayFlag = decayFlashIntensity > 0.15 ? 1 : 0;
     const widthBucket = Math.round(panelWidthMeters * 10);
-    const sig = `${operator}:${valKey}:${isLocked ? 1 : 0}:${flashFlag}:${widthBucket}`;
+    const sig = `${operator}:${valKey}:${isLocked ? 1 : 0}:${flashFlag}:${decayFlag}:${widthBucket}`;
     if (sig === this.lastSignature) {
       return;
     }
@@ -121,6 +139,14 @@ export class EditableGateTexture {
       flashGrad.addColorStop(1, 'rgba(255, 255, 255, 0.54)');
       ctx.fillStyle = flashGrad;
       ctx.fillRect(3, 8, virtW - 6, h - 14);
+    } else if (decayFlag) {
+      // Crisp downward amber-crimson tick-down pulse when shoot-to-charge gate passively decays!
+      const decayGrad = ctx.createLinearGradient(0, 10, 0, h - 6);
+      decayGrad.addColorStop(0, 'rgba(255, 180, 56, 0.36)');
+      decayGrad.addColorStop(0.55, 'rgba(255, 76, 106, 0.28)');
+      decayGrad.addColorStop(1, 'rgba(255, 36, 78, 0.42)');
+      ctx.fillStyle = decayGrad;
+      ctx.fillRect(3, 8, virtW - 6, h - 14);
     }
 
     // Crisp Geometric Tactical Gate Numeral (zero cartoon bubble look!)
@@ -155,12 +181,18 @@ export class EditableGateTexture {
  * + razor-sharp white/cyan numerals!
  */
 export class EditableArcadeHpTexture {
-  public readonly canvas: HTMLCanvasElement;
-  public readonly ctx: CanvasRenderingContext2D;
+  public readonly canvas: HTMLCanvasElement | null;
+  public readonly ctx: CanvasRenderingContext2D | null;
   public readonly texture: THREE.CanvasTexture;
   private lastSignature = '';
 
   constructor() {
+    if (typeof document === 'undefined') {
+      this.canvas = null;
+      this.ctx = null;
+      this.texture = createHeadlessTexture();
+      return;
+    }
     this.canvas = document.createElement('canvas');
     this.canvas.width = 416;
     this.canvas.height = 224;
@@ -176,6 +208,9 @@ export class EditableArcadeHpTexture {
   }
 
   public redrawIfDirty(remainingHp: number, hitFlash = 0): void {
+    if (!this.ctx || !this.canvas) {
+      return;
+    }
     const shown = Math.max(0, Math.ceil(remainingHp));
     const flashFlag = hitFlash > 0.25 ? 1 : 0;
     const sig = `${shown}:${flashFlag}`;
@@ -240,6 +275,11 @@ export function createStaticWeaponBadgeTexture(
   const cached = _badgeTexCache.get(cacheKey);
   if (cached) {
     return cached;
+  }
+  if (typeof document === 'undefined') {
+    const tex = createHeadlessTexture();
+    _badgeTexCache.set(cacheKey, tex);
+    return tex;
   }
 
   const canvas = document.createElement('canvas');

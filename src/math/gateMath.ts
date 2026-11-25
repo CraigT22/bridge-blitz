@@ -19,15 +19,39 @@ export interface GateHitOutcome {
   readonly ringProgress: number;
 }
 
+export interface GateDecayState {
+  readonly operator: GateOperator;
+  readonly value: number;
+  readonly initialValue: number;
+  readonly hitAccumulator: number;
+  readonly damagePerIncrement: number;
+  readonly isLocked: boolean;
+  readonly timeSinceLastHit: number;
+  readonly decayAccumulator: number;
+}
+
+export interface GateDecayOutcome {
+  readonly value: number;
+  readonly hitAccumulator: number;
+  readonly timeSinceLastHit: number;
+  readonly decayAccumulator: number;
+  readonly deltaDecrements: number;
+  readonly flippedBackToNegative: boolean;
+  readonly ringProgress: number;
+}
+
 export const MAX_ADD_GATE_VALUE = 99;
 export const MAX_SHOOTABLE_MUL_VALUE = 99.9;
 export const POSITIVE_GATE_RESISTANCE_SLOPE = 0.14;
 export const MUL_GATE_RESISTANCE_SLOPE = 0.13;
+export const GATE_DECAY_GRACE_SECONDS = 0.45;
+export const ADD_GATE_DECAY_STEPS_PER_SEC = 4.5;
+export const MUL_GATE_DECAY_STEPS_PER_SEC = 3.8;
 
 export const SPLIT_SPAN_MIN_X = -6.04;
 export const SPLIT_SPAN_MAX_X = 6.04;
-export const MIN_SPLIT_GATE_RATIO = 0.22;
-export const MAX_SPLIT_GATE_RATIO = 0.78;
+export const MIN_SPLIT_GATE_RATIO = 0.315;
+export const MAX_SPLIT_GATE_RATIO = 0.685;
 
 /**
  * Computes positive-weighted territorial width weight for a single gate in a split pair:
@@ -243,6 +267,177 @@ export function applyGateBulletHit(state: GateHitState, bulletDamage: number): G
       curValue >= MAX_ADD_GATE_VALUE
         ? 0.999
         : Math.min(0.999, Math.max(0, acc / nextThreshold)),
+  };
+}
+
+/**
+ * v8.0 Shoot-to-Charge Gate Passive Decay:
+ * After a `~0.45s` grace pause without incoming hits, all shootable `+` and `×` gates decay
+ * smoothly back toward their initial spawn value (including flipped red→blue gates slipping back
+ * into red if abandoned!). Locked gates and DIV gates never decay.
+ */
+export function stepGatePassiveDecay(
+  state: GateDecayState,
+  dt: number
+): GateDecayOutcome {
+  if (
+    state.isLocked ||
+    state.operator === 'DIV' ||
+    state.damagePerIncrement <= 0 ||
+    dt <= 0
+  ) {
+    return {
+      value: state.value,
+      hitAccumulator: state.hitAccumulator,
+      timeSinceLastHit: state.timeSinceLastHit,
+      decayAccumulator: state.decayAccumulator,
+      deltaDecrements: 0,
+      flippedBackToNegative: false,
+      ringProgress: 0,
+    };
+  }
+
+  const nextTime = state.timeSinceLastHit + dt;
+  const thresholdNow = computeGateStepThreshold(
+    state.damagePerIncrement,
+    state.value,
+    state.operator
+  );
+
+  // Grace pause (~0.45s) holds current charge before passive decay starts ticking down
+  if (nextTime <= GATE_DECAY_GRACE_SECONDS) {
+    return {
+      value: state.value,
+      hitAccumulator: state.hitAccumulator,
+      timeSinceLastHit: nextTime,
+      decayAccumulator: 0,
+      deltaDecrements: 0,
+      flippedBackToNegative: false,
+      ringProgress: Math.min(0.999, Math.max(0, state.hitAccumulator / Math.max(1e-6, thresholdNow))),
+    };
+  }
+
+  const decayDt = Math.min(dt, nextTime - GATE_DECAY_GRACE_SECONDS);
+
+  if (state.value <= state.initialValue + 1e-6 && state.hitAccumulator <= 0) {
+    return {
+      value: state.initialValue,
+      hitAccumulator: 0,
+      timeSinceLastHit: nextTime,
+      decayAccumulator: 0,
+      deltaDecrements: 0,
+      flippedBackToNegative: false,
+      ringProgress: 0,
+    };
+  }
+
+  const wasNegative = isNegativeGateState(state.operator, state.value, state.isLocked);
+  let hitAcc = state.hitAccumulator;
+  let decayAcc = state.decayAccumulator;
+  let deltaDecrements = 0;
+
+  // Quickly bleed off any partial step charge before stepping discrete numerals down
+  if (hitAcc > 0) {
+    const drainRate = Math.max(1e-4, thresholdNow) * 5.0;
+    const drained = drainRate * decayDt;
+    if (drained < hitAcc) {
+      hitAcc -= drained;
+      return {
+        value: state.value,
+        hitAccumulator: hitAcc,
+        timeSinceLastHit: nextTime,
+        decayAccumulator: 0,
+        deltaDecrements: 0,
+        flippedBackToNegative: false,
+        ringProgress: Math.min(0.999, Math.max(0, hitAcc / Math.max(1e-6, thresholdNow))),
+      };
+    }
+    const leftoverDt = decayDt - hitAcc / drainRate;
+    hitAcc = 0;
+    if (leftoverDt <= 0) {
+      return {
+        value: state.value,
+        hitAccumulator: 0,
+        timeSinceLastHit: nextTime,
+        decayAccumulator: 0,
+        deltaDecrements: 0,
+        flippedBackToNegative: false,
+        ringProgress: 0,
+      };
+    }
+    // Use remaining dt after draining partial charge
+    if (state.operator === 'MUL') {
+      const startVig = Math.round(state.value * 20);
+      const initVig = Math.round(state.initialValue * 20);
+      const excessSteps = Math.max(0, startVig - initVig);
+      const rate = MUL_GATE_DECAY_STEPS_PER_SEC + Math.min(3.0, excessSteps * 0.10);
+      decayAcc += leftoverDt * rate;
+    } else {
+      const excess = Math.max(0, state.value - state.initialValue);
+      const rate = ADD_GATE_DECAY_STEPS_PER_SEC + Math.min(4.0, excess * 0.14);
+      decayAcc += leftoverDt * rate;
+    }
+  } else if (state.operator === 'MUL') {
+    const startVig = Math.round(state.value * 20);
+    const initVig = Math.round(state.initialValue * 20);
+    const excessSteps = Math.max(0, startVig - initVig);
+    const rate = MUL_GATE_DECAY_STEPS_PER_SEC + Math.min(3.0, excessSteps * 0.10);
+    decayAcc += decayDt * rate;
+  } else {
+    const excess = Math.max(0, state.value - state.initialValue);
+    const rate = ADD_GATE_DECAY_STEPS_PER_SEC + Math.min(4.0, excess * 0.14);
+    decayAcc += decayDt * rate;
+  }
+
+  if (state.operator === 'MUL') {
+    let curVig = Math.round(state.value * 20);
+    const initVig = Math.round(state.initialValue * 20);
+    while (decayAcc >= 1.0 && curVig > initVig) {
+      decayAcc -= 1.0;
+      if (curVig > 20 && curVig % 2 === 0) {
+        curVig = Math.max(initVig, curVig - 2);
+      } else {
+        curVig = Math.max(initVig, curVig - 1);
+      }
+      deltaDecrements += 1;
+    }
+    if (curVig <= initVig) {
+      curVig = initVig;
+      decayAcc = 0;
+    }
+    const nextVal = curVig / 20;
+    const isNowNegative = isNegativeGateState('MUL', nextVal, state.isLocked);
+    return {
+      value: nextVal,
+      hitAccumulator: 0,
+      timeSinceLastHit: nextTime,
+      decayAccumulator: decayAcc,
+      deltaDecrements,
+      flippedBackToNegative: !wasNegative && isNowNegative,
+      ringProgress: 0,
+    };
+  }
+
+  let curVal = Math.round(state.value);
+  const initVal = Math.round(state.initialValue);
+  while (decayAcc >= 1.0 && curVal > initVal) {
+    decayAcc -= 1.0;
+    curVal -= 1;
+    deltaDecrements += 1;
+  }
+  if (curVal <= initVal) {
+    curVal = initVal;
+    decayAcc = 0;
+  }
+  const isNowNegative = isNegativeGateState('ADD', curVal, state.isLocked);
+  return {
+    value: curVal,
+    hitAccumulator: 0,
+    timeSinceLastHit: nextTime,
+    decayAccumulator: decayAcc,
+    deltaDecrements,
+    flippedBackToNegative: !wasNegative && isNowNegative,
+    ringProgress: 0,
   };
 }
 

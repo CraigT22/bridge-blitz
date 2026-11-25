@@ -927,95 +927,88 @@ export function createHeavyBoyEnemyGeometry(): THREE.BufferGeometry {
 }
 
 /**
- * Multi-Striped 3D Rainbow Ribbon/Arc Bolt (Unicorn Skin Bullet Mesh):
- * 6 vivid side-by-side ROYGBIV prism stripes sculpted into a graceful upward 3D rainbow arch
- * from tail (`+Z`) to leading nose (`-Z`), finished with a fluffy pearl cloud tail & golden star tip!
+ * Attaches a smooth front-to-tail `aAlpha` attribute to projectile geometries so tips blaze bright
+ * at 100% opacity while tails taper smoothly to transparent (`0.0`) in single-pass WebGL!
+ */
+function attachProjectileAlphaFade(
+  geo: THREE.BufferGeometry,
+  noseZ: number,
+  tailZ: number
+): void {
+  const posAttr = geo.attributes.position as THREE.BufferAttribute;
+  const alphas = new Float32Array(posAttr.count);
+  const span = Math.max(0.01, tailZ - noseZ);
+  for (let i = 0; i < posAttr.count; i++) {
+    const z = posAttr.getZ(i);
+    // t = 0 at leading nose (-Z), t = 1 at trailing tail (+Z)
+    const t = Math.max(0, Math.min(1, (z - noseZ) / span));
+    // Smooth concave ramp: bright solid tip/mid-body, feathering cleanly to transparent tail!
+    alphas[i] = Math.pow(1 - t, 1.55);
+  }
+  geo.setAttribute('aAlpha', new THREE.BufferAttribute(alphas, 1));
+}
+
+const ROYGBIV_STRIPE_RGB: readonly [number, number, number][] = [
+  [1.00, 0.16, 0.30], // Red
+  [1.00, 0.56, 0.10], // Orange
+  [1.00, 0.92, 0.14], // Yellow
+  [0.14, 0.94, 0.42], // Green
+  [0.16, 0.64, 1.00], // Blue
+  [0.78, 0.26, 1.00], // Violet
+];
+
+/**
+ * Girls vs. Boys Unicorn Lv1 Projectile:
+ * Slender glowing ROYGBIV rainbow streak with a bright pure-white tip tapering smoothly to a transparent tail!
  */
 export function createMagicStarBoltGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
-
-  const roygbiv: readonly [number, number, number][] = [
-    [1.00, 0.14, 0.28], // Red
-    [1.00, 0.54, 0.08], // Orange
-    [1.00, 0.90, 0.10], // Yellow
-    [0.12, 0.90, 0.38], // Green
-    [0.12, 0.60, 1.00], // Blue
-    [0.74, 0.22, 1.00], // Violet
-  ];
-
-  const bandWidth = 0.068;
-  const bandHeight = 0.064;
-  const totalWidth = roygbiv.length * bandWidth;
   const zSegs = 5;
-  const totalLen = 0.98;
+  const totalLen = 1.48;
+  const noseZ = -totalLen * 0.5;
+  const tailZ = totalLen * 0.5;
   const segLen = totalLen / zSegs;
-  const archHeight = 0.18;
+  const baseBandW = 0.044;
+  const totalW = ROYGBIV_STRIPE_RGB.length * baseBandW;
 
-  for (let b = 0; b < roygbiv.length; b++) {
-    const [cr, cg, cb] = roygbiv[b];
-    const xCenter = -totalWidth * 0.5 + (b + 0.5) * bandWidth;
+  for (let b = 0; b < ROYGBIV_STRIPE_RGB.length; b++) {
+    const [cr, cg, cb] = ROYGBIV_STRIPE_RGB[b];
+    const xBase = -totalW * 0.5 + (b + 0.5) * baseBandW;
 
     for (let s = 0; s < zSegs; s++) {
-      const t0 = s / zSegs;
-      const t1 = (s + 1) / zSegs;
-      const tMid = (t0 + t1) * 0.5;
-      // t = 0 is rear tail (+Z), t = 1 is leading nose (-Z)
-      const zCenter = totalLen * 0.5 - tMid * totalLen;
-      const y0 = Math.sin(t0 * Math.PI) * archHeight;
-      const y1 = Math.sin(t1 * Math.PI) * archHeight;
-      const yCenter = (y0 + y1) * 0.5;
-      // Forward travel moves toward -Z; dy/dz gives pitch angle around X
-      const dz = -(t1 - t0) * totalLen;
-      const dy = y1 - y0;
-      const pitchX = Math.atan2(dy, -dz);
+      // s = 0 at leading nose (-Z), s = zSegs-1 at trailing tail (+Z)
+      const tMid = (s + 0.5) / zSegs;
+      const taper = 1.0 - tMid * 0.72;
+      const zCenter = noseZ + tMid * totalLen;
+      const segW = baseBandW * taper * 1.08;
+      const segH = 0.056 * (1.0 - tMid * 0.55);
 
-      const segBox = new THREE.BoxGeometry(bandWidth * 1.02, bandHeight, segLen * 1.12);
-      segBox.rotateX(pitchX);
-      segBox.translate(xCenter, yCenter, zCenter);
-
-      const tagged = tagPartGeometry(segBox, 0xffffff, 0);
+      const box = new THREE.BoxGeometry(segW, segH, segLen * 1.12);
+      box.translate(xBase * taper, 0, zCenter);
+      const tagged = tagPartGeometry(box, 0xffffff, 0);
       const colAttr = tagged.getAttribute('color') as THREE.BufferAttribute;
       const arr = colAttr.array as Float32Array;
-      const posAttr = tagged.getAttribute('position') as THREE.BufferAttribute;
-      for (let v = 0; v < posAttr.count; v++) {
-        // Subtle top-face highlight so the 3D rainbow ribbon gleams without washing out to white
-        const ny = posAttr.getY(v) > yCenter ? 1.05 : 0.86;
-        arr[v * 3] = Math.min(1.08, cr * ny);
-        arr[v * 3 + 1] = Math.min(1.08, cg * ny);
-        arr[v * 3 + 2] = Math.min(1.08, cb * ny);
+      const whiteLead = tMid < 0.22 ? 0.55 : 0.0;
+      for (let k = 0; k < arr.length; k += 3) {
+        arr[k] = Math.min(1.45, cr * 1.15 + whiteLead);
+        arr[k + 1] = Math.min(1.45, cg * 1.15 + whiteLead);
+        arr[k + 2] = Math.min(1.45, cb * 1.15 + whiteLead);
       }
       parts.push(tagged);
     }
   }
 
-  // Fluffy pearl-white mini cloud puff at the rainbow tail (+Z)
-  for (const cx of [-0.10, 0.0, 0.10]) {
-    const puff = new THREE.DodecahedronGeometry(cx === 0 ? 0.072 : 0.056, 0);
-    puff.scale(1.15, 0.85, 0.85);
-    puff.translate(cx, 0.015, totalLen * 0.5 + 0.02);
-    const puffTagged = tagPartGeometry(puff, 0xffffff, 0);
-    const colAttr = puffTagged.getAttribute('color') as THREE.BufferAttribute;
-    const arr = colAttr.array as Float32Array;
-    for (let k = 0; k < arr.length; k += 3) {
-      arr[k] = 0.98;
-      arr[k + 1] = 0.99;
-      arr[k + 2] = 1.04;
-    }
-    parts.push(puffTagged);
-  }
-
-  // Golden starlight crystal spearhead at the leading nose (-Z)
-  const starTip = new THREE.OctahedronGeometry(0.075, 0);
-  starTip.scale(1.35, 0.85, 1.35);
-  starTip.translate(0, 0.02, -totalLen * 0.5 - 0.04);
-  const tipTagged = tagPartGeometry(starTip, 0xffffff, 0);
+  // Blazing pure-white leading spearhead tip
+  const tip = new THREE.ConeGeometry(0.115, 0.34, 6);
+  tip.rotateX(-Math.PI / 2);
+  tip.scale(1.15, 0.65, 1.0);
+  tip.translate(0, 0.005, noseZ - 0.08);
+  const tipTagged = tagPartGeometry(tip, 0xffffff, 0);
   {
     const colAttr = tipTagged.getAttribute('color') as THREE.BufferAttribute;
     const arr = colAttr.array as Float32Array;
-    for (let k = 0; k < arr.length; k += 3) {
-      arr[k] = 1.08;
-      arr[k + 1] = 0.94;
-      arr[k + 2] = 0.36;
+    for (let k = 0; k < arr.length; k++) {
+      arr[k] = 1.85;
     }
   }
   parts.push(tipTagged);
@@ -1025,45 +1018,263 @@ export function createMagicStarBoltGeometry(): THREE.BufferGeometry {
     p.dispose();
   }
   merged.deleteAttribute('aPartId');
+  attachProjectileAlphaFade(merged, noseZ - 0.25, tailZ);
   return merged;
 }
 
 /**
- * Sleek Elongated Tapered Tracer Streak:
- * Neutral white-to-silver brightness ramp so per-instance weapon colors tint purely into
- * electric emerald-teal / cyan (Pistol/SMG/Plasma) or volt-amber / magma-orange (Rifle/Minigun)!
+ * Girls vs. Boys Unicorn Lv2–Lv5 Projectile:
+ * Wider, brighter ROYGBIV swept rainbow arrowhead with blazing pure-white diamond nose tapering to transparent tail!
  */
-export function createTracerBoltGeometry(): THREE.BufferGeometry {
+export function createUnicornArrowheadGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
+  const zSegs = 5;
+  const totalLen = 1.62;
+  const noseZ = -totalLen * 0.5;
+  const tailZ = totalLen * 0.5;
+  const segLen = totalLen / zSegs;
+  const baseBandW = 0.060;
+  const totalW = ROYGBIV_STRIPE_RGB.length * baseBandW;
 
-  const outerWake = new THREE.ConeGeometry(0.136, 1.66, 6);
-  outerWake.rotateX(Math.PI / 2);
-  outerWake.translate(0, 0, 0.31);
-  parts.push(tagPartGeometry(outerWake, 0xf2f6fa, 0));
+  for (let b = 0; b < ROYGBIV_STRIPE_RGB.length; b++) {
+    const [cr, cg, cb] = ROYGBIV_STRIPE_RGB[b];
+    const xBase = -totalW * 0.5 + (b + 0.5) * baseBandW;
+    const distFromCenter = Math.abs(xBase) / Math.max(0.01, totalW * 0.5);
+    // Swept chevron arrow stagger: outer stripes trail slightly behind center tip!
+    const sweepLagZ = distFromCenter * 0.26;
 
-  const coreTail = new THREE.ConeGeometry(0.062, 1.22, 6);
-  coreTail.rotateX(Math.PI / 2);
-  coreTail.translate(0, 0, 0.16);
-  const coreTailTagged = tagPartGeometry(coreTail, 0xffffff, 0);
+    for (let s = 0; s < zSegs; s++) {
+      const tMid = (s + 0.5) / zSegs;
+      const taper = 1.04 - tMid * 0.66;
+      const zCenter = noseZ + sweepLagZ + tMid * (totalLen - sweepLagZ);
+      const segW = baseBandW * taper * 1.08;
+      const segH = 0.068 * (1.0 - tMid * 0.52);
 
-  const head = new THREE.OctahedronGeometry(0.082, 0);
-  head.scale(0.82, 0.82, 1.85);
-  head.translate(0, 0, -0.44);
-  const headTagged = tagPartGeometry(head, 0xffffff, 0);
+      const box = new THREE.BoxGeometry(segW, segH, segLen * 1.14);
+      box.translate(xBase * (1.0 + (1 - tMid) * 0.14) * taper, 0.01, zCenter);
+      const tagged = tagPartGeometry(box, 0xffffff, 0);
+      const colAttr = tagged.getAttribute('color') as THREE.BufferAttribute;
+      const arr = colAttr.array as Float32Array;
+      const boost = s === 0 ? 0.22 : 0.0;
+      for (let k = 0; k < arr.length; k += 3) {
+        arr[k] = Math.min(1.45, cr * 1.14 + boost);
+        arr[k + 1] = Math.min(1.45, cg * 1.14 + boost);
+        arr[k + 2] = Math.min(1.45, cb * 1.14 + boost);
+      }
+      parts.push(tagged);
+    }
+  }
 
-  for (const hotGeo of [coreTailTagged, headTagged]) {
-    const colAttr = hotGeo.getAttribute('color') as THREE.BufferAttribute;
+  // Wide bright white-prismatic arrowhead chevron nose
+  const arrowNose = new THREE.ConeGeometry(0.24, 0.52, 4);
+  arrowNose.rotateY(Math.PI / 4);
+  arrowNose.rotateX(-Math.PI / 2);
+  arrowNose.scale(1.18, 0.45, 1.0);
+  arrowNose.translate(0, 0.015, noseZ - 0.10);
+  const noseTagged = tagPartGeometry(arrowNose, 0xffffff, 0);
+  {
+    const colAttr = noseTagged.getAttribute('color') as THREE.BufferAttribute;
     const arr = colAttr.array as Float32Array;
     for (let k = 0; k < arr.length; k++) {
-      arr[k] = 2.25;
+      arr[k] = 2.05;
     }
-    parts.push(hotGeo);
   }
+  parts.push(noseTagged);
 
   const merged = mergeGeometries(parts, false);
   for (const p of parts) {
     p.dispose();
   }
+  merged.deleteAttribute('aPartId');
+  attachProjectileAlphaFade(merged, noseZ - 0.36, tailZ);
+  return merged;
+}
+
+/**
+ * Tactical Skin Lv1 Projectile:
+ * Slender glowing peach/salmon-orange streak with bright pure-white leading tip tapering to transparent tail!
+ */
+export function createTracerBoltGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const noseZ = -0.74;
+  const tailZ = 0.78;
+
+  // Slender peach/salmon-orange outer wake tapering to tail
+  const outerWake = new THREE.ConeGeometry(0.115, 1.48, 6);
+  outerWake.rotateX(Math.PI / 2);
+  outerWake.scale(1.0, 0.72, 1.0);
+  outerWake.translate(0, 0, 0.04);
+  const outerTagged = tagPartGeometry(outerWake, 0xff8562, 0);
+  {
+    const colAttr = outerTagged.getAttribute('color') as THREE.BufferAttribute;
+    const arr = colAttr.array as Float32Array;
+    for (let k = 0; k < arr.length; k += 3) {
+      arr[k] = 1.28;
+      arr[k + 1] = 0.64;
+      arr[k + 2] = 0.44;
+    }
+  }
+  parts.push(outerTagged);
+
+  // Hot luminous core streak
+  const coreTail = new THREE.ConeGeometry(0.056, 1.06, 6);
+  coreTail.rotateX(Math.PI / 2);
+  coreTail.translate(0, 0, -0.14);
+  const coreTagged = tagPartGeometry(coreTail, 0xffd2b8, 0);
+  {
+    const colAttr = coreTagged.getAttribute('color') as THREE.BufferAttribute;
+    const arr = colAttr.array as Float32Array;
+    for (let k = 0; k < arr.length; k += 3) {
+      arr[k] = 1.65;
+      arr[k + 1] = 1.24;
+      arr[k + 2] = 1.02;
+    }
+  }
+  parts.push(coreTagged);
+
+  // Crisp pure-white leading tip
+  const head = new THREE.ConeGeometry(0.088, 0.34, 6);
+  head.rotateX(-Math.PI / 2);
+  head.scale(1.05, 0.68, 1.0);
+  head.translate(0, 0, noseZ - 0.04);
+  const headTagged = tagPartGeometry(head, 0xffffff, 0);
+  {
+    const colAttr = headTagged.getAttribute('color') as THREE.BufferAttribute;
+    const arr = colAttr.array as Float32Array;
+    for (let k = 0; k < arr.length; k++) {
+      arr[k] = 2.0;
+    }
+  }
+  parts.push(headTagged);
+
+  const merged = mergeGeometries(parts, false);
+  for (const p of parts) {
+    p.dispose();
+  }
+  merged.deleteAttribute('aPartId');
+  attachProjectileAlphaFade(merged, noseZ - 0.22, tailZ);
+  return merged;
+}
+
+/**
+ * Tactical Skin Lv2–Lv5 Projectile:
+ * Wider, brighter white-yellow swept arrowhead with blazing white nose tapering smoothly to transparent tail!
+ */
+export function createTacticalArrowheadGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const noseZ = -0.82;
+  const tailZ = 0.82;
+
+  // Wide glowing warm-gold swept arrowhead wings
+  const wingCone = new THREE.ConeGeometry(0.28, 1.54, 4);
+  wingCone.rotateY(Math.PI / 4);
+  wingCone.rotateX(Math.PI / 2);
+  wingCone.scale(1.18, 0.42, 1.0);
+  wingCone.translate(0, 0, 0.04);
+  const wingTagged = tagPartGeometry(wingCone, 0xffd84d, 0);
+  {
+    const colAttr = wingTagged.getAttribute('color') as THREE.BufferAttribute;
+    const arr = colAttr.array as Float32Array;
+    for (let k = 0; k < arr.length; k += 3) {
+      arr[k] = 1.48;
+      arr[k + 1] = 1.24;
+      arr[k + 2] = 0.44;
+    }
+  }
+  parts.push(wingTagged);
+
+  // Blazing white-yellow inner chevron core
+  const innerCore = new THREE.ConeGeometry(0.16, 1.18, 4);
+  innerCore.rotateY(Math.PI / 4);
+  innerCore.rotateX(Math.PI / 2);
+  innerCore.scale(1.12, 0.48, 1.0);
+  innerCore.translate(0, 0.005, -0.14);
+  const coreTagged = tagPartGeometry(innerCore, 0xfff8c8, 0);
+  {
+    const colAttr = coreTagged.getAttribute('color') as THREE.BufferAttribute;
+    const arr = colAttr.array as Float32Array;
+    for (let k = 0; k < arr.length; k += 3) {
+      arr[k] = 1.95;
+      arr[k + 1] = 1.88;
+      arr[k + 2] = 1.32;
+    }
+  }
+  parts.push(coreTagged);
+
+  // Pure-white spear tip
+  const tip = new THREE.ConeGeometry(0.21, 0.46, 4);
+  tip.rotateY(Math.PI / 4);
+  tip.rotateX(-Math.PI / 2);
+  tip.scale(1.15, 0.44, 1.0);
+  tip.translate(0, 0.01, noseZ - 0.04);
+  const tipTagged = tagPartGeometry(tip, 0xffffff, 0);
+  {
+    const colAttr = tipTagged.getAttribute('color') as THREE.BufferAttribute;
+    const arr = colAttr.array as Float32Array;
+    for (let k = 0; k < arr.length; k++) {
+      arr[k] = 2.15;
+    }
+  }
+  parts.push(tipTagged);
+
+  const merged = mergeGeometries(parts, false);
+  for (const p of parts) {
+    p.dispose();
+  }
+  merged.deleteAttribute('aPartId');
+  attachProjectileAlphaFade(merged, noseZ - 0.28, tailZ);
+  return merged;
+}
+
+/**
+ * Stylized 3D Popping Tire Debris Geometry (dark rubber torus tread + brushed titanium wheel hub)
+ * launched in gravity arcs whenever a tire/barricade pedestal is destroyed!
+ */
+export function createPoppingTireGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+
+  const rubberTread = new THREE.TorusGeometry(0.36, 0.16, 7, 12);
+  parts.push(tagPartGeometry(rubberTread, 0x1e2632, 0));
+
+  const rim = new THREE.CylinderGeometry(0.22, 0.22, 0.18, 8);
+  rim.rotateX(Math.PI / 2);
+  parts.push(tagPartGeometry(rim, 0x8ea6c2, 0));
+
+  const hubCap = new THREE.CylinderGeometry(0.09, 0.09, 0.22, 6);
+  hubCap.rotateX(Math.PI / 2);
+  parts.push(tagPartGeometry(hubCap, 0xffb830, 0));
+
+  const merged = mergeGeometries(parts, false);
+  for (const p of parts) {
+    p.dispose();
+  }
+  attachWeldedOutlineNormals(merged);
+  merged.deleteAttribute('aPartId');
+  return merged;
+}
+
+/**
+ * Radiant Spinning 3D Gold Coin Geometry for magnetized coins arcing into the top-right HUD counter!
+ */
+export function createSpinningCoinGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+
+  const disc = new THREE.CylinderGeometry(0.32, 0.32, 0.10, 10);
+  disc.rotateX(Math.PI / 2);
+  parts.push(tagPartGeometry(disc, 0xffca28, 0));
+
+  const rim = new THREE.TorusGeometry(0.30, 0.05, 6, 10);
+  parts.push(tagPartGeometry(rim, 0xfff199, 0));
+
+  const centerStar = new THREE.OctahedronGeometry(0.13, 0);
+  centerStar.scale(1.0, 1.0, 0.55);
+  parts.push(tagPartGeometry(centerStar, 0x28f8dc, 0));
+
+  const merged = mergeGeometries(parts, false);
+  for (const p of parts) {
+    p.dispose();
+  }
+  attachWeldedOutlineNormals(merged);
   merged.deleteAttribute('aPartId');
   return merged;
 }

@@ -6,13 +6,29 @@ export interface FormationSlot {
   readonly radius: number;
 }
 
-export const ELITE_SLOT_SPACING_X = 0.50;
-export const ELITE_ROW_SPACING_Z = 0.52;
+export const ELITE_SLOT_SPACING_X = 0.72;
+export const ELITE_ROW_SPACING_Z = 0.58;
 export const MAX_FRONT_RANK_WIDTH = 7;
 export const SOLDIER_BODY_RADIUS = 0.24;
 export const BRIDGE_PLAYABLE_HALF_WIDTH = 6.12;
 export const GUARDRAIL_MARGIN = 0.22;
 export const SOLDIER_SAFE_LIMIT_X = 5.62;
+/**
+ * Arcade v8.0 Center-Clamped Outer-Lane Boundary:
+ * Clamps ONLY the squad center to ±4.85m so outer flanking soldiers push slightly past the bridge
+ * curb (±6.24m) visually while keeping the heart of the squad dead-center in the far-left/far-right lane!
+ */
+export const SQUAD_CENTER_BOUNDARY_X = 4.85;
+/**
+ * Playable outer-lane bullet rail X (±5.10m):
+ * Off-curb flanking soldiers clamp their bullet spawn X onto this rail so 100% of flanking soldiers
+ * land full parallel DPS straight down the far-left or far-right lane instead of firing into empty air.
+ */
+export const BULLET_PLAYABLE_RAIL_X = 5.10;
+/**
+ * Visual outer soft limit for individual flanking soldiers overhanging the bridge curb.
+ */
+export const SOLDIER_VISUAL_OVERHANG_LIMIT_X = 7.45;
 /**
  * Split Causeway Divider X (-0.88) divides [-6.12, +6.12] into:
  * - Left Power-Up Column [-6.12, -0.88] = 5.24m wide (0.75x of Right!)
@@ -21,10 +37,9 @@ export const SOLDIER_SAFE_LIMIT_X = 5.62;
 export const SPLIT_DIVIDER_X = -0.88;
 
 /**
- * Deterministic diamond/oval honeycomb crowd slots for 1..40 commandos:
- * Packs soldiers shoulder-to-shoulder in staggered rows with subtle organic micro-jitter
- * so small squads (1..3) stand cleanly side-by-side while large squads (12..40) form a tight
- * diamond/oval army cluster!
+ * Deterministic compact circular/oval concentric honeycomb crowd slots for 1..40 soldiers:
+ * Spans ~1.30–1.45 lanes wide (~5.3m–5.8m) at full 40-unit squad so single-lane targets melt cleanly
+ * while straddling a lane line (or Split Causeway divider) naturally splits parallel fire across two lanes!
  */
 export function buildHoneycombSlots(
   maxCount = MAX_VISUAL_SOLDIERS,
@@ -33,19 +48,19 @@ export function buildHoneycombSlots(
 ): ReadonlyArray<FormationSlot> {
   const candidates: FormationSlot[] = [];
 
-  for (let row = -4; row <= 5; row++) {
+  for (let row = -5; row <= 5; row++) {
     const stagger = (Math.abs(row) % 2) * 0.5;
-    for (let col = -4; col <= 4; col++) {
+    for (let col = -5; col <= 5; col++) {
       const baseX = (col + stagger - (stagger > 0 ? 0.5 : 0)) * spacingX;
-      if (Math.abs(baseX) > 1.78) {
+      if (Math.abs(baseX) > 2.75) {
         continue;
       }
       const baseZ = row * spacingZ;
-      // Elliptical crowd metric (slightly narrower along X so 40 soldiers thread bridge lanes cleanly!)
-      const distMetric = Math.hypot(baseX * 1.12, baseZ * 0.94);
+      // Compact concentric oval metric (~1.35 lanes wide at 40 soldiers)
+      const distMetric = Math.hypot(baseX * 0.86, baseZ * 1.15);
       const hash = Math.abs((row * 37 + col * 17 + 97) % 29);
-      const jitterX = row === 0 && Math.abs(col) <= 1 ? 0 : ((hash % 7) - 3) * 0.018;
-      const jitterZ = row === 0 && Math.abs(col) <= 1 ? 0 : (((hash * 3) % 7) - 3) * 0.022;
+      const jitterX = row === 0 && Math.abs(col) <= 1 ? 0 : ((hash % 7) - 3) * 0.022;
+      const jitterZ = row === 0 && Math.abs(col) <= 1 ? 0 : (((hash * 3) % 7) - 3) * 0.024;
       candidates.push({
         x: baseX + jitterX,
         z: baseZ + jitterZ,
@@ -85,11 +100,11 @@ export const PRECOMPUTED_HONEYCOMB_SLOTS: ReadonlyArray<FormationSlot> =
   buildHoneycombSlots(MAX_VISUAL_SOLDIERS, ELITE_SLOT_SPACING_X, ELITE_ROW_SPACING_Z);
 
 /**
- * Computes world-space formation offset `(x, z)` for commando `slotIndex` in a `1..40` crowd:
- * - 1 commando: `[0, 0]`
- * - 2 commandos: `[-0.30, 0], [+0.30, 0]` (tight side-by-side twin commandos)
- * - 3 commandos: `[-0.60, 0], [0, 0], [+0.60, 0]`
- * - 4..40 commandos: dense re-centered diamond/oval honeycomb crowd!
+ * Computes world-space formation offset `(x, z)` for soldier `slotIndex` in a `1..40` crowd:
+ * - 1 soldier: `[0, 0]`
+ * - 2 soldiers: tight side-by-side pair
+ * - 3 soldiers: tight front line
+ * - 4..40 soldiers: compact re-centered concentric circular/oval blob!
  */
 export function getEliteFormationOffset(
   slotIndex: number,
@@ -137,7 +152,7 @@ export function getEliteFormationOffset(
 }
 
 /**
- * Returns the outer horizontal half-width of the active commando crowd.
+ * Returns the outer horizontal half-width of the active soldier crowd.
  */
 export function computeSquadOuterRadius(logicalSquad: number): number {
   if (logicalSquad <= 0) {
@@ -170,28 +185,44 @@ export function computeSquadOuterRadius(logicalSquad: number): number {
 }
 
 /**
- * Clamps the squad's horizontal center strictly inside the widened bridge guardrails (+25% lateral room)
- * so zero outer characters ever touch, clip, or overhang the bridge curb at any 1..40 crowd size!
+ * v8.0 Arcade Center-Clamped Outer-Lane Movement:
+ * Clamps ONLY the squad center to the outer-lane boundary (±4.85m) regardless of squad size,
+ * allowing outer flanking soldiers to push slightly past the bridge curb visually while keeping
+ * full outer-lane target reach at 1..40 crowd sizes!
  */
 export function clampSquadCenterX(
   desiredX: number,
-  logicalSquad: number,
-  bridgeHalfWidth = BRIDGE_PLAYABLE_HALF_WIDTH,
-  margin = GUARDRAIL_MARGIN
+  _logicalSquad = 1,
+  centerBoundaryX = SQUAD_CENTER_BOUNDARY_X
 ): number {
-  const outerRadius = computeSquadOuterRadius(logicalSquad);
-  const maxCenterOffset = Math.max(
-    0,
-    Math.min(
-      bridgeHalfWidth - margin - 0.34,
-      bridgeHalfWidth - outerRadius - margin
-    )
-  );
-  if (desiredX < -maxCenterOffset) {
-    return -maxCenterOffset;
+  const limit = Math.max(0, centerBoundaryX);
+  if (desiredX < -limit) {
+    return -limit;
   }
-  if (desiredX > maxCenterOffset) {
-    return maxCenterOffset;
+  if (desiredX > limit) {
+    return limit;
   }
   return desiredX;
+}
+
+/**
+ * Clamps off-curb flanking soldier bullet spawn X onto the outer lane's playable rail (±5.10m)
+ * with optional deterministic micro-inset so clamped flanking fire stays thick & lively while
+ * landing 100% full parallel DPS straight down the far-left or far-right lane!
+ */
+export function clampBulletSpawnX(
+  rawMuzzleX: number,
+  soldierIdx = 0,
+  railHalfWidth = BULLET_PLAYABLE_RAIL_X
+): number {
+  const limit = Math.max(0.5, railHalfWidth);
+  if (rawMuzzleX > limit) {
+    const inset = ((Math.abs(soldierIdx) * 7) % 5) * 0.055;
+    return limit - inset;
+  }
+  if (rawMuzzleX < -limit) {
+    const inset = ((Math.abs(soldierIdx) * 7) % 5) * 0.055;
+    return -limit + inset;
+  }
+  return rawMuzzleX;
 }

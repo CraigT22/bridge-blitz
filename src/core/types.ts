@@ -94,6 +94,8 @@ export interface SupplyDrumDefinition {
   readonly rewardType: DrumRewardType;
   /** Coin payout, WeaponTierId (2..5), or recruit soldier count */
   readonly rewardValue: number;
+  /** Forward rolling speed toward the squad (+Z m/s) on Standard Bridge */
+  readonly rollSpeed?: number;
 }
 
 export interface TireStackDefinition {

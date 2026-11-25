@@ -989,10 +989,10 @@ export class MidBridgeBrute {
     }
 
     if (this.hitFlash > 0) {
-      this.hitFlash = Math.max(0, this.hitFlash - dt * 10.0);
-      const em = this.hitFlash * 0.24;
+      this.hitFlash = Math.max(0, this.hitFlash - dt * 24.0);
+      const em = this.hitFlash > 0.15 ? 0.92 : this.hitFlash * 2.5;
       for (let i = 0; i < this.flashMaterials.length; i++) {
-        this.flashMaterials[i].emissive.setRGB(em * 0.5, em * 0.88, em);
+        this.flashMaterials[i].emissive.setRGB(em, em, em);
       }
     } else {
       for (let i = 0; i < this.flashMaterials.length; i++) {

@@ -10,6 +10,7 @@ interface PooledPopupNode {
   worldZ: number;
   age: number;
   maxAge: number;
+  halfWidthPx: number;
 }
 
 const POPUP_POOL_SIZE = 32;
@@ -33,6 +34,7 @@ export class CombatTextOverlay {
         worldZ: 0,
         age: 0,
         maxAge: 0.75,
+        halfWidthPx: 64,
       });
     }
   }
@@ -67,6 +69,9 @@ export class CombatTextOverlay {
     slot.worldZ = worldZ;
     slot.age = 0;
     slot.maxAge = duration;
+    // Estimate rendered half-width without forcing synchronous layout reflow
+    const charPx = variant === 'gold' || variant === 'cyan' ? 12.2 : 10.6;
+    slot.halfWidthPx = Math.max(58, Math.min(188, text.length * charPx * 0.54 + 16));
     slot.el.textContent = text;
     slot.el.className = `combat-popup combat-popup--${variant}`;
   }
@@ -93,7 +98,7 @@ export class CombatTextOverlay {
         continue;
       }
 
-      const marginX = 64;
+      const marginX = Math.min(window.innerWidth * 0.48, slot.halfWidthPx);
       const marginY = 64;
       const clampedX = Math.max(
         marginX,

@@ -52,43 +52,69 @@ describe('weaponMath', () => {
     expect(dps40 / dps1).toBeCloseTo(computeEffectiveFiringSquad(40), 4);
   });
 
-  it('converges left, center, and right crowd muzzles to a single forward focal point with zero crossover past the tip', async () => {
+  it('fires strictly parallel vx = 0 staggered bullets and clamps off-curb flanking shots onto the outer-lane playable rail', async () => {
     const {
-      computeConvergingShotTrajectory,
-      FOCAL_CONVERGENCE_DISTANCE,
+      computeParallelShotTrajectory,
+      PARALLEL_SHOT_RANGE,
       WEAPON_SPECS,
     } = await import('../src/math/weaponMath');
+    const {
+      BRIDGE_PLAYABLE_HALF_WIDTH,
+      BULLET_PLAYABLE_RAIL_X,
+      SQUAD_CENTER_BOUNDARY_X,
+    } = await import('../src/math/formationMath');
     const { BulletPool } = await import('../src/core/ObjectPool');
     const { SquadController } = await import('../src/entities/SquadController');
 
     expect(WEAPON_SPECS[4].pattern).toBe('TWIN_CONVERGE');
 
-    const outLeft = { vx: 0, vz: 0, maxAge: 0 };
-    const outRight = { vx: 0, vz: 0, maxAge: 0 };
-    computeConvergingShotTrajectory(-1.75, 0, 0, -FOCAL_CONVERGENCE_DISTANCE, 40, outLeft);
-    computeConvergingShotTrajectory(1.75, 0, 0, -FOCAL_CONVERGENCE_DISTANCE, 40, outRight);
+    const traj = { vx: 99, vz: 0, maxAge: 0 };
+    computeParallelShotTrajectory(40, PARALLEL_SHOT_RANGE, traj);
+    expect(traj.vx).toBe(0);
+    expect(traj.vz).toBe(-40);
+    expect(traj.maxAge).toBeCloseTo(PARALLEL_SHOT_RANGE / 40, 4);
 
-    expect(outLeft.vx).toBeGreaterThan(0);
-    expect(outRight.vx).toBeLessThan(0);
-    expect(outLeft.vx).toBeCloseTo(-outRight.vx, 5);
-
-    // At t = maxAge, both left and right flank rays meet at x = 0 and never cross over for 0 <= t < maxAge
-    expect(-1.75 + outLeft.vx * outLeft.maxAge).toBeCloseTo(0, 5);
-    expect(1.75 + outRight.vx * outRight.maxAge).toBeCloseTo(0, 5);
-    expect(-1.75 + outLeft.vx * (outLeft.maxAge * 0.99)).toBeLessThan(0);
-    expect(1.75 + outRight.vx * (outRight.maxAge * 0.99)).toBeGreaterThan(0);
-
-    // Full 40-commando Lv4 Minigun crowd volley converges every single bullet inward toward focalX = 0
+    // Full 40-soldier squad emits staggered parallel shots over multiple 1/60s ticks (no synchronized horizontal bars!)
     const squad = new SquadController();
     squad.resetForRun(40);
-    squad.weaponTier = 4;
-    const pool = new BulletPool(256);
-    squad.updateAutoFire(0.2, 1.0, 1.0, pool, 0, -FOCAL_CONVERGENCE_DISTANCE, false);
-
-    expect(pool.activeCount).toBe(52);
+    squad.weaponTier = 3;
+    const pool = new BulletPool(512);
+    let ticksWithShots = 0;
+    const perTickCounts: number[] = [];
+    for (let t = 0; t < 18; t++) {
+      const before = pool.activeCount;
+      squad.updateAutoFire(1 / 60, 1.0, 1.0, pool, 42);
+      const spawned = pool.activeCount - before;
+      if (spawned > 0) {
+        ticksWithShots++;
+        perTickCounts.push(spawned);
+      }
+    }
+    expect(ticksWithShots).toBeGreaterThanOrEqual(6);
+    expect(Math.max(...perTickCounts)).toBeLessThan(40);
+    expect(pool.activeCount).toBeGreaterThan(20);
     for (let i = 0; i < pool.activeCount; i++) {
-      const endX = pool.x[i] + pool.vx[i] * pool.maxAge[i];
-      expect(Math.abs(endX)).toBeLessThanOrEqual(0.06);
+      expect(pool.vx[i]).toBe(0);
+      expect(pool.vz[i]).toBeLessThan(0);
+    }
+
+    // Push full 40-soldier squad to far-right outer lane: flanking soldiers overhang curb, yet 100% of bullets clamp inside ±BULLET_PLAYABLE_RAIL_X
+    pool.clear();
+    squad.x = SQUAD_CENTER_BOUNDARY_X;
+    squad.updateMovement(0, 0, false, true);
+    let maxSoldierX = -Infinity;
+    for (let i = 0; i < 40; i++) {
+      maxSoldierX = Math.max(maxSoldierX, squad.soldierWorldX[i]);
+    }
+    expect(maxSoldierX).toBeGreaterThan(BRIDGE_PLAYABLE_HALF_WIDTH);
+
+    for (let t = 0; t < 20; t++) {
+      squad.updateAutoFire(1 / 60, 1.0, 1.0, pool, 42);
+    }
+    expect(pool.activeCount).toBeGreaterThan(25);
+    for (let i = 0; i < pool.activeCount; i++) {
+      expect(pool.vx[i]).toBe(0);
+      expect(Math.abs(pool.x[i])).toBeLessThanOrEqual(BULLET_PLAYABLE_RAIL_X + 1e-4);
     }
   });
 

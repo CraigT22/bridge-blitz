@@ -431,12 +431,11 @@ export class BossEntity {
 
   private applyFlash(amount: number): void {
     const rig = this.activeRig;
-    const baseGlow = amount * 0.14;
-    const trimGlow = amount * 0.30;
-    rig.primaryMat.emissive.setRGB(baseGlow, baseGlow * 0.65, baseGlow * 0.45);
-    rig.darkSteelMat.emissive.setRGB(baseGlow * 0.6, baseGlow * 0.4, baseGlow * 0.3);
-    rig.accentMat.emissive.setRGB(trimGlow, trimGlow * 0.62, trimGlow * 0.25);
-    rig.trimMat.emissive.setRGB(trimGlow, trimGlow * 0.72, trimGlow * 0.35);
+    const w = amount > 0.15 ? 0.88 : amount * 2.4;
+    rig.primaryMat.emissive.setRGB(w, w, w);
+    rig.darkSteelMat.emissive.setRGB(w * 0.85, w * 0.85, w * 0.85);
+    rig.accentMat.emissive.setRGB(w, w, w);
+    rig.trimMat.emissive.setRGB(w, w, w);
   }
 
   public update(
@@ -464,7 +463,7 @@ export class BossEntity {
       this.hitFlashCooldown = Math.max(0, this.hitFlashCooldown - dt);
     }
     if (this.hitFlash > 0) {
-      this.hitFlash = Math.max(0, this.hitFlash - dt * 16);
+      this.hitFlash = Math.max(0, this.hitFlash - dt * 24);
       this.applyFlash(this.hitFlash);
     }
 

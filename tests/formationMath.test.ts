@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
   BRIDGE_PLAYABLE_HALF_WIDTH,
+  BULLET_PLAYABLE_RAIL_X,
+  clampBulletSpawnX,
   clampSquadCenterX,
   computeSquadOuterRadius,
   ELITE_SLOT_SPACING_X,
   getEliteFormationOffset,
-  GUARDRAIL_MARGIN,
+  SOLDIER_VISUAL_OVERHANG_LIMIT_X,
   SPLIT_DIVIDER_X,
+  SQUAD_CENTER_BOUNDARY_X,
 } from '../src/math/formationMath';
 
 describe('formationMath', () => {
-  it('builds a dense symmetric diamond/oval crowd cluster for 1..40 commandos', () => {
+  it('builds a compact circular/oval honeycomb blob (~1.2–1.6 lanes wide at 40 soldiers)', () => {
     const out = { x: 0, z: 0 };
 
     getEliteFormationOffset(0, 1, out);
@@ -24,17 +27,26 @@ describe('formationMath', () => {
     expect(x0).toBeCloseTo(-ELITE_SLOT_SPACING_X * 0.5);
     expect(x1).toBeCloseTo(ELITE_SLOT_SPACING_X * 0.5);
 
-    // Verify all 40 slots are distinct and stay compact within ±2.2m laterally
+    // Verify all 40 slots are distinct and stay compact (~1.2-1.6 lanes wide including shoulders)
     const seen = new Set<string>();
+    let maxAbsX = 0;
     for (let i = 0; i < 40; i++) {
       getEliteFormationOffset(i, 40, out);
-      expect(Math.abs(out.x)).toBeLessThanOrEqual(2.2);
+      maxAbsX = Math.max(maxAbsX, Math.abs(out.x));
+      expect(Math.abs(out.x)).toBeLessThanOrEqual(2.55);
       seen.add(`${out.x.toFixed(3)},${out.z.toFixed(3)}`);
     }
     expect(seen.size).toBe(40);
+
+    const laneWidth = (BRIDGE_PLAYABLE_HALF_WIDTH * 2) / 3;
+    const visualBlobWidth = computeSquadOuterRadius(40) * 2;
+    const lanesWide = visualBlobWidth / laneWidth;
+    expect(lanesWide).toBeGreaterThanOrEqual(1.2);
+    expect(lanesWide).toBeLessThanOrEqual(1.6);
+    expect(maxAbsX).toBeGreaterThanOrEqual(2.1);
   });
 
-  it('provides +25% wider side-to-side movement while guaranteeing zero curb overhang across 1..40 shooters', () => {
+  it('clamps only squad center to outer-lane boundary so flanking soldiers overhang curb while bullets clamp to playable rail', () => {
     const r1 = computeSquadOuterRadius(1);
     const r8 = computeSquadOuterRadius(8);
     const r24 = computeSquadOuterRadius(24);
@@ -44,19 +56,26 @@ describe('formationMath', () => {
     expect(r24).toBeGreaterThan(r8);
     expect(r40).toBeGreaterThanOrEqual(r24);
 
-    // Single shooter and 40-shooter crowd both gain >= +25% wider side-to-side travel
-    expect(clampSquadCenterX(99, 1)).toBeGreaterThanOrEqual(5.5);
-    const clampedRight40 = clampSquadCenterX(99, 40);
-    const clampedLeft40 = clampSquadCenterX(-99, 40);
-    expect(clampedRight40).toBeGreaterThanOrEqual(3.85);
-    expect(clampedLeft40).toBeCloseTo(-clampedRight40, 6);
+    // Arcade center-clamped movement: 1-soldier and 40-soldier squads reach the exact same outer-lane center!
+    expect(clampSquadCenterX(99, 1)).toBeCloseTo(SQUAD_CENTER_BOUNDARY_X, 5);
+    expect(clampSquadCenterX(99, 40)).toBeCloseTo(SQUAD_CENTER_BOUNDARY_X, 5);
+    expect(clampSquadCenterX(-99, 40)).toBeCloseTo(-SQUAD_CENTER_BOUNDARY_X, 5);
 
-    // No outer character ever overhangs or touches the bridge curb across 1..40 shooters
-    const safeInnerEdge = BRIDGE_PLAYABLE_HALF_WIDTH - GUARDRAIL_MARGIN;
-    for (let n = 1; n <= 40; n++) {
-      const maxCenter = clampSquadCenterX(99, n);
-      const outerMostCharacterX = maxCenter + computeSquadOuterRadius(n);
-      expect(outerMostCharacterX).toBeLessThanOrEqual(safeInnerEdge + 1e-6);
+    // Full 40-soldier blob pushed to far outer lane extends outer flanking soldiers slightly past the bridge curb
+    const outerMostSoldierX = clampSquadCenterX(99, 40) + computeSquadOuterRadius(40);
+    expect(outerMostSoldierX).toBeGreaterThan(BRIDGE_PLAYABLE_HALF_WIDTH);
+    expect(outerMostSoldierX).toBeLessThanOrEqual(SOLDIER_VISUAL_OVERHANG_LIMIT_X + 0.5);
+
+    // Off-curb flanking bullet spawn X clamps strictly onto the playable outer-lane rail (±5.10m)
+    expect(clampBulletSpawnX(0.4, 0)).toBeCloseTo(0.4, 5);
+    expect(clampBulletSpawnX(-3.2, 5)).toBeCloseTo(-3.2, 5);
+    for (let i = 0; i < 40; i++) {
+      const clampedRight = clampBulletSpawnX(6.9, i);
+      const clampedLeft = clampBulletSpawnX(-6.9, i);
+      expect(clampedRight).toBeLessThanOrEqual(BULLET_PLAYABLE_RAIL_X);
+      expect(clampedRight).toBeGreaterThanOrEqual(BULLET_PLAYABLE_RAIL_X - 0.35);
+      expect(clampedLeft).toBeGreaterThanOrEqual(-BULLET_PLAYABLE_RAIL_X);
+      expect(clampedLeft).toBeLessThanOrEqual(-BULLET_PLAYABLE_RAIL_X + 0.35);
     }
   });
 

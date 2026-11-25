@@ -47,7 +47,8 @@ function drumV3(
   rightHp: number,
   leftReward: { type: 'COINS' | 'WEAPON' | 'RECRUIT'; val: number },
   centerReward: { type: 'COINS' | 'WEAPON' | 'RECRUIT'; val: number },
-  rightReward: { type: 'COINS' | 'WEAPON' | 'RECRUIT'; val: number }
+  rightReward: { type: 'COINS' | 'WEAPON' | 'RECRUIT'; val: number },
+  rollSpeed = 3.1
 ): SupplyDrumDefinition[] {
   return [
     {
@@ -56,20 +57,53 @@ function drumV3(
       hp: Math.max(18, Math.round(centerHp)),
       rewardType: centerReward.type,
       rewardValue: centerReward.val,
+      rollSpeed,
     },
     {
       z: zCenter - 2.6,
       lane: 'LEFT',
-      hp: Math.max(20, Math.round(leftHp)),
+      hp: Math.max(18, Math.round(leftHp)),
       rewardType: leftReward.type,
       rewardValue: leftReward.val,
+      rollSpeed: Number((rollSpeed + 0.15).toFixed(2)),
     },
     {
       z: zCenter - 2.6,
       lane: 'RIGHT',
-      hp: Math.max(20, Math.round(rightHp)),
+      hp: Math.max(18, Math.round(rightHp)),
       rewardType: rightReward.type,
       rewardValue: rightReward.val,
+      rollSpeed: Number((rollSpeed + 0.15).toFixed(2)),
+    },
+  ];
+}
+
+function rollingShieldPair(
+  zLead: number,
+  laneA: 'LEFT' | 'CENTER' | 'RIGHT',
+  laneB: 'LEFT' | 'CENTER' | 'RIGHT',
+  hpA: number,
+  hpB: number,
+  rewardA: { type: 'COINS' | 'WEAPON' | 'RECRUIT'; val: number },
+  rewardB: { type: 'COINS' | 'WEAPON' | 'RECRUIT'; val: number },
+  rollSpeed = 3.4
+): SupplyDrumDefinition[] {
+  return [
+    {
+      z: zLead,
+      lane: laneA,
+      hp: Math.max(22, Math.round(hpA)),
+      rewardType: rewardA.type,
+      rewardValue: rewardA.val,
+      rollSpeed,
+    },
+    {
+      z: zLead - 2.4,
+      lane: laneB,
+      hp: Math.max(22, Math.round(hpB)),
+      rewardType: rewardB.type,
+      rewardValue: rewardB.val,
+      rollSpeed: Number((rollSpeed + 0.2).toFixed(2)),
     },
   ];
 }
@@ -319,66 +353,147 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
     const midWeapon = Math.min(5, earlyWeapon + 1) as WeaponTierId;
     const lateWeapon = Math.min(5, midWeapon + (act >= 1 ? 1 : 0)) as WeaponTierId;
 
-    // 3 V-Trio Hex Ordnance Pod Formations per Act (12 formations = 36 pods total!)
-    // Placed with generous sightlines before Gates (#1 at 0.195, #3 at 0.865)
+    // 3 V-Trio Rolling Barrel Formations + 3 Rolling Shield Pairs ahead of Waves & Gates per Act
+    // (15 rolling barrels/Act = 60 rolling barrels total in strictly monotonic -Z order!)
+    // Preserves v7.4 >= 42m gate-to-wave clearance untouched.
+    const shieldLeftFirst = (seed.stageNumber + act) % 2 === 0;
+    const wave1ShieldLanes: readonly ['LEFT' | 'CENTER' | 'RIGHT', 'LEFT' | 'CENTER' | 'RIGHT'] =
+      shieldLeftFirst ? ['LEFT', 'RIGHT'] : ['CENTER', 'LEFT'];
+    const gate2ShieldLanes: readonly ['LEFT' | 'CENTER' | 'RIGHT', 'LEFT' | 'CENTER' | 'RIGHT'] =
+      shieldLeftFirst ? ['CENTER', 'RIGHT'] : ['LEFT', 'RIGHT'];
+    const wave2ShieldLanes: readonly ['LEFT' | 'CENTER' | 'RIGHT', 'LEFT' | 'CENTER' | 'RIGHT'] =
+      shieldLeftFirst ? ['RIGHT', 'CENTER'] : ['RIGHT', 'LEFT'];
+
     if (act === 0) {
       supplyDrums.push(
         ...drumV3(
-          actBaseZ - 17.5,
-          36 * seed.hpScale,
-          96 * s,
-          34 * seed.hpScale,
+          actBaseZ - 18.0,
+          24 * seed.hpScale,
+          76 * s,
+          22 * seed.hpScale,
           { type: 'RECRUIT', val: 1 },
           { type: 'COINS', val: Math.round(32 + seed.stageNumber * 12) },
-          { type: 'RECRUIT', val: 2 }
+          { type: 'RECRUIT', val: 2 },
+          2.8
         ),
         ...drumV3(
           actBaseZ - Math.round(actSpan * 0.115),
-          54 * s,
-          295 * s,
-          56 * s,
+          46 * s,
+          255 * s,
+          48 * s,
           { type: 'RECRUIT', val: 2 },
           { type: 'COINS', val: Math.round(52 + seed.stageNumber * 18) },
-          { type: 'WEAPON', val: earlyWeapon }
+          { type: 'WEAPON', val: earlyWeapon },
+          3.05
+        ),
+        // Rolling shield barrels ahead of Wave 1 (0.310)
+        ...rollingShieldPair(
+          actBaseZ - Math.round(actSpan * 0.268),
+          wave1ShieldLanes[0],
+          wave1ShieldLanes[1],
+          72 * s,
+          82 * s,
+          { type: 'RECRUIT', val: 2 },
+          { type: 'COINS', val: Math.round(48 + seed.stageNumber * 16) },
+          3.25
+        ),
+        // Rolling shield barrels ahead of Gate 2 (0.468)
+        ...rollingShieldPair(
+          actBaseZ - Math.round(actSpan * 0.432),
+          gate2ShieldLanes[0],
+          gate2ShieldLanes[1],
+          115 * s,
+          128 * s,
+          { type: 'COINS', val: Math.round(64 + seed.stageNumber * 20) },
+          { type: 'RECRUIT', val: 2 },
+          3.35
+        ),
+        // Rolling shield barrels ahead of Wave 2 (0.585)
+        ...rollingShieldPair(
+          actBaseZ - Math.round(actSpan * 0.545),
+          wave2ShieldLanes[0],
+          wave2ShieldLanes[1],
+          145 * s,
+          158 * s,
+          { type: 'RECRUIT', val: 2 },
+          { type: 'COINS', val: Math.round(74 + seed.stageNumber * 24) },
+          3.45
         ),
         ...drumV3(
           actBaseZ - Math.round(actSpan * 0.795),
-          195 * s,
-          155 * s,
-          215 * s,
+          190 * s,
+          150 * s,
+          210 * s,
           { type: 'COINS', val: Math.round(85 + seed.stageNumber * 28) },
           { type: 'RECRUIT', val: 3 },
-          { type: 'WEAPON', val: midWeapon }
+          { type: 'WEAPON', val: midWeapon },
+          3.4
         )
       );
     } else {
       supplyDrums.push(
         ...drumV3(
           actBaseZ - Math.round(actSpan * 0.065),
-          120 * s,
-          175 * s,
-          130 * s,
+          115 * s,
+          168 * s,
+          125 * s,
           { type: 'WEAPON', val: earlyWeapon },
           { type: 'COINS', val: Math.round((32 + seed.stageNumber * 12) * (1 + act * 0.3)) },
-          { type: 'RECRUIT', val: 2 + Math.floor(act / 2) }
+          { type: 'RECRUIT', val: 2 + Math.floor(act / 2) },
+          3.15
         ),
         ...drumV3(
           actBaseZ - Math.round(actSpan * 0.125),
-          110 * s,
-          285 * s,
-          125 * s,
+          106 * s,
+          275 * s,
+          120 * s,
           { type: 'RECRUIT', val: 3 },
           { type: 'COINS', val: Math.round((52 + seed.stageNumber * 18) * (1 + act * 0.35)) },
-          { type: 'WEAPON', val: midWeapon }
+          { type: 'WEAPON', val: midWeapon },
+          3.25
+        ),
+        // Rolling shield barrels ahead of Wave 1 (0.310)
+        ...rollingShieldPair(
+          actBaseZ - Math.round(actSpan * 0.268),
+          wave1ShieldLanes[0],
+          wave1ShieldLanes[1],
+          152 * s,
+          164 * s,
+          { type: 'RECRUIT', val: 2 },
+          { type: 'COINS', val: Math.round((56 + seed.stageNumber * 18) * (1 + act * 0.32)) },
+          3.4
+        ),
+        // Rolling shield barrels ahead of Gate 2 (0.468)
+        ...rollingShieldPair(
+          actBaseZ - Math.round(actSpan * 0.432),
+          gate2ShieldLanes[0],
+          gate2ShieldLanes[1],
+          178 * s,
+          192 * s,
+          { type: 'COINS', val: Math.round((70 + seed.stageNumber * 22) * (1 + act * 0.35)) },
+          { type: 'RECRUIT', val: 3 },
+          3.5
+        ),
+        // Rolling shield barrels ahead of Wave 2 (0.585)
+        ...rollingShieldPair(
+          actBaseZ - Math.round(actSpan * 0.545),
+          wave2ShieldLanes[0],
+          wave2ShieldLanes[1],
+          205 * s,
+          218 * s,
+          { type: 'RECRUIT', val: 3 },
+          { type: 'COINS', val: Math.round((80 + seed.stageNumber * 26) * (1 + act * 0.38)) },
+          3.55
         ),
         ...drumV3(
           actBaseZ - Math.round(actSpan * 0.795),
-          240 * s,
-          185 * s,
-          265 * s,
+          235 * s,
+          180 * s,
+          260 * s,
           { type: 'COINS', val: Math.round((88 + seed.stageNumber * 28) * (1 + act * 0.4)) },
           { type: 'RECRUIT', val: 4 },
-          { type: 'WEAPON', val: lateWeapon }
+          { type: 'WEAPON', val: lateWeapon },
+          3.55
         )
       );
     }

@@ -268,9 +268,10 @@ export class SceneManager {
 
     this.camera.aspect = aspect;
 
-    // Flatter ~52.5° portrait vertical FOV eliminates foreground fisheye bloat while showing wide ocean curbs
+    // v8.0 Locked-Center 3-Lane Portrait Framing: ~66.5° portrait vertical FOV (~46° landscape)
+    // tuned with 35° downward pitch so both guardrails and all 3 lanes stay permanently in frame on 9:16 (412×915)
     this.portraitFactor = Math.max(0, Math.min(1, (0.95 - aspect) / 0.5));
-    this.camera.fov = 43.2 + this.portraitFactor * 8.0;
+    this.camera.fov = 46.0 + this.portraitFactor * 20.5;
     this.camera.updateProjectionMatrix();
 
     this.renderer.setPixelRatio(dpr);
@@ -405,45 +406,55 @@ export class SceneManager {
       _desiredPos.set(0, ARMORY_STAGE_Y + 0.62, ARMORY_STAGE_Z + 5.75 + p * 1.65);
       _desiredLook.set(0, ARMORY_STAGE_Y - 0.14 - p * 0.30, ARMORY_STAGE_Z);
     } else if (framingMode === 'LIVE_BRIDGE') {
-      // ~10% closer Start Camera so shooters & wands/rifles read clearly above Upgrade cards
-      const targetCamX = squadX * (0.54 + p * 0.14);
-      this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 9.5);
+      // Showcase Hub camera with locked-center 20% follow so all 3 lanes & guardrails frame the start screen cleanly
+      const targetCamX = squadX * 0.20;
+      this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 6.5);
 
-      _desiredPos.set(
-        this.smoothCamX,
-        6.12 + p * 1.38,
-        squadZ + 9.55 + p * 3.78
-      );
-      _desiredLook.set(
-        this.smoothCamX * 0.78,
-        -0.36 - p * 1.02,
-        squadZ - 10.2
-      );
+      const camHeight = 12.4 + p * 5.4;
+      const camBack = 11.4 + p * 4.8;
+      const lookAhead = 8.4 + p * 2.8;
+      _desiredPos.set(this.smoothCamX, camHeight, squadZ + camBack);
+      _desiredLook.set(this.smoothCamX * 0.65, -0.4 - p * 0.4, squadZ - lookAhead);
     } else {
-      // ~10% closer Run & Boss Tactical Camera with full curb-to-curb lateral tracking across the +25% wider deck
+      // v8.0 Locked-Center 3-Lane Arcade Camera:
+      // - Heavily damped ~20% horizontal follow (keeps bridge centered & stable during fast lateral swipes!)
+      // - Rigid forward Z tracking (zero Z lag)
+      // - ~35.0° downward pitch (34°–36°) with pronounced guardrail vanishing-point convergence
+      //   keeping both guardrails (±6.86m) and all 3 lanes permanently in frame on 412×915 portrait!
       const inBossFight = framingMode === 'BOSS_TACTICAL';
-      const followGain = inBossFight ? 0.56 + p * 0.12 : 0.64 + p * 0.14;
+      const followGain = 0.20;
       const targetCamX = squadX * followGain;
-      this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 11.0);
+      this.smoothCamX += (targetCamX - this.smoothCamX) * Math.min(1, dt * 6.5);
 
-      const camHeight = inBossFight ? 6.88 + p * 1.56 : 6.24 + p * 1.48;
-      const camBack = inBossFight ? 10.62 + p * 4.14 : 9.72 + p * 3.96;
+      const camHeight = inBossFight ? 15.2 + p * 6.8 : 14.5 + p * 6.5;
+      const camBack = inBossFight ? 12.8 + p * 5.8 : 12.2 + p * 5.6;
+      const lookAhead = inBossFight ? 8.9 + p * 4.0 : 8.5 + p * 3.7;
+      const lookY = inBossFight ? 0.2 : 0.0;
 
       _desiredPos.set(this.smoothCamX, camHeight, squadZ + camBack);
       _desiredLook.set(
-        this.smoothCamX * 0.82,
-        (inBossFight ? 0.32 : -0.18) - p * (inBossFight ? 0.54 : 0.86),
-        squadZ - (inBossFight ? 11.2 : 10.5)
+        this.smoothCamX * 0.65,
+        lookY,
+        squadZ - lookAhead
       );
     }
 
-    const snapInstant =
-      isArmory !== (this.lastFramingMode === 'ARMORY_INSPECT');
+    const prevMode = this.lastFramingMode;
+    const snapInstant = isArmory !== (prevMode === 'ARMORY_INSPECT');
     this.lastFramingMode = framingMode;
 
     if (snapInstant) {
       this.currentCamPos.copy(_desiredPos);
       this.currentLookAt.copy(_desiredLook);
+    } else if (framingMode === 'RUN_TACTICAL' || framingMode === 'BOSS_TACTICAL') {
+      // Rigid forward Z tracking (zero Z lag), smooth X/Y transitions
+      const blendXY = Math.min(1, dt * 10.0);
+      this.currentCamPos.x += (_desiredPos.x - this.currentCamPos.x) * blendXY;
+      this.currentCamPos.y += (_desiredPos.y - this.currentCamPos.y) * blendXY;
+      this.currentCamPos.z = _desiredPos.z;
+      this.currentLookAt.x += (_desiredLook.x - this.currentLookAt.x) * blendXY;
+      this.currentLookAt.y += (_desiredLook.y - this.currentLookAt.y) * blendXY;
+      this.currentLookAt.z = _desiredLook.z;
     } else {
       const blend = Math.min(1, dt * 8.5);
       this.currentCamPos.lerp(_desiredPos, blend);
