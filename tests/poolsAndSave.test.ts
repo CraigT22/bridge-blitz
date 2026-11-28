@@ -125,7 +125,7 @@ describe('ObjectPool & Core State Integrity', () => {
     }
   });
 
-  it('defines 10 valid v8.2 marathon stages with Spiked Hazard Drums, Dilemma Gates, Shooters/Chargers, and 2-lane Boss Salvos while preserving >= 42m gate clearance', () => {
+  it('defines 10 valid v8.3 marathon stages with 24 massive tactical waves, 32-echelon Split Causeways, Spiked Drums, Dilemma Gates, and 2-lane Boss Salvos while preserving >= 42m gate clearance', () => {
     expect(CAMPAIGN_STAGES).toHaveLength(10);
     const seenChassis = new Set<string>();
     for (let i = 0; i < CAMPAIGN_STAGES.length; i++) {
@@ -145,27 +145,37 @@ describe('ObjectPool & Core State Integrity', () => {
       ).toBe(true);
       expect(stage.tireStacks.length).toBe(24);
       expect(stage.enemyWaves.length).toBe(16);
-      expect(stage.enemyWaves[1].count).toBeGreaterThanOrEqual(24);
+      expect(stage.enemyWaves[0].count).toBeGreaterThanOrEqual(38);
+      expect(stage.enemyWaves[stage.enemyWaves.length - 1].count).toBeGreaterThanOrEqual(136);
+      const totalWaveEnemies = stage.enemyWaves.reduce((sum, w) => sum + w.count, 0);
+      expect(totalWaveEnemies).toBeGreaterThanOrEqual(1500);
+      expect(stage.enemyWaves.some((w) => w.formation === 'WEDGE_BLITZ')).toBe(true);
+      expect(stage.enemyWaves.some((w) => w.formation === 'PINCER_FLANK')).toBe(true);
+      expect(stage.enemyWaves.some((w) => w.formation === 'SHIELD_PHALANX')).toBe(true);
+      expect(stage.enemyWaves.some((w) => w.formation === 'FIRING_SQUAD')).toBe(true);
+      expect(stage.enemyWaves.some((w) => w.formation === 'HORDE_TIDAL_WAVE')).toBe(true);
       expect(stage.enemyWaves.some((w) => (w.shooterCount ?? 0) > 0)).toBe(true);
       expect(stage.enemyWaves.some((w) => (w.chargerCount ?? 0) > 0)).toBe(true);
       expect(stage.midBrute).toBeDefined();
       expect(stage.midBrutes?.length).toBe(3);
-      expect(stage.midBrute!.maxHp).toBeGreaterThanOrEqual(6000);
-      expect(stage.boss.maxHp).toBeGreaterThanOrEqual(10500);
+      expect(stage.midBrute!.maxHp).toBeGreaterThanOrEqual(11000);
+      expect(stage.boss.maxHp).toBeGreaterThanOrEqual(18000);
       expect(stage.boss.salvoLanes).toBe(2);
-      expect(stage.boss.salvoDamage).toBeGreaterThanOrEqual(7);
-      expect(stage.boss.salvoDamage).toBeLessThanOrEqual(18);
+      expect(stage.boss.salvoDamage).toBeGreaterThanOrEqual(10);
+      expect(stage.boss.salvoDamage).toBeLessThanOrEqual(20);
 
       const expectedLayout = stage.stageNumber % 2 === 0 ? 'SPLIT_CAUSEWAY' : 'STANDARD_BRIDGE';
       expect(stage.boardLayout).toBe(expectedLayout);
       if (expectedLayout === 'SPLIT_CAUSEWAY') {
         expect(stage.splitCauseway).toBeDefined();
         expect(stage.splitCauseway!.leftQueue.length).toBe(28);
-        expect(stage.splitCauseway!.rightEchelons.length).toBe(26);
-        expect(
-          stage.splitCauseway!.rightEchelons[0].cols *
-            stage.splitCauseway!.rightEchelons[0].rows
-        ).toBeGreaterThanOrEqual(20);
+        expect(stage.splitCauseway!.rightEchelons.length).toBe(32);
+        const totalRightTroopers = stage.splitCauseway!.rightEchelons.reduce(
+          (sum, ech) => sum + ech.cols * ech.rows,
+          0
+        );
+        expect(totalRightTroopers).toBeGreaterThanOrEqual(800);
+        expect(totalRightTroopers).toBeLessThanOrEqual(1024);
         expect(stage.splitCauseway!.goliathSpawns.length).toBe(3);
         expect(stage.splitCauseway!.marchSpeed).toBeGreaterThanOrEqual(6.80);
         expect(stage.splitCauseway!.leftQueue[0].barrelHp).toBeGreaterThanOrEqual(35);
@@ -514,5 +524,101 @@ describe('ObjectPool & Core State Integrity', () => {
       }
     }
     expect(crossedAndSteeredLeft).toBeGreaterThanOrEqual(2);
+  });
+
+  it('supports 144-unit v8.3 WaveFormations with 256-stride piercing entityIds and Boss 75% HP Normal escort phalanxes', async () => {
+    const THREE = await import('three');
+    const { BossEntity } = await import('../src/entities/BossEntity');
+    const { EnemyProjectileSystem } = await import('../src/entities/EnemyProjectileSystem');
+
+    // 1. 144-unit HORDE_TIDAL_WAVE fits cleanly with zero unit entityId collision across wave slots
+    const waveA = new EnemyWaveSlot(0);
+    const waveB = new EnemyWaveSlot(1);
+    waveA.configure({
+      z: -32,
+      lane: 'CENTER',
+      formation: 'HORDE_TIDAL_WAVE',
+      count: 144,
+      hpPerEnemy: 40,
+      heavyCount: 30,
+      shooterCount: 28,
+      chargerCount: 6,
+      speed: 3.4,
+      coinPerKill: 6,
+    });
+    waveB.configure({
+      z: -32,
+      lane: 'CENTER',
+      formation: 'PINCER_FLANK',
+      count: 96,
+      hpPerEnemy: 30,
+      heavyCount: 16,
+      shooterCount: 20,
+      chargerCount: 4,
+      speed: 3.4,
+      coinPerKill: 6,
+    });
+    expect(waveA.aliveCount).toBe(144);
+    expect(waveB.aliveCount).toBe(96);
+    expect(waveA.formation).toBe('HORDE_TIDAL_WAVE');
+    expect(waveB.formation).toBe('PINCER_FLANK');
+
+    // Verify PINCER_FLANK places wing units across both outer flanks (<-2.2 and >+2.2)
+    let leftWing = 0;
+    let rightWing = 0;
+    for (let i = 0; i < waveB.getConfiguredCount(); i++) {
+      if (waveB.unitX[i] < -2.2) leftWing++;
+      if (waveB.unitX[i] > 2.2) rightWing++;
+    }
+    expect(leftWing).toBeGreaterThanOrEqual(24);
+    expect(rightWing).toBeGreaterThanOrEqual(24);
+
+    // Verify 256-stride piercing entityId prevents double-hitting the same armored unit while piercing to the next unit
+    const hitX = waveA.unitX[0];
+    const hitZ = waveA.unitZ[0];
+    const firstHit = waveA.tryBulletHit(hitX, hitZ, hitZ + 2, 10, -1);
+    expect(firstHit).toBe(0);
+    const firstUnitId = waveA.lastHitUnitEntityId;
+    expect(firstUnitId).toBeGreaterThanOrEqual(waveA.entityId * 256);
+    expect(firstUnitId).toBeLessThan((waveA.entityId + 1) * 256);
+    const hitIdx = firstUnitId - waveA.entityId * 256;
+    const sameUnitHpBefore = waveA.unitHp[hitIdx];
+    waveA.tryBulletHit(hitX, hitZ, hitZ + 0.1, 10, firstUnitId);
+    expect(waveA.unitHp[hitIdx]).toBe(sameUnitHpBefore);
+
+    // Verify multi-lane shooter salvo fires >= 2 bolts rapidly in FIRING_SQUAD
+    const scene = new THREE.Scene();
+    const proj = new EnemyProjectileSystem(scene);
+    const firingWave = new EnemyWaveSlot(2);
+    firingWave.configure({
+      z: -34,
+      lane: 'CENTER',
+      formation: 'FIRING_SQUAD',
+      count: 72,
+      hpPerEnemy: 30,
+      heavyCount: 12,
+      shooterCount: 24,
+      chargerCount: 4,
+      speed: 3.2,
+      coinPerKill: 6,
+    });
+    let totalBoltsFired = 0;
+    for (let step = 0; step < 35; step++) {
+      proj.beginTelegraphs();
+      firingWave.update(0.05, 0, 0, null, proj, 1.0, 2);
+      proj.finishTelegraphs();
+      if (firingWave.lastStepFiredBolt) totalBoltsFired++;
+      proj.update(0.05, 4.9, 0, 20);
+    }
+    expect(totalBoltsFired).toBeGreaterThanOrEqual(2);
+
+    // 2. Boss 75% HP triggers >= 12-unit Escort Phalanx even on NORMAL difficulty (tempoMult = 1.0)
+    const boss = new BossEntity(scene);
+    boss.configure(CAMPAIGN_STAGES[0].boss, 100);
+    boss.tryBulletHit(0, boss.z, boss.z + 2, boss.maxHp * 0.28, 1.0, -1);
+    boss.update(0.05, true, 0, -100, 25, 1.0);
+    expect(boss.isEnraged).toBe(false);
+    expect(boss.lastStepSummonEscorts).toBe(true);
+    expect(boss.lastStepEscortCount).toBeGreaterThanOrEqual(12);
   });
 });

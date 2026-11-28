@@ -109,21 +109,26 @@ jobs:
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v8.2.0
-          name: Bridge Blitz v8.2.0 — Skill + Progression Difficulty Overhaul APK
+          tag_name: v8.3.0
+          name: Bridge Blitz v8.3.0 — Massive Tactical Hordes & High-Intensity Overhaul APK
           body: |
-            ### Bridge Blitz v8.2.0 — Skill + Progression Difficulty Overhaul (`versionCode 22`)
-            - **Direct Chrome Download (installs cleanly over v8.1 / v8.0 / v7.4 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=22)
-            - **What's New in v8.2**:
-              - **4 Active Combat Threats (Full Parity on Standard Bridge & Split Causeway)**:
-                - **Ranged Enemy Shooters**: Backline units telegraph with a glowing charge orb and fire lane-locked bolts straight down-lane (`vx = 0`) that inflict real casualties unless dodged.
-                - **Armored Lane Chargers**: Heavy vanguard units lock a glowing ground rush lane and sprint at `2.85×` speed (`2.15×` on Split Causeway); stopping them mid-charge awards `1.5×` bonus coins (`CHARGER STOPPED!`), while impact inflicts heavy bonus casualties.
-                - **2-Lane Rolling Barrel Gauntlets & Spiked Hazard Drums**: Coordinated 2-lane rolling walls featuring red-banded 3D **Spiked Hazard Drums** with rotating spikes, crimson `!` warning triangles, lethal-capable crash casualties (no artificial immortality floor), and clean `14m` behind-barricade standoff so rolling drums never clip through standing walls.
-                - **Dilemma & Trap Gates**: Steeper shoot-to-flip resistance, snappier passive decay (`0.32s` grace), and locked crimson penalty gates (`÷2` / `-7..-16`) paired opposite tough shootable gates.
-              - **Mid-Boss & Final Boss Overhaul**:
-                - **Final Bosses**: Alternating **2-lane telegraphed salvos starting from Sector 1** across Campaign, Split Causeway, and Endless modes; **50% HP Enrage Phase** (glowing aura, `• ENRAGED!` Boss HUD, faster salvos & warheads) + periodic **Escort Squad Summons** (and pre-enrage summons at 75% HP on Hard/Nightmare), plus `1.45m` pushback recoil & `0.65s` stagger on Armor Segment break.
-                - **Mid-Boss Brutes**: Faster combat cadence + alternating **Wide 2-Lane Shockwave Slams (`3.10m` radius)** with forward lunge.
-              - **Difficulty Tiers (`NORMAL 1×` / `HARD 1.5×` / `NIGHTMARE 2.25×`) & Smooth Diminishing-Returns Hub Upgrades**:
-                - Selectable Hub Difficulty Tier bar persisted in save data, scaling enemy HP, speed, drum HP, gate cost, boss HP/tempo, shooter/charger cadence, bolt damage, and coin multipliers (`1×` / `1.5×` / `2.25×`) with live top-HUD badge and summary multiplier readout.
-                - Re-calibrated base bullet damage (`3.1`), slower ebb-and-flow squad ramp, and smooth hyperbolic Hub upgrade scaling while preserving all saved coins, upgrades, unlocked stages, `v8.1` heroic framing/scales, Girls vs. Boys Unicorn default skin + Tactical toggle, `>= 42m` gate-to-wave clearance, and persistent Split Causeway Left-Column barrel HP.
+            ### Bridge Blitz v8.3.0 — Massive Tactical Hordes & High-Intensity Overhaul (`versionCode 23`)
+            - **Direct Chrome Download (installs cleanly over v8.2 / v8.1 / v8.0 / v7.4 while keeping saved progress!)**: [BridgeBlitz-Pixel10XL.apk](https://raw.githubusercontent.com/CraigT22/bridge-blitz/gh-pages/download/BridgeBlitz-Pixel10XL.apk?v=23)
+            - **What's New in v8.3**:
+              - **Massive Tactical Enemy Hordes (`38–136` units/wave Normal, up to `144` on Hard/Nightmare; `~1,520+` enemies per sector — ~3× `v8.2` volume!)**:
+                - Raised `EnemyWaveSlot` capacity from `52 → 144` units (all rendered single-pass inside `InstancedBatchRenderer`'s 1,000-enemy instanced budget with zero extra draw calls and 256-stride piercing unit entityIds).
+                - **5 Distinct Tactical Wave Formations**:
+                  - **`WEDGE_BLITZ`**: Fast (`1.16×`) inverted-V spearhead led by simultaneous Armored Chargers locking multiple ground rush lanes.
+                  - **`SHIELD_PHALANX`**: Solid front wall of `4.2×`-HP Armored Heavies screening rows of backline Ranged Shooters.
+                  - **`PINCER_FLANK`**: Thick Left & Right outer-lane columns squeezing inward while Armored Chargers rocket down the center corridor.
+                  - **`FIRING_SQUAD`**: Wide staggered barrage anchored by 3 armored bastions and 18–30+ Ranged Shooters firing coordinated 2–3 lane bolt volleys.
+                  - **`HORDE_TIDAL_WAVE`**: Deep 84–136+ unit horizon-to-horizon tsunami (10 columns × up to 14 rows) with recurring mid-echelon Heavy anchor ranks.
+                - **Smarter, Deadlier Wave Combat**: Extended `46m` engage & `44m` shooter range, multi-lane concurrent shooter salvos (`2–6` concurrent) & multi-lane charger blitzes (`2–5` concurrent) at `20.5 m/s` bolt speed (`2 / 3 / 4` bolt damage across Normal/Hard/Nightmare), `3.1×` charger rush speed (`5 / 6 / 7` crash damage), controlled close-range flank squeeze, `1.12×` rear-rank surge, and clean `12m` intact-barricade standoff so hordes surge through the moment you breach a Tire Wall lane.
+              - **Re-Calibrated Late-Game Power & Escalated Boss / Mid-Boss Battles**:
+                - Tightened base bullet damage (`3.1 → 2.75`), Lv2–Lv5 weapon tiers, and rear-rank crowd efficiency (`1..6: 1.0`, `7..18: 0.70`, `19..40: 0.48`) so even heavily upgraded saves face genuine 4–6 second horde sweeps instead of instant screen wipes.
+                - **Final Bosses (`18,000 HP` Sector 1 → `92,000 HP` Sector 10)**: Deeper `24.5m` arena, faster `1.22s → 0.88s` 2-lane salvos (`10–18` dmg), `1.65m` segment-break recoil, **12–16 unit Escort Phalanx at 75% HP on ALL difficulties**, and **14–20 unit Enrage Escort Phalanxes** every `3.6s` below 50% HP.
+                - **Mid-Boss Brutes (`11,200 HP` Sector 1 → `62,000 HP` Sector 10)**: Snappier attack cadence (`0.60s` / `0.78s` Wide Slam) plus a **50% HP `PINCER_FLANK` Flanking Ambush** wave!
+              - **32-Echelon Split Causeway Siege (`~850–940` troopers, `MAX_CAUSEWAY_TROOPERS = 1024`)**:
+                - Denser, `~2×` tougher Right-Column battalions with 2–4 concurrent Shooters (`42m` range) and 2–4 concurrent Chargers (`2.35×` rush), while strictly preserving persistent Left-Column barrel HP damage.
+              - **Intensified Difficulty Tiers (`NORMAL` / `HARD` / `NIGHTMARE`)**: Escalated `waveCountMult` (`1.0×` / `1.20×` / `1.35×`), HP (`1.0×` / `1.65×` / `2.45×`), Boss HP (`1.0×` / `1.65×` / `2.35×`), and bolt/charger lethality while keeping all `v8.1`/`v8.2` visuals, Unicorn default skin + Tactical toggle, `>= 42m` gate-to-wave clearance, and saved player data intact.
           files: BridgeBlitz-Pixel10XL.apk

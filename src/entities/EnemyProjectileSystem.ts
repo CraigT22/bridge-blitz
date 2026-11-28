@@ -2,11 +2,11 @@ import * as THREE from 'three';
 import type { SkinThemeId } from '../core/types';
 import { computeSquadOuterRadius } from '../math/formationMath';
 
-const MAX_ENEMY_BOLTS = 48;
-const MAX_SHOOTER_TELEGRAPHS = 24;
-const MAX_CHARGER_LANES = 12;
+const MAX_ENEMY_BOLTS = 96;
+const MAX_SHOOTER_TELEGRAPHS = 48;
+const MAX_CHARGER_LANES = 24;
 
-export const ENEMY_BOLT_BASE_SPEED = 16.5;
+export const ENEMY_BOLT_BASE_SPEED = 20.5;
 
 const _pos = new THREE.Vector3();
 const _quat = new THREE.Quaternion();

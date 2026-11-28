@@ -112,6 +112,14 @@ export interface TireStackDefinition {
   readonly coinReward?: number;
 }
 
+export type WaveFormation =
+  | 'STANDARD'
+  | 'SHIELD_PHALANX'
+  | 'PINCER_FLANK'
+  | 'WEDGE_BLITZ'
+  | 'FIRING_SQUAD'
+  | 'HORDE_TIDAL_WAVE';
+
 export interface EnemyWaveDefinition {
   readonly z: number;
   readonly lane: LaneSide | 'CENTER';
@@ -125,6 +133,8 @@ export interface EnemyWaveDefinition {
   readonly shooterCount?: number;
   /** Number of heavy vanguard chargers capable of telegraphed lane sprints */
   readonly chargerCount?: number;
+  /** v8.3 Tactical enemy wave formation geometry & combat behavior */
+  readonly formation?: WaveFormation;
 }
 
 export interface BossDefinition {

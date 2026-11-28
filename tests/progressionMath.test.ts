@@ -113,11 +113,11 @@ describe('progressionMath', () => {
     );
   });
 
-  it('maintains strictly monotonic v8.2 Siege Goliath HP, Boss HP, and 2-lane salvos across all 10 Campaign sectors & difficulty scaling', async () => {
+  it('maintains strictly monotonic v8.3 Siege Goliath HP, Boss HP, waveCountMult, and 2-lane salvos across all 10 Campaign sectors & difficulty scaling', async () => {
     const { applyDifficultyToStage, CAMPAIGN_STAGES } = await import('../src/core/StageData');
     expect(CAMPAIGN_STAGES).toHaveLength(10);
-    expect(CAMPAIGN_STAGES[0].boss.maxHp).toBe(10800);
-    expect(CAMPAIGN_STAGES[9].boss.maxHp).toBe(64000);
+    expect(CAMPAIGN_STAGES[0].boss.maxHp).toBe(18000);
+    expect(CAMPAIGN_STAGES[9].boss.maxHp).toBe(92000);
     expect(CAMPAIGN_STAGES[0].boss.salvoLanes).toBe(2);
 
     for (let i = 1; i < CAMPAIGN_STAGES.length; i++) {
@@ -130,13 +130,16 @@ describe('progressionMath', () => {
       expect(curr.midBrute!.maxHp).toBeGreaterThan(prev.midBrute!.maxHp);
     }
 
-    // applyDifficultyToStage scales HP, speed, gate cost, and salvo cadence without mutating base stages
+    // applyDifficultyToStage scales wave count, HP, speed, gate cost, and salvo cadence without mutating base stages
     const baseS1 = CAMPAIGN_STAGES[0];
     const hardS1 = applyDifficultyToStage(baseS1, 'HARD');
     const nmS1 = applyDifficultyToStage(baseS1, 'NIGHTMARE');
-    expect(baseS1.boss.maxHp).toBe(10800);
+    expect(baseS1.boss.maxHp).toBe(18000);
     expect(hardS1.boss.maxHp).toBeGreaterThan(baseS1.boss.maxHp);
     expect(nmS1.boss.maxHp).toBeGreaterThan(hardS1.boss.maxHp);
+    expect(hardS1.enemyWaves[0].count).toBeGreaterThan(baseS1.enemyWaves[0].count);
+    expect(nmS1.enemyWaves[0].count).toBeGreaterThan(hardS1.enemyWaves[0].count);
+    expect(nmS1.enemyWaves[nmS1.enemyWaves.length - 1].count).toBeLessThanOrEqual(144);
     expect(hardS1.enemyWaves[0].hpPerEnemy).toBeGreaterThan(baseS1.enemyWaves[0].hpPerEnemy);
     expect(nmS1.boss.salvoInterval).toBeLessThan(baseS1.boss.salvoInterval);
   });

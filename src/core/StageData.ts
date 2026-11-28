@@ -264,30 +264,30 @@ function buildSplitCausewayDefinition(
     });
   }
 
-  // 26 larger, faster Right-Lane Echelons surging down the wider right column with Shooters & Chargers
+  // 32 denser, tougher Right-Lane Echelons (~875 troopers total!) surging with Shooters & Armored Chargers
   const rightEchelons: SplitHordeEchelonDefinition[] = [];
-  let cursorZ = 21.5;
-  const totalEchelons = 26;
+  let cursorZ = 22.0;
+  const totalEchelons = 32;
   for (let e = 0; e < totalEchelons; e++) {
     const progress = e / (totalEchelons - 1);
     let rank: EnemyVisualRank = 1;
-    if (e === 0 || (e >= 3 && e % 4 === 3)) {
+    if (e === 0 || (e >= 3 && e % 4 === 3 && e < 29)) {
       rank = 0; // Fast Horned Volt-Trim Vanguard Raiders
-    } else if (e === 2 || (e >= 6 && e % 4 === 2) || e >= 23) {
+    } else if (e === 2 || (e >= 6 && e % 4 === 2) || e >= 29) {
       rank = 2; // Towering 1.65x Horned Ironclad Enforcers (Armored Chargers!)
     }
 
-    const cols = rank === 2 ? 5 : e === 0 ? 5 : e <= 5 ? 6 : 7;
-    const rows = rank === 2 ? 3 : 4;
-    const echelonGrowth = 1 + Math.pow(progress, 1.42) * 1.85;
+    const cols = rank === 2 ? 6 : e === 0 ? 5 : e <= 4 ? 6 : 7;
+    const rows = rank === 2 ? 3 : e > 15 ? 5 : 4;
+    const echelonGrowth = 1 + Math.pow(progress, 1.38) * 2.55;
     const rankHpMul =
-      rank === 2 ? 1.85 : rank === 0 ? (e === 0 ? 0.62 : 0.82) : 1.0;
+      rank === 2 ? 2.45 : rank === 0 ? (e === 0 ? 0.65 : 0.88) : 1.0;
     const hpPerUnit = Math.max(
-      9,
-      Math.round(enemyBaseHp * d * 0.78 * echelonGrowth * rankHpMul)
+      12,
+      Math.round(enemyBaseHp * d * 1.18 * echelonGrowth * rankHpMul)
     );
     const unitSpeed =
-      rank === 2 ? marchSpeed * 0.96 : rank === 0 ? marchSpeed * 1.10 : marchSpeed;
+      rank === 2 ? marchSpeed * 0.98 : rank === 0 ? marchSpeed * 1.12 : marchSpeed;
     const coinPerKill =
       rank === 2
         ? Math.round((coinBase + 2) * 3.0)
@@ -301,38 +301,38 @@ function buildSplitCausewayDefinition(
       hpPerUnit,
       speed: Number(unitSpeed.toFixed(2)),
       coinPerKill,
-      shooterRatio: rank === 2 ? 0 : 0.22,
-      chargerRatio: rank === 2 ? 0.55 : 0,
+      shooterRatio: rank === 2 ? 0 : 0.28,
+      chargerRatio: rank === 2 ? 0.62 : 0,
     });
 
-    const depthSpan = rows * (rank === 2 ? 1.42 : 1.04);
-    const gapZ = e === 0 ? 9.4 : 12.6 + (stageIdx - 1) * 0.24;
+    const depthSpan = rows * (rank === 2 ? 1.40 : 1.00);
+    const gapZ = e === 0 ? 8.6 : 9.4 + (stageIdx - 1) * 0.20;
     cursorZ += depthSpan + gapZ;
   }
 
-  const fastBruteSpeed = Math.min(4.65, Math.max(3.85, bruteSpeed * 1.72)) * 1.30;
+  const fastBruteSpeed = Math.min(4.75, Math.max(3.95, bruteSpeed * 1.72)) * 1.30;
   const goliathSpawns: MidBridgeBruteDefinition[] = [
     {
       z: -Math.round(siegeColumnSpan * 0.34),
       name: `${bruteName} Alpha`,
-      maxHp: Math.round(bruteMaxHp * 0.24),
+      maxHp: Math.round(bruteMaxHp * 0.30),
       speed: Number(fastBruteSpeed.toFixed(2)),
-      clubDamage: Math.max(8, bruteDamage),
+      clubDamage: Math.max(10, bruteDamage),
       coinReward: Math.round(bruteCoins * 0.8),
     },
     {
       z: -Math.round(siegeColumnSpan * 0.64),
       name: bruteName,
-      maxHp: Math.round(bruteMaxHp * 0.42),
-      speed: Number(Math.min(6.15, fastBruteSpeed + 0.22).toFixed(2)),
+      maxHp: Math.round(bruteMaxHp * 0.50),
+      speed: Number(Math.min(6.25, fastBruteSpeed + 0.22).toFixed(2)),
       clubDamage: bruteDamage + 1,
       coinReward: bruteCoins,
     },
     {
       z: -Math.round(siegeColumnSpan * 0.88),
       name: `${bruteName} Prime`,
-      maxHp: Math.round(bruteMaxHp * 0.58),
-      speed: Number(Math.min(6.35, fastBruteSpeed + 0.40).toFixed(2)),
+      maxHp: Math.round(bruteMaxHp * 0.72),
+      speed: Number(Math.min(6.45, fastBruteSpeed + 0.40).toFixed(2)),
       clubDamage: bruteDamage + 3,
       coinReward: Math.round(bruteCoins * 1.25),
     },
@@ -517,9 +517,9 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
         ),
         ...drumV3(
           actBaseZ - Math.round(actSpan * 0.795),
-          215 * s,
-          178 * s,
-          235 * s,
+          165 * s,
+          135 * s,
+          175 * s,
           { type: 'COINS', val: Math.round((88 + seed.stageNumber * 28) * (1 + act * 0.4)) },
           { type: 'RECRUIT', val: act >= 3 ? 3 : 2 },
           { type: 'WEAPON', val: lateWeapon },
@@ -569,8 +569,8 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
       },
       {
         z: actBaseZ - Math.round(actSpan * 0.865),
-        left: swapSides ? shootMulGate(0.40, 22 * k) : lockedDivGate(2),
-        right: swapSides ? lockedDivGate(2) : shootMulGate(0.40, 22 * k),
+        left: swapSides ? shootMulGate(0.50, 15 * k) : lockedDivGate(2),
+        right: swapSides ? lockedDivGate(2) : shootMulGate(0.50, 15 * k),
       }
     );
 
@@ -580,8 +580,8 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
         ? offCenterCycle[seed.stageNumber % 2]
         : laneCycle[(seed.stageNumber + act) % 4];
     const wLaneB = laneCycle[(seed.stageNumber + act + 1) % 4];
-    const wallHpA = (act === 0 ? 80 : 360) * s;
-    const wallHpB = (act === 0 ? 155 : 510) * s;
+    const wallHpA = (act === 0 ? 70 : 255) * s;
+    const wallHpB = (act === 0 ? 130 : 355) * s;
 
     tireStacks.push(
       ...tireWall3(
@@ -604,58 +604,72 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
       )
     );
 
-    // 4 Dedicated Open-Road Enemy Skirmish Waves per Act (16 Waves total, >= 43m behind every Gate!)
-    // Each wave now fields active Ranged Enemy Shooters + Armored Lane Chargers!
-    const waveSpeed = Math.min(4.05, seed.enemyBaseSpeed + act * 0.16);
-    const waveHp = seed.enemyBaseHp * d * actMul;
+    // 16 Massive Dedicated Open-Road Tactical Waves per Sector (~1,520 enemies, 38..136+ units/wave!):
+    // Strictly >= 42m clear of every GatePair and cleanly separated from V-trio Rolling Barrels & Tire Walls!
+    // Cycles all 5 formations: WEDGE_BLITZ, SHIELD_PHALANX, PINCER_FLANK, FIRING_SQUAD, HORDE_TIDAL_WAVE!
+    const waveSpeed = Math.min(4.25, seed.enemyBaseSpeed + act * 0.16);
+    const waveActMul = 1 + act * 0.44;
+    const waveHp = seed.enemyBaseHp * d * waveActMul;
+    const stageExtraUnits = Math.floor((seed.stageNumber - 1) * 1.4);
+    const stageHeavyExtra = Math.floor(seed.stageNumber / 2);
+
+    const w1Count = Math.min(136, (act === 0 ? 38 : 54 + act * 19) + stageExtraUnits);
+    const w2Count = Math.min(136, (act === 0 ? 54 : 66 + act * 18) + stageExtraUnits);
+    const w3Count = Math.min(136, (act === 0 ? 66 : 74 + act * 18) + stageExtraUnits);
+    const w4Count = Math.min(136, (act === 0 ? 84 : 86 + act * 17) + stageExtraUnits);
+
     enemyWaves.push(
       {
         z: actBaseZ - Math.round(actSpan * 0.310),
         lane: 'CENTER',
-        count: Math.min(48, (act === 0 ? 16 : 26) + seed.stageNumber + act * 3),
-        hpPerEnemy: Math.max(7, Math.round(waveHp * (act === 0 ? 0.50 : 0.74))),
-        heavyCount: Math.min(12, (act === 0 ? 1 : 3) + Math.floor(seed.stageNumber / 2) + act),
-        vanguardRatio: 0.40,
-        speed: Number(waveSpeed.toFixed(2)),
-        coinPerKill: seed.coinBase + act,
-        shooterCount: 3 + act,
-        chargerCount: (act === 0 ? 1 : 2) + Math.floor(act / 2),
-      },
-      {
-        z: actBaseZ - Math.round(actSpan * 0.585),
-        lane: 'CENTER',
-        count: Math.min(50, 32 + seed.stageNumber + act * 3),
-        hpPerEnemy: Math.max(12, Math.round(waveHp * 1.02)),
-        heavyCount: Math.min(13, 5 + Math.floor(seed.stageNumber / 2) + act),
-        vanguardRatio: 0.35,
+        formation: act === 2 ? 'PINCER_FLANK' : 'WEDGE_BLITZ',
+        count: w1Count,
+        hpPerEnemy: Math.max(11, Math.round(waveHp * (act === 0 ? 0.54 : act === 1 ? 0.82 : act === 2 ? 0.88 : 0.96))),
+        heavyCount: Math.min(Math.floor(w1Count * 0.24), (act === 0 ? 4 : 7) + stageHeavyExtra + act * 3),
+        vanguardRatio: 0.44,
         speed: Number((waveSpeed + 0.14).toFixed(2)),
+        coinPerKill: seed.coinBase + act,
+        shooterCount: 7 + act * 4,
+        chargerCount: 2 + act,
+      },
+      {
+        z: actBaseZ - Math.round(actSpan * 0.582),
+        lane: 'CENTER',
+        formation: 'SHIELD_PHALANX',
+        count: w2Count,
+        hpPerEnemy: Math.max(15, Math.round(waveHp * (act === 0 ? 0.72 : act === 1 ? 0.92 : act === 2 ? 0.98 : 1.05))),
+        heavyCount: Math.min(Math.floor(w2Count * 0.28), 8 + stageHeavyExtra + act * 4),
+        vanguardRatio: 0.32,
+        speed: Number((waveSpeed + 0.08).toFixed(2)),
         coinPerKill: seed.coinBase + act + 1,
-        shooterCount: 5 + act,
-        chargerCount: 3 + Math.floor(act / 2),
+        shooterCount: 11 + act * 4,
+        chargerCount: 3 + act,
       },
       {
-        z: actBaseZ - Math.round(actSpan * 0.732),
+        z: actBaseZ - Math.round(actSpan * 0.745),
         lane: 'CENTER',
-        count: Math.min(52, 39 + Math.floor(seed.stageNumber / 2) + act * 2),
-        hpPerEnemy: Math.max(16, Math.round(waveHp * 1.38)),
-        heavyCount: Math.min(14, 6 + Math.floor(seed.stageNumber / 2) + act),
+        formation: act === 0 ? 'PINCER_FLANK' : 'FIRING_SQUAD',
+        count: w3Count,
+        hpPerEnemy: Math.max(18, Math.round(waveHp * (act === 0 ? 0.84 : act === 1 ? 1.00 : act === 2 ? 1.04 : 1.10))),
+        heavyCount: Math.min(Math.floor(w3Count * 0.26), 9 + stageHeavyExtra + act * 4),
+        vanguardRatio: 0.34,
+        speed: Number((waveSpeed + 0.20).toFixed(2)),
+        coinPerKill: seed.coinBase + act + 2,
+        shooterCount: (act === 0 ? 13 : 18) + act * 4,
+        chargerCount: 3 + act,
+      },
+      {
+        z: actBaseZ - Math.round(actSpan * 0.978),
+        lane: 'CENTER',
+        formation: 'HORDE_TIDAL_WAVE',
+        count: w4Count,
+        hpPerEnemy: Math.max(21, Math.round(waveHp * (act === 0 ? 0.96 : act === 1 ? 1.12 : act === 2 ? 1.16 : 1.22))),
+        heavyCount: Math.min(Math.floor(w4Count * 0.26), 12 + stageHeavyExtra + act * 4),
         vanguardRatio: 0.30,
-        speed: Number((waveSpeed + 0.22).toFixed(2)),
-        coinPerKill: seed.coinBase + act + 2,
-        shooterCount: 6 + act,
-        chargerCount: 3 + Math.floor((act + 1) / 2),
-      },
-      {
-        z: actBaseZ - Math.round(actSpan * 0.980),
-        lane: 'CENTER',
-        count: Math.min(52, 43 + Math.floor(seed.stageNumber / 2) + act * 2),
-        hpPerEnemy: Math.max(20, Math.round(waveHp * 1.62)),
-        heavyCount: Math.min(15, 7 + Math.floor(seed.stageNumber / 2) + act),
-        vanguardRatio: 0.28,
-        speed: Number((waveSpeed + 0.30).toFixed(2)),
-        coinPerKill: seed.coinBase + act + 2,
-        shooterCount: 7 + act,
-        chargerCount: 4 + Math.floor(act / 2),
+        speed: Number((waveSpeed + 0.24).toFixed(2)),
+        coinPerKill: seed.coinBase + act + 3,
+        shooterCount: 15 + act * 4,
+        chargerCount: 4 + act,
       }
     );
   }
@@ -673,17 +687,17 @@ function buildMarathonSector(seed: MarathonSectorSeed): StageDefinition {
     {
       z: -Math.round(actSpan * 0.625),
       name: `${seed.bruteName} Vanguard`,
-      maxHp: Math.round(seed.bruteMaxHp * 0.38),
-      speed: Math.max(2.25, seed.bruteSpeed - 0.05),
-      clubDamage: Math.max(7, seed.bruteDamage - 1),
+      maxHp: Math.round(seed.bruteMaxHp * 0.43),
+      speed: Math.max(2.35, seed.bruteSpeed - 0.05),
+      clubDamage: Math.max(8, seed.bruteDamage - 1),
       coinReward: Math.round(seed.bruteCoins * 0.75),
     },
     primaryBrute,
     {
       z: -Math.round(actSpan * 3.625),
       name: `${seed.bruteName} Warden`,
-      maxHp: Math.round(seed.bruteMaxHp * 1.24),
-      speed: Math.min(3.15, seed.bruteSpeed + 0.16),
+      maxHp: Math.round(seed.bruteMaxHp * 1.30),
+      speed: Math.min(3.25, seed.bruteSpeed + 0.18),
       clubDamage: seed.bruteDamage + 2,
       coinReward: Math.round(seed.bruteCoins * 1.3),
     },
@@ -761,32 +775,41 @@ export function applyDifficultyToStage(
       ...ts,
       breakCount: Math.max(115, Math.round(ts.breakCount * prof.drumHpMult)),
     })),
-    enemyWaves: stage.enemyWaves.map((wv) => ({
-      ...wv,
-      hpPerEnemy: Math.max(8, Math.round(wv.hpPerEnemy * prof.enemyHpMult)),
-      speed: Number((wv.speed * prof.enemySpeedMult).toFixed(2)),
-      shooterCount: Math.min(
-        Math.floor(wv.count * 0.4),
-        Math.round((wv.shooterCount ?? 4) * prof.threatCadenceMult)
-      ),
-      chargerCount: Math.min(
-        wv.heavyCount ?? 4,
-        Math.round((wv.chargerCount ?? 2) * prof.threatCadenceMult)
-      ),
-    })),
+    enemyWaves: stage.enemyWaves.map((wv) => {
+      const scaledCount = Math.min(144, Math.round(wv.count * prof.waveCountMult));
+      const scaledHeavy = Math.min(
+        Math.floor(scaledCount * 0.34),
+        Math.round((wv.heavyCount ?? 4) * prof.waveCountMult)
+      );
+      return {
+        ...wv,
+        count: scaledCount,
+        heavyCount: scaledHeavy,
+        hpPerEnemy: Math.max(10, Math.round(wv.hpPerEnemy * prof.enemyHpMult)),
+        speed: Number((wv.speed * prof.enemySpeedMult).toFixed(2)),
+        shooterCount: Math.min(
+          Math.floor((scaledCount - scaledHeavy) * 0.48),
+          Math.round((wv.shooterCount ?? 6) * prof.threatCadenceMult)
+        ),
+        chargerCount: Math.min(
+          scaledHeavy,
+          Math.round((wv.chargerCount ?? 2) * prof.threatCadenceMult)
+        ),
+      };
+    }),
     midBrute: stage.midBrute
       ? {
           ...stage.midBrute,
           maxHp: Math.round(stage.midBrute.maxHp * prof.bossHpMult),
           speed: Number((stage.midBrute.speed * prof.enemySpeedMult).toFixed(2)),
-          clubDamage: Math.min(20, Math.round(stage.midBrute.clubDamage * (0.95 + prof.bossTempoMult * 0.2))),
+          clubDamage: Math.min(22, Math.round(stage.midBrute.clubDamage * (0.95 + prof.bossTempoMult * 0.2))),
         }
       : undefined,
     midBrutes: stage.midBrutes?.map((b) => ({
       ...b,
       maxHp: Math.round(b.maxHp * prof.bossHpMult),
       speed: Number((b.speed * prof.enemySpeedMult).toFixed(2)),
-      clubDamage: Math.min(20, Math.round(b.clubDamage * (0.95 + prof.bossTempoMult * 0.2))),
+      clubDamage: Math.min(22, Math.round(b.clubDamage * (0.95 + prof.bossTempoMult * 0.2))),
     })),
     splitCauseway: stage.splitCauseway
       ? {
@@ -798,31 +821,43 @@ export function applyDifficultyToStage(
           })),
           rightEchelons: stage.splitCauseway.rightEchelons.map((ech) => ({
             ...ech,
-            hpPerUnit: Math.max(9, Math.round(ech.hpPerUnit * prof.enemyHpMult)),
+            hpPerUnit: Math.max(12, Math.round(ech.hpPerUnit * prof.enemyHpMult)),
             speed: Number((ech.speed * prof.enemySpeedMult).toFixed(2)),
+            shooterRatio:
+              ech.rank === 2
+                ? 0
+                : Number(
+                    Math.min(0.42, (ech.shooterRatio ?? 0.28) * Math.sqrt(prof.threatCadenceMult)).toFixed(2)
+                  ),
+            chargerRatio:
+              ech.rank === 2
+                ? Number(
+                    Math.min(0.85, (ech.chargerRatio ?? 0.62) * Math.sqrt(prof.threatCadenceMult)).toFixed(2)
+                  )
+                : 0,
           })),
           goliathSpawns: stage.splitCauseway.goliathSpawns.map((b) => ({
             ...b,
             maxHp: Math.round(b.maxHp * prof.bossHpMult),
             speed: Number((b.speed * prof.enemySpeedMult).toFixed(2)),
-            clubDamage: Math.min(20, Math.round(b.clubDamage * (0.95 + prof.bossTempoMult * 0.2))),
+            clubDamage: Math.min(22, Math.round(b.clubDamage * (0.95 + prof.bossTempoMult * 0.2))),
           })),
         }
       : undefined,
     boss: {
       ...stage.boss,
       maxHp: Math.round(stage.boss.maxHp * prof.bossHpMult),
-      advanceSpeed: Number((stage.boss.advanceSpeed * Math.min(1.22, prof.enemySpeedMult)).toFixed(2)),
-      salvoInterval: Number(Math.max(0.84, stage.boss.salvoInterval / prof.bossTempoMult).toFixed(2)),
-      salvoDamage: Math.min(22, Math.round(stage.boss.salvoDamage * (0.9 + prof.bossTempoMult * 0.25))),
+      advanceSpeed: Number((stage.boss.advanceSpeed * Math.min(1.24, prof.enemySpeedMult)).toFixed(2)),
+      salvoInterval: Number(Math.max(0.74, stage.boss.salvoInterval / prof.bossTempoMult).toFixed(2)),
+      salvoDamage: Math.min(24, Math.round(stage.boss.salvoDamage * (0.9 + prof.bossTempoMult * 0.25))),
     },
   };
 }
 
 /**
- * 10 Escalating Bridge Blitz v8.2 Sectors — Skill + Progression Overhaul:
- * - Odd Sectors (1, 3, 5, 7, 9): 1,120m..1,344m Midnight Viaduct Assaults with Shooters, Chargers & Spiked Barrels
- * - Even Sectors (2, 4, 6, 8, 10): Split Causeway Tactical Sieges (Full Threat Parity + 2-Lane Boss Salvos from Sector 1!)
+ * 10 Escalating Bridge Blitz v8.3 Sectors — Massive Tactical Hordes & High-Intensity Overhaul:
+ * - Odd Sectors (1, 3, 5, 7, 9): 24 massive tactical waves/sector (34..136+ units) across 5 formations
+ * - Even Sectors (2, 4, 6, 8, 10): 32-echelon Split Causeway Sieges (~875 troopers) + 18k..92k HP Bosses!
  */
 export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
   buildMarathonSector({
@@ -834,13 +869,13 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     gateK: 1.0,
     negGateBase: -24,
     posGateBase: 2,
-    enemyBaseHp: 13.0,
-    enemyBaseSpeed: 2.95,
+    enemyBaseHp: 15.0,
+    enemyBaseSpeed: 3.05,
     coinBase: 3,
     bruteName: 'Siege Goliath',
-    bruteMaxHp: 6200,
-    bruteSpeed: 2.38,
-    bruteDamage: 8,
+    bruteMaxHp: 11200,
+    bruteSpeed: 2.48,
+    bruteDamage: 10,
     bruteCoins: 280,
     boss: {
       name: 'Obsidian Warden Mk-I',
@@ -848,12 +883,12 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
       primaryHex: 0x243448,
       accentHex: 0xe62454,
       trimHex: 0x28f8dc,
-      maxHp: 10800,
-      segments: 5,
-      advanceSpeed: 1.48,
+      maxHp: 18000,
+      segments: 6,
+      advanceSpeed: 1.56,
       salvoLanes: 2,
-      salvoInterval: 1.48,
-      salvoDamage: 8,
+      salvoInterval: 1.22,
+      salvoDamage: 10,
       rewardCoins: 360,
     },
   }),
@@ -866,13 +901,13 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     gateK: 1.18,
     negGateBase: -26,
     posGateBase: 2,
-    enemyBaseHp: 16.5,
-    enemyBaseSpeed: 3.04,
+    enemyBaseHp: 19.0,
+    enemyBaseSpeed: 3.14,
     coinBase: 4,
     bruteName: 'Breacher Goliath',
-    bruteMaxHp: 8200,
-    bruteSpeed: 2.46,
-    bruteDamage: 9,
+    bruteMaxHp: 14500,
+    bruteSpeed: 2.56,
+    bruteDamage: 11,
     bruteCoins: 360,
     boss: {
       name: 'Stormwall Enforcer',
@@ -880,12 +915,12 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
       primaryHex: 0x1e2d3e,
       accentHex: 0xff3b5c,
       trimHex: 0x28f8dc,
-      maxHp: 14500,
-      segments: 5,
-      advanceSpeed: 1.53,
+      maxHp: 24000,
+      segments: 6,
+      advanceSpeed: 1.62,
       salvoLanes: 2,
-      salvoInterval: 1.42,
-      salvoDamage: 9,
+      salvoInterval: 1.18,
+      salvoDamage: 11,
       rewardCoins: 460,
     },
   }),
@@ -898,13 +933,13 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     gateK: 1.40,
     negGateBase: -28,
     posGateBase: 3,
-    enemyBaseHp: 20.5,
-    enemyBaseSpeed: 3.13,
+    enemyBaseHp: 24.0,
+    enemyBaseSpeed: 3.22,
     coinBase: 5,
     bruteName: 'Crimson Goliath',
-    bruteMaxHp: 10400,
-    bruteSpeed: 2.54,
-    bruteDamage: 10,
+    bruteMaxHp: 18500,
+    bruteSpeed: 2.64,
+    bruteDamage: 12,
     bruteCoins: 440,
     boss: {
       name: 'Crimson Juggernaut',
@@ -912,12 +947,12 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
       primaryHex: 0x5c1428,
       accentHex: 0x1c2736,
       trimHex: 0xffb830,
-      maxHp: 18500,
-      segments: 6,
-      advanceSpeed: 1.58,
+      maxHp: 30500,
+      segments: 7,
+      advanceSpeed: 1.67,
       salvoLanes: 2,
-      salvoInterval: 1.36,
-      salvoDamage: 10,
+      salvoInterval: 1.14,
+      salvoDamage: 12,
       rewardCoins: 580,
     },
   }),
@@ -930,13 +965,13 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     gateK: 1.64,
     negGateBase: -30,
     posGateBase: 3,
-    enemyBaseHp: 25.0,
-    enemyBaseSpeed: 3.22,
+    enemyBaseHp: 29.5,
+    enemyBaseSpeed: 3.30,
     coinBase: 6,
     bruteName: 'Ironclad Goliath',
-    bruteMaxHp: 12800,
-    bruteSpeed: 2.62,
-    bruteDamage: 11,
+    bruteMaxHp: 23000,
+    bruteSpeed: 2.72,
+    bruteDamage: 13,
     bruteCoins: 540,
     boss: {
       name: 'Volt-Core Siege Mech',
@@ -944,12 +979,12 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
       primaryHex: 0x1e2838,
       accentHex: 0xff2e58,
       trimHex: 0xffc938,
-      maxHp: 23000,
-      segments: 6,
-      advanceSpeed: 1.63,
+      maxHp: 37500,
+      segments: 7,
+      advanceSpeed: 1.72,
       salvoLanes: 2,
-      salvoInterval: 1.30,
-      salvoDamage: 10,
+      salvoInterval: 1.10,
+      salvoDamage: 13,
       rewardCoins: 720,
     },
   }),
@@ -962,13 +997,13 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     gateK: 1.92,
     negGateBase: -32,
     posGateBase: 3,
-    enemyBaseHp: 30.5,
-    enemyBaseSpeed: 3.31,
+    enemyBaseHp: 36.0,
+    enemyBaseSpeed: 3.39,
     coinBase: 7,
     bruteName: 'Tempest Goliath',
-    bruteMaxHp: 15500,
-    bruteSpeed: 2.70,
-    bruteDamage: 11,
+    bruteMaxHp: 28000,
+    bruteSpeed: 2.80,
+    bruteDamage: 14,
     bruteCoins: 660,
     boss: {
       name: 'Tempest Arachnid',
@@ -976,12 +1011,12 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
       primaryHex: 0x1a2c42,
       accentHex: 0x28f8dc,
       trimHex: 0xff3b5c,
-      maxHp: 28000,
-      segments: 7,
-      advanceSpeed: 1.68,
+      maxHp: 46000,
+      segments: 8,
+      advanceSpeed: 1.78,
       salvoLanes: 2,
-      salvoInterval: 1.25,
-      salvoDamage: 11,
+      salvoInterval: 1.06,
+      salvoDamage: 14,
       rewardCoins: 900,
     },
   }),
@@ -994,13 +1029,13 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     gateK: 2.22,
     negGateBase: -34,
     posGateBase: 3,
-    enemyBaseHp: 37.0,
-    enemyBaseSpeed: 3.40,
+    enemyBaseHp: 43.5,
+    enemyBaseSpeed: 3.48,
     coinBase: 8,
     bruteName: 'Overwatch Goliath',
-    bruteMaxHp: 18500,
-    bruteSpeed: 2.78,
-    bruteDamage: 12,
+    bruteMaxHp: 33500,
+    bruteSpeed: 2.88,
+    bruteDamage: 14,
     bruteCoins: 800,
     boss: {
       name: 'Aegis Dreadnought',
@@ -1008,12 +1043,12 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
       primaryHex: 0x223246,
       accentHex: 0xe62454,
       trimHex: 0x38f6ff,
-      maxHp: 33500,
-      segments: 7,
-      advanceSpeed: 1.72,
+      maxHp: 54500,
+      segments: 8,
+      advanceSpeed: 1.83,
       salvoLanes: 2,
-      salvoInterval: 1.20,
-      salvoDamage: 12,
+      salvoInterval: 1.02,
+      salvoDamage: 14,
       rewardCoins: 1120,
     },
   }),
@@ -1026,13 +1061,13 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     gateK: 2.55,
     negGateBase: -36,
     posGateBase: 4,
-    enemyBaseHp: 44.5,
-    enemyBaseSpeed: 3.49,
+    enemyBaseHp: 52.0,
+    enemyBaseSpeed: 3.57,
     coinBase: 10,
     bruteName: 'Abyssal Goliath',
-    bruteMaxHp: 21800,
-    bruteSpeed: 2.86,
-    bruteDamage: 13,
+    bruteMaxHp: 39500,
+    bruteSpeed: 2.96,
+    bruteDamage: 15,
     bruteCoins: 960,
     boss: {
       name: 'Kraken Command Rig',
@@ -1040,12 +1075,12 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
       primaryHex: 0x162030,
       accentHex: 0xff2854,
       trimHex: 0x28f8dc,
-      maxHp: 39500,
-      segments: 8,
-      advanceSpeed: 1.77,
+      maxHp: 63500,
+      segments: 9,
+      advanceSpeed: 1.88,
       salvoLanes: 2,
-      salvoInterval: 1.16,
-      salvoDamage: 13,
+      salvoInterval: 0.98,
+      salvoDamage: 15,
       rewardCoins: 1380,
     },
   }),
@@ -1058,13 +1093,13 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     gateK: 2.92,
     negGateBase: -38,
     posGateBase: 4,
-    enemyBaseHp: 53.0,
-    enemyBaseSpeed: 3.58,
+    enemyBaseHp: 61.5,
+    enemyBaseSpeed: 3.66,
     coinBase: 12,
     bruteName: 'Vortex Goliath',
-    bruteMaxHp: 25500,
-    bruteSpeed: 2.94,
-    bruteDamage: 14,
+    bruteMaxHp: 46500,
+    bruteSpeed: 3.04,
+    bruteDamage: 16,
     bruteCoins: 1140,
     boss: {
       name: 'Obsidian Sovereign',
@@ -1072,12 +1107,12 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
       primaryHex: 0x181c28,
       accentHex: 0xe62048,
       trimHex: 0xffb830,
-      maxHp: 46500,
-      segments: 8,
-      advanceSpeed: 1.82,
+      maxHp: 72500,
+      segments: 9,
+      advanceSpeed: 1.94,
       salvoLanes: 2,
-      salvoInterval: 1.12,
-      salvoDamage: 14,
+      salvoInterval: 0.95,
+      salvoDamage: 16,
       rewardCoins: 1700,
     },
   }),
@@ -1090,13 +1125,13 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     gateK: 3.34,
     negGateBase: -40,
     posGateBase: 4,
-    enemyBaseHp: 62.0,
-    enemyBaseSpeed: 3.66,
+    enemyBaseHp: 72.0,
+    enemyBaseSpeed: 3.74,
     coinBase: 14,
     bruteName: 'Horizon Goliath',
-    bruteMaxHp: 29500,
-    bruteSpeed: 3.00,
-    bruteDamage: 15,
+    bruteMaxHp: 54000,
+    bruteSpeed: 3.12,
+    bruteDamage: 17,
     bruteCoins: 1360,
     boss: {
       name: 'Hyperion Warlord',
@@ -1104,12 +1139,12 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
       primaryHex: 0x1e2c42,
       accentHex: 0x28f8dc,
       trimHex: 0xffc845,
-      maxHp: 54500,
-      segments: 9,
-      advanceSpeed: 1.87,
+      maxHp: 82000,
+      segments: 10,
+      advanceSpeed: 2.00,
       salvoLanes: 2,
-      salvoInterval: 1.08,
-      salvoDamage: 15,
+      salvoInterval: 0.91,
+      salvoDamage: 17,
       rewardCoins: 2050,
     },
   }),
@@ -1122,13 +1157,13 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
     gateK: 3.80,
     negGateBase: -42,
     posGateBase: 4,
-    enemyBaseHp: 72.0,
-    enemyBaseSpeed: 3.75,
+    enemyBaseHp: 84.0,
+    enemyBaseSpeed: 3.84,
     coinBase: 17,
     bruteName: 'Omega Goliath',
-    bruteMaxHp: 34000,
-    bruteSpeed: 3.08,
-    bruteDamage: 16,
+    bruteMaxHp: 62000,
+    bruteSpeed: 3.20,
+    bruteDamage: 18,
     bruteCoins: 1650,
     boss: {
       name: 'Apex Sovereign Mech',
@@ -1136,12 +1171,12 @@ export const CAMPAIGN_STAGES: ReadonlyArray<StageDefinition> = [
       primaryHex: 0x2c1c38,
       accentHex: 0xff2858,
       trimHex: 0x28f8dc,
-      maxHp: 64000,
+      maxHp: 92000,
       segments: 10,
-      advanceSpeed: 1.92,
+      advanceSpeed: 2.06,
       salvoLanes: 2,
-      salvoInterval: 1.04,
-      salvoDamage: 16,
+      salvoInterval: 0.88,
+      salvoDamage: 18,
       rewardCoins: 2600,
     },
   }),
@@ -1199,13 +1234,13 @@ export function generateSplitCausewayStage(stageNumber: number): StageDefinition
     gateK: scale,
     negGateBase: -(22 + sNum * 2),
     posGateBase: Math.min(5, 2 + Math.floor(sNum / 3)),
-    enemyBaseHp: 13.5 * scale,
-    enemyBaseSpeed: Math.min(3.75, 2.95 + sNum * 0.08),
+    enemyBaseHp: 15.5 * scale,
+    enemyBaseSpeed: Math.min(3.85, 3.05 + sNum * 0.08),
     coinBase: 3 + sNum * 2,
     bruteName: `Causeway-${sNum} Goliath`,
-    bruteMaxHp: Math.round(6600 * Math.pow(1.22, sNum - 1)),
-    bruteSpeed: Math.min(3.05, 2.38 + sNum * 0.06),
-    bruteDamage: Math.min(16, 8 + Math.floor(sNum / 2)),
+    bruteMaxHp: Math.round(11800 * Math.pow(1.22, sNum - 1)),
+    bruteSpeed: Math.min(3.18, 2.48 + sNum * 0.06),
+    bruteDamage: Math.min(18, 10 + Math.floor(sNum / 2)),
     bruteCoins: Math.round(310 * scale),
     boss: {
       name: `Causeway-${sNum} ${archetype.label}`,
@@ -1213,12 +1248,12 @@ export function generateSplitCausewayStage(stageNumber: number): StageDefinition
       primaryHex: archetype.primaryHex,
       accentHex: archetype.accentHex,
       trimHex: archetype.trimHex,
-      maxHp: Math.round(11500 * Math.pow(1.24, sNum - 1)),
-      segments: Math.min(10, 5 + Math.floor(sNum / 2)),
-      advanceSpeed: Math.min(1.94, 1.48 + sNum * 0.045),
+      maxHp: Math.round(19000 * Math.pow(1.24, sNum - 1)),
+      segments: Math.min(10, 6 + Math.floor(sNum / 2)),
+      advanceSpeed: Math.min(2.08, 1.58 + sNum * 0.045),
       salvoLanes: 2,
-      salvoInterval: Math.max(1.02, 1.48 - (sNum - 1) * 0.05),
-      salvoDamage: Math.min(16, 8 + Math.floor(sNum / 2)),
+      salvoInterval: Math.max(0.86, 1.22 - (sNum - 1) * 0.04),
+      salvoDamage: Math.min(18, 10 + Math.floor(sNum / 2)),
       rewardCoins: Math.round(360 + sNum * 115 * scale),
     },
   });
@@ -1243,13 +1278,13 @@ export function generateEndlessWaveStage(waveNumber: number): StageDefinition {
     gateK: scale,
     negGateBase: -(22 + w * 2),
     posGateBase: Math.min(5, 2 + Math.floor(w / 3)),
-    enemyBaseHp: 13.0 * scale,
-    enemyBaseSpeed: Math.min(3.75, 2.95 + w * 0.075),
+    enemyBaseHp: 15.0 * scale,
+    enemyBaseSpeed: Math.min(3.85, 3.05 + w * 0.075),
     coinBase: 3 + w * 2,
     bruteName: `Wave-${w} Goliath`,
-    bruteMaxHp: Math.round(6400 * scale),
-    bruteSpeed: Math.min(3.05, 2.36 + w * 0.06),
-    bruteDamage: Math.min(16, 8 + Math.floor(w / 2)),
+    bruteMaxHp: Math.round(11400 * scale),
+    bruteSpeed: Math.min(3.18, 2.46 + w * 0.06),
+    bruteDamage: Math.min(18, 10 + Math.floor(w / 2)),
     bruteCoins: Math.round(290 * scale),
     boss: {
       name: `Sector-${w} ${archetype.label}`,
@@ -1257,12 +1292,12 @@ export function generateEndlessWaveStage(waveNumber: number): StageDefinition {
       primaryHex: archetype.primaryHex,
       accentHex: archetype.accentHex,
       trimHex: archetype.trimHex,
-      maxHp: Math.round(11200 * Math.pow(1.24, w - 1)),
-      segments: Math.min(10, 5 + Math.floor(w / 2)),
-      advanceSpeed: Math.min(1.94, 1.48 + w * 0.045),
+      maxHp: Math.round(18500 * Math.pow(1.24, w - 1)),
+      segments: Math.min(10, 6 + Math.floor(w / 2)),
+      advanceSpeed: Math.min(2.08, 1.56 + w * 0.045),
       salvoLanes: 2,
-      salvoInterval: Math.max(1.02, 1.48 - (w - 1) * 0.05),
-      salvoDamage: Math.min(16, 8 + Math.floor(w / 2)),
+      salvoInterval: Math.max(0.86, 1.22 - (w - 1) * 0.04),
+      salvoDamage: Math.min(18, 10 + Math.floor(w / 2)),
       rewardCoins: Math.round(350 + w * 110 * scale),
     },
   });

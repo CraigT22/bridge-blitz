@@ -6,11 +6,11 @@ import { attachWeldedOutlineNormals } from '../rendering/ProceduralGeometries';
 
 const BRUTE_ENTITY_ID = 777;
 const DUEL_HALT_DIST_Z = 8.8;
-const ENGAGE_WAKE_DIST_Z = 38.0;
-const CLUB_WINDUP_DURATION = 0.66;
+const ENGAGE_WAKE_DIST_Z = 44.0;
+const CLUB_WINDUP_DURATION = 0.60;
 const WIDE_SLAM_WINDUP_DURATION = 0.78;
-const CLUB_RECOVER_DURATION = 0.32;
-const CLUB_COOLDOWN_DURATION = 0.56;
+const CLUB_RECOVER_DURATION = 0.28;
+const CLUB_COOLDOWN_DURATION = 0.50;
 const CLUB_SMASH_RADIUS_X = 2.06;
 const WIDE_SLAM_RADIUS_X = 3.10;
 
@@ -201,6 +201,7 @@ export class MidBridgeBrute {
   public clubDamage = 9;
   public coinReward = 450;
   public name = 'SIEGE GOLIATH';
+  public lastStepSummonReinforcements = false;
 
   private skinTheme: SkinThemeId = 'TACTICAL';
   private readonly bodyRig = new THREE.Group();
@@ -234,6 +235,7 @@ export class MidBridgeBrute {
   private attackCycle = 0;
   private activeWideSlam = false;
   private activeWindupDur = CLUB_WINDUP_DURATION;
+  private halfHpSummoned = false;
 
   constructor(slotIndex = 0) {
     this.entityId = BRUTE_ENTITY_ID + slotIndex;
@@ -948,6 +950,8 @@ export class MidBridgeBrute {
     this.attackCycle = 0;
     this.activeWideSlam = false;
     this.activeWindupDur = CLUB_WINDUP_DURATION;
+    this.halfHpSummoned = false;
+    this.lastStepSummonReinforcements = false;
 
     this.root.position.set(this.x, 0, this.z);
     this.root.visible = true;
@@ -963,6 +967,8 @@ export class MidBridgeBrute {
   public hide(): void {
     this.active = false;
     this.hp = 0;
+    this.halfHpSummoned = false;
+    this.lastStepSummonReinforcements = false;
     this.root.visible = false;
     this.dangerZoneGroup.visible = false;
   }
@@ -984,6 +990,7 @@ export class MidBridgeBrute {
     blockingGateZ: number | null = null,
     tempoMult = 1.0
   ): BruteClubSmashEvent | null {
+    this.lastStepSummonReinforcements = false;
     if (!this.active || this.defeated || this.hp <= 0) {
       return null;
     }
@@ -1027,6 +1034,15 @@ export class MidBridgeBrute {
       !blockedByGate &&
       (dividerTipZ !== undefined ? distZ < 105 : distZ < ENGAGE_WAKE_DIST_Z);
     const inDuelRange = !blockedByGate && distZ <= effectiveDuelDist + 0.35 && distZ > -2.5;
+    if (
+      engaged &&
+      !this.halfHpSummoned &&
+      this.hp <= this.maxHp * 0.50 &&
+      playerLogicalSquad > 0
+    ) {
+      this.halfHpSummoned = true;
+      this.lastStepSummonReinforcements = true;
+    }
     let smashEvent: BruteClubSmashEvent | null = null;
     let targetBodyYaw = 0;
     let rearPitch = 0;

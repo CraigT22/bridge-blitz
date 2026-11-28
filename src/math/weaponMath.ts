@@ -7,7 +7,7 @@ export const MAX_VISUAL_SOLDIERS = 40;
 export const MAX_ACTIVE_VOLLEY_EMITTERS = 26;
 export const OVERFLOW_SQUAD_COIN_BONUS = 10;
 export const COMMANDO_MODEL_SCALE = 1.66;
-export const BASE_SOLDIER_BULLET_DAMAGE = 3.1;
+export const BASE_SOLDIER_BULLET_DAMAGE = 2.75;
 export const PARALLEL_SHOT_RANGE = 48.0;
 
 export interface ParallelShotTrajectory {
@@ -51,7 +51,7 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Tactical SMG',
     shortBadge: 'Lv2 SMG',
     pattern: 'SINGLE',
-    fireRate: 5.5,
+    fireRate: 5.0,
     damageMultiplier: 1.06,
     projectileSpeed: 35,
     pierceCount: 1,
@@ -65,7 +65,7 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     shortBadge: 'Lv3 RIFLE',
     pattern: 'BURST_2',
     fireRate: 4.5,
-    damageMultiplier: 1.68,
+    damageMultiplier: 1.45,
     projectileSpeed: 38,
     pierceCount: 1,
     spreadRadians: 0.038,
@@ -77,8 +77,8 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Rotary Minigun',
     shortBadge: 'Lv4 MINIGUN',
     pattern: 'TWIN_CONVERGE',
-    fireRate: 6.6,
-    damageMultiplier: 1.62,
+    fireRate: 6.0,
+    damageMultiplier: 1.50,
     projectileSpeed: 40,
     pierceCount: 1,
     spreadRadians: 0.038,
@@ -90,13 +90,13 @@ export const WEAPON_SPECS: Readonly<Record<WeaponTierId, WeaponSpec>> = {
     name: 'Plasma Pulse Rifle',
     shortBadge: 'Lv5 PLASMA',
     pattern: 'PIERCING',
-    fireRate: 5.0,
-    damageMultiplier: 2.55,
+    fireRate: 4.8,
+    damageMultiplier: 2.15,
     projectileSpeed: 44,
     pierceCount: 2,
     spreadRadians: 0.028,
     colorHex: 0x38f6ff,
-    bossArmorFactor: 1.25,
+    bossArmorFactor: 1.20,
   },
 };
 
@@ -193,10 +193,10 @@ export interface VolleyDamagePlan {
 }
 
 /**
- * Disciplined crowd-scale firing curve for 1..40 commandos:
+ * v8.3 Disciplined crowd-scale firing curve for 1..40 commandos:
  * - 1..6 front-cluster commandos fire at 1.0x efficiency
- * - 7..20 mid-cluster commandos fire at 0.78x efficiency
- * - 21..40 rear-cluster commandos fire at 0.58x efficiency
+ * - 7..18 mid-cluster commandos fire at 0.70x efficiency
+ * - 19..40 rear-cluster commandos fire at 0.48x efficiency
  */
 export function computeEffectiveFiringSquad(logicalSquad: number): number {
   if (logicalSquad <= 0) {
@@ -205,10 +205,10 @@ export function computeEffectiveFiringSquad(logicalSquad: number): number {
   if (logicalSquad <= 6) {
     return logicalSquad;
   }
-  if (logicalSquad <= 20) {
-    return 6 + (logicalSquad - 6) * 0.78;
+  if (logicalSquad <= 18) {
+    return 6 + (logicalSquad - 6) * 0.70;
   }
-  return 6 + 14 * 0.78 + (logicalSquad - 20) * 0.58;
+  return 6 + 12 * 0.70 + (logicalSquad - 18) * 0.48;
 }
 
 /**

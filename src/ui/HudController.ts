@@ -777,7 +777,7 @@ export class HudController {
       this.armoryItemKicker.textContent = `SECTOR ${st.stageNumber} // ${isUnicorn ? bossProfile.archetypeLabel : CHASSIS_LABELS[boss.chassis]}`;
       this.armoryItemName.textContent = bossProfile.name.toUpperCase();
 
-      const hpPct = Math.min(100, Math.max(12, Math.round((boss.maxHp / 64000) * 100)));
+      const hpPct = Math.min(100, Math.max(12, Math.round((boss.maxHp / 92000) * 100)));
       const segPct = Math.round((boss.segments / 10) * 100);
       const spdPct = Math.min(100, Math.round((boss.advanceSpeed / 1.95) * 100));
       const rewPct = Math.min(100, Math.round((boss.rewardCoins / 2600) * 100));

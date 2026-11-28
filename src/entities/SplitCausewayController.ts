@@ -47,10 +47,10 @@ const LEFT_BARREL_SCALE_YZ = 1.14;
 const BARREL_HIT_HALF_WIDTH_X = 2.42;
 const LEFT_GATE_PANEL_WIDTH = 4.44;
 const LEFT_GATE_PANEL_HEIGHT = 2.86;
-const MAX_CAUSEWAY_TROOPERS = 740;
+const MAX_CAUSEWAY_TROOPERS = 1024;
 const CELEBRATION_SPARK_COUNT = 14;
-const SPLIT_SHOOTER_TELEGRAPH_BASE_SEC = 0.58;
-const SPLIT_CHARGER_TELEGRAPH_BASE_SEC = 0.64;
+const SPLIT_SHOOTER_TELEGRAPH_BASE_SEC = 0.50;
+const SPLIT_CHARGER_TELEGRAPH_BASE_SEC = 0.56;
 
 export type SplitBarrelHitResult =
   | { readonly type: 'NONE' }
@@ -458,8 +458,8 @@ export class SplitCausewayController {
     this.celebrationGroup.visible = false;
     this.lastStepFiredBolt = false;
     this.lastStepStartedCharge = false;
-    this.shooterCooldown = 1.05;
-    this.chargerCooldown = 1.85;
+    this.shooterCooldown = 0.55;
+    this.chargerCooldown = 1.05;
 
     this.queueDefs = def.leftQueue;
     this.queueTotal = def.leftQueue.length;
@@ -474,7 +474,14 @@ export class SplitCausewayController {
       const rows = Math.max(1, ech.rows);
       const minX = ech.rank === 2 ? -0.14 : -0.36;
       const maxX = ech.rank === 2 ? 5.30 : 5.54;
-      const rowSpacingZ = ech.rank === 2 ? 1.48 : 1.06;
+      const rowSpacingZ = ech.rank === 2 ? 1.40 : 1.00;
+      const shooterRatio = ech.shooterRatio ?? (ech.rank === 2 ? 0 : 0.28);
+      const chargerRatio = ech.chargerRatio ?? (ech.rank === 2 ? 0.62 : 0);
+      const echSize = rows * cols;
+      const shooterBudget = Math.round(echSize * shooterRatio);
+      const chargerBudget = Math.round(echSize * chargerRatio);
+      let echShooters = 0;
+      let echChargers = 0;
 
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
@@ -490,8 +497,18 @@ export class SplitCausewayController {
 
           this.unitAlive[idx] = 1;
           this.unitRank[idx] = ech.rank;
-          this.unitIsShooter[idx] = ech.rank !== 2 && r >= 1 && (c + r) % 3 === 1 ? 1 : 0;
-          this.unitIsCharger[idx] = ech.rank === 2 && (c + r) % 2 === 0 ? 1 : 0;
+          if (ech.rank !== 2 && echShooters < shooterBudget && r >= 1 && (c + r) % 2 === 0) {
+            this.unitIsShooter[idx] = 1;
+            echShooters++;
+          } else {
+            this.unitIsShooter[idx] = 0;
+          }
+          if (ech.rank === 2 && echChargers < chargerBudget && ((c + r) % 2 === 0 || r === 0)) {
+            this.unitIsCharger[idx] = 1;
+            echChargers++;
+          } else {
+            this.unitIsCharger[idx] = 0;
+          }
           this.unitChargeState[idx] = 0;
           this.unitChargeTimer[idx] = 0;
           this.unitX[idx] = wx;
@@ -782,18 +799,22 @@ export class SplitCausewayController {
     const cadence = Math.max(0.6, threatCadenceMult);
     const shooterTelegraphDur = SPLIT_SHOOTER_TELEGRAPH_BASE_SEC / Math.sqrt(cadence);
     const chargerTelegraphDur = SPLIT_CHARGER_TELEGRAPH_BASE_SEC / Math.sqrt(cadence);
-    const maxConcurrentShooters = cadence >= 1.55 ? 3 : cadence >= 1.25 ? 2 : 1;
-    const maxConcurrentChargers = cadence >= 1.25 ? 2 : 1;
+    const maxConcurrentShooters = cadence >= 1.7 ? 4 : cadence >= 1.3 ? 3 : 2;
+    const maxConcurrentChargers = cadence >= 1.7 ? 4 : cadence >= 1.3 ? 3 : 2;
 
     this.shooterCooldown = Math.max(0, this.shooterCooldown - dt);
     this.chargerCooldown = Math.max(0, this.chargerCooldown - dt);
 
     let activeShooters = 0;
     let activeChargers = 0;
-    let bestShooterIdx = -1;
-    let bestShooterScore = Infinity;
-    let bestChargerIdx = -1;
-    let bestChargerZ = -999999;
+    let bestShooter0 = -1;
+    let bestShooterScore0 = Infinity;
+    let bestShooter1 = -1;
+    let bestShooterScore1 = Infinity;
+    let bestCharger0 = -1;
+    let bestChargerZ0 = -999999;
+    let bestCharger1 = -1;
+    let bestChargerZ1 = -999999;
 
     let alive = 0;
     for (let i = 0; i < this.totalTroopers; i++) {
@@ -830,7 +851,7 @@ export class SplitCausewayController {
             this.lastStepStartedCharge = true;
           }
         } else {
-          rushMul = 2.15;
+          rushMul = 2.35;
           this.unitHitFlash[i] = Math.max(this.unitHitFlash[i], 0.42);
           if (projectileSystem) {
             projectileSystem.pushChargerLane(
@@ -853,22 +874,32 @@ export class SplitCausewayController {
         }
         if (this.unitChargeTimer[i] <= 0) {
           this.unitChargeState[i] = 0;
-          if (projectileSystem && distZ >= 6.0 && distZ <= 36) {
-            const boltSpeed = ENEMY_BOLT_BASE_SPEED * (0.94 + cadence * 0.14);
+          if (projectileSystem && distZ >= 5.5 && distZ <= 44) {
+            const boltSpeed = ENEMY_BOLT_BASE_SPEED * (0.96 + cadence * 0.14);
             projectileSystem.spawnBolt(this.unitX[i], uz + 0.65, boltSpeed, boltDamage);
             this.lastStepFiredBolt = true;
           }
         }
-      } else if (this.unitIsShooter[i] === 1 && distZ >= 9.5 && distZ <= 34) {
-        const score = Math.abs(this.unitX[i] - squadX) + distZ * 0.18;
-        if (score < bestShooterScore) {
-          bestShooterScore = score;
-          bestShooterIdx = i;
+      } else if (this.unitIsShooter[i] === 1 && distZ >= 8.5 && distZ <= 42) {
+        const score = Math.abs(this.unitX[i] - squadX) + distZ * 0.14;
+        if (score < bestShooterScore0) {
+          bestShooter1 = bestShooter0;
+          bestShooterScore1 = bestShooterScore0;
+          bestShooter0 = i;
+          bestShooterScore0 = score;
+        } else if (score < bestShooterScore1) {
+          bestShooter1 = i;
+          bestShooterScore1 = score;
         }
-      } else if (this.unitIsCharger[i] === 1 && distZ >= 9.0 && distZ <= 30) {
-        if (uz > bestChargerZ) {
-          bestChargerZ = uz;
-          bestChargerIdx = i;
+      } else if (this.unitIsCharger[i] === 1 && distZ >= 8.0 && distZ <= 35) {
+        if (uz > bestChargerZ0) {
+          bestCharger1 = bestCharger0;
+          bestChargerZ1 = bestChargerZ0;
+          bestCharger0 = i;
+          bestChargerZ0 = uz;
+        } else if (uz > bestChargerZ1) {
+          bestCharger1 = i;
+          bestChargerZ1 = uz;
         }
       }
 
@@ -884,14 +915,14 @@ export class SplitCausewayController {
         const dx = targetX - this.unitX[i];
         const dz = Math.max(0.35, squadZ + 0.25 - uz);
         const dist = Math.hypot(dx, dz);
-        const breachMul = (this.unitRank[i] === 2 ? 1.12 : 1.28) * rushMul;
+        const breachMul = (this.unitRank[i] === 2 ? 1.16 : 1.32) * rushMul;
         const chargeStep = stepSpeed * this.unitSpeedMul[i] * breachMul * dt;
         const inv = 1 / Math.max(0.001, dist);
         this.unitX[i] = Math.max(
           -SOLDIER_SAFE_LIMIT_X,
           Math.min(SOLDIER_SAFE_LIMIT_X, this.unitX[i] + dx * inv * chargeStep)
         );
-        this.unitZ[i] += Math.max(stepSpeed * 0.50 * rushMul * dt, dz * inv * chargeStep);
+        this.unitZ[i] += Math.max(stepSpeed * 0.54 * rushMul * dt, dz * inv * chargeStep);
       } else {
         const advance = stepSpeed * this.unitSpeedMul[i] * rushMul * dt;
         this.unitZ[i] += advance;
@@ -904,21 +935,35 @@ export class SplitCausewayController {
       projectileSystem &&
       this.shooterCooldown <= 0 &&
       activeShooters < maxConcurrentShooters &&
-      bestShooterIdx >= 0
+      bestShooter0 >= 0
     ) {
-      this.unitChargeState[bestShooterIdx] = 1;
-      this.unitChargeTimer[bestShooterIdx] = shooterTelegraphDur;
-      this.shooterCooldown = 1.62 / cadence;
+      const budget = Math.min(maxConcurrentShooters - activeShooters, 2);
+      this.unitChargeState[bestShooter0] = 1;
+      this.unitChargeTimer[bestShooter0] = shooterTelegraphDur;
+      if (budget >= 2 && bestShooter1 >= 0) {
+        this.unitChargeState[bestShooter1] = 1;
+        this.unitChargeTimer[bestShooter1] = shooterTelegraphDur + 0.10;
+      }
+      this.shooterCooldown = 1.05 / cadence;
     }
 
     if (
       this.chargerCooldown <= 0 &&
       activeChargers < maxConcurrentChargers &&
-      bestChargerIdx >= 0
+      bestCharger0 >= 0
     ) {
-      this.unitChargeState[bestChargerIdx] = 1;
-      this.unitChargeTimer[bestChargerIdx] = chargerTelegraphDur;
-      this.chargerCooldown = 3.1 / cadence;
+      const budget = Math.min(maxConcurrentChargers - activeChargers, cadence >= 1.3 ? 2 : 1);
+      this.unitChargeState[bestCharger0] = 1;
+      this.unitChargeTimer[bestCharger0] = chargerTelegraphDur;
+      if (
+        budget >= 2 &&
+        bestCharger1 >= 0 &&
+        Math.abs(this.unitX[bestCharger1] - this.unitX[bestCharger0]) >= 1.4
+      ) {
+        this.unitChargeState[bestCharger1] = 1;
+        this.unitChargeTimer[bestCharger1] = chargerTelegraphDur + 0.12;
+      }
+      this.chargerCooldown = 2.15 / cadence;
     }
 
     this.rightAliveCount = alive;

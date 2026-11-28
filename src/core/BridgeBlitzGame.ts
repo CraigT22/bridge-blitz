@@ -75,7 +75,7 @@ import type {
 const MAX_SUPPLY_DRUMS = 28;
 const MAX_GATE_PAIRS = 6;
 const MAX_TIRE_STACKS = 12;
-const MAX_ENEMY_WAVES = 6;
+const MAX_ENEMY_WAVES = 8;
 const MAX_MID_BRUTES = 2;
 const RAINBOW_SPARK_HEX = [
   0xff295c,
@@ -1110,6 +1110,36 @@ export class BridgeBlitzGame {
     return closestGateZ;
   }
 
+  /**
+   * Returns the nearest intact 3-lane Tire Barricade Wall Z between the squad and `targetZ`.
+   * As soon as ANY single lane of that 3-lane wall is breached, returns null so the horde surges through!
+   */
+  private findBlockingIntactWallZ(targetZ: number): number | null {
+    let closestIntactWallZ: number | null = null;
+    for (let i = 0; i < MAX_TIRE_STACKS; i++) {
+      const st = this.tireStacks[i];
+      if (!st.active || st.broken) {
+        continue;
+      }
+      if (st.z >= targetZ + 0.5 && st.z <= this.squad.z + 1.5) {
+        // Count how many unbroken stacks exist at this same wall Z row
+        let unbrokenAtRow = 0;
+        for (let j = 0; j < MAX_TIRE_STACKS; j++) {
+          const sib = this.tireStacks[j];
+          if (sib.active && !sib.broken && Math.abs(sib.z - st.z) < 0.8) {
+            unbrokenAtRow++;
+          }
+        }
+        if (unbrokenAtRow >= 3) {
+          if (closestIntactWallZ === null || st.z < closestIntactWallZ) {
+            closestIntactWallZ = st.z;
+          }
+        }
+      }
+    }
+    return closestIntactWallZ;
+  }
+
   private spawnBossEscortWave(escortCount: number): void {
     let slot: EnemyWaveSlot | null = null;
     for (let i = 0; i < MAX_ENEMY_WAVES; i++) {
@@ -1123,32 +1153,74 @@ export class BridgeBlitzGame {
     }
     const save = this.saveManager.getData();
     const diffProfile = getDifficultyProfile(save.difficulty);
-    const stageScale = Math.pow(1.18, Math.max(0, this.activeStageDef.stageNumber - 1));
-    const baseUnitHp = Math.max(12, Math.round(14 * stageScale * diffProfile.enemyHpMult));
-    const count = Math.max(4, Math.min(12, escortCount));
-    const heavyCount = count >= 8 ? 2 : 1;
-    const shooterCount = count >= 8 ? 2 : 1;
+    const stageScale = Math.pow(1.20, Math.max(0, this.activeStageDef.stageNumber - 1));
+    const baseUnitHp = Math.max(18, Math.round(24 * stageScale * diffProfile.enemyHpMult));
+    const count = Math.max(10, Math.min(22, escortCount));
+    const heavyCount = Math.max(2, Math.min(6, Math.round(count * 0.25)));
+    const shooterCount = Math.max(3, Math.min(8, Math.round(count * 0.30)));
 
     slot.configure({
       z: this.boss.z + 2.4,
       lane: 'CENTER',
+      formation: this.boss.isEnraged ? 'WEDGE_BLITZ' : 'SHIELD_PHALANX',
       count,
       hpPerEnemy: baseUnitHp,
-      speed: Number((3.65 * diffProfile.enemySpeedMult).toFixed(2)),
-      coinPerKill: Math.max(4, Math.round(4 + this.activeStageDef.stageNumber * 1.4)),
+      speed: Number((3.85 * diffProfile.enemySpeedMult).toFixed(2)),
+      coinPerKill: Math.max(5, Math.round(5 + this.activeStageDef.stageNumber * 1.5)),
       heavyCount,
       shooterCount,
-      chargerCount: 1,
+      chargerCount: Math.min(heavyCount, this.boss.isEnraged ? 3 : 2),
     });
     const isUnicorn = save.settings.skinTheme === 'UNICORN';
-    this.vfx.spawnShockwave(0, this.boss.z + 2.2, 4.4, 0.36, isUnicorn ? 0x1a88ff : 0xff3b5c);
+    this.vfx.spawnShockwave(0, this.boss.z + 2.2, 4.8, 0.38, isUnicorn ? 0x1a88ff : 0xff3b5c);
     this.combatText.spawn(
       0,
       2.6,
       this.boss.z + 2.2,
       'ESCORTS INCOMING!',
       'negative',
-      0.92
+      0.96
+    );
+  }
+
+  private spawnBruteAmbushWave(bruteZ: number): void {
+    let slot: EnemyWaveSlot | null = null;
+    for (let i = 0; i < MAX_ENEMY_WAVES; i++) {
+      if (!this.enemyWaves[i].active || this.enemyWaves[i].aliveCount <= 0) {
+        slot = this.enemyWaves[i];
+        break;
+      }
+    }
+    if (!slot) {
+      return;
+    }
+    const save = this.saveManager.getData();
+    const diffProfile = getDifficultyProfile(save.difficulty);
+    const stageScale = Math.pow(1.20, Math.max(0, this.activeStageDef.stageNumber - 1));
+    const count = Math.min(18, Math.round(10 * diffProfile.waveCountMult));
+    const heavyCount = Math.max(2, Math.min(4, Math.round(count * 0.24)));
+
+    slot.configure({
+      z: bruteZ - 2.2,
+      lane: 'CENTER',
+      formation: 'PINCER_FLANK',
+      count,
+      hpPerEnemy: Math.max(16, Math.round(20 * stageScale * diffProfile.enemyHpMult)),
+      speed: Number((3.65 * diffProfile.enemySpeedMult).toFixed(2)),
+      coinPerKill: Math.max(4, Math.round(4 + this.activeStageDef.stageNumber * 1.4)),
+      heavyCount,
+      shooterCount: Math.max(3, Math.round(count * 0.32)),
+      chargerCount: Math.min(heavyCount, 2),
+    });
+    const isUnicorn = save.settings.skinTheme === 'UNICORN';
+    this.vfx.spawnShockwave(0, bruteZ - 1.5, 4.4, 0.36, isUnicorn ? 0x22e868 : 0xff3b5c);
+    this.combatText.spawn(
+      0,
+      2.8,
+      bruteZ - 1.2,
+      'FLANK AMBUSH!',
+      'negative',
+      0.95
     );
   }
 
@@ -1529,6 +1601,7 @@ export class BridgeBlitzGame {
       for (let i = 0; i < MAX_ENEMY_WAVES; i++) {
         const wave = this.enemyWaves[i];
         const blockingGateZ = isSplit ? null : this.findBlockingGateZ(wave.z);
+        const blockingWallZ = isSplit ? null : this.findBlockingIntactWallZ(wave.z);
         wave.update(
           dt,
           this.squad.x,
@@ -1536,7 +1609,8 @@ export class BridgeBlitzGame {
           blockingGateZ,
           this.enemyProjectiles,
           diffProfile.threatCadenceMult,
-          diffProfile.enemyBoltDamage
+          diffProfile.enemyBoltDamage,
+          blockingWallZ
         );
         if (wave.lastStepFiredBolt) {
           this.sound.playEnemyShot();
@@ -1662,6 +1736,9 @@ export class BridgeBlitzGame {
           bruteBlockingGateZ,
           diffProfile.bossTempoMult
         );
+        if (brute.lastStepSummonReinforcements && !isSplit) {
+          this.spawnBruteAmbushWave(brute.z);
+        }
         if (bruteSmash) {
           this.sceneManager.addShake(bruteSmash.isWideSlam ? 0.56 : 0.48);
           this.vfx.spawnShockwave(
@@ -2234,7 +2311,7 @@ export class BridgeBlitzGame {
           if (kills < 0) {
             continue;
           }
-          pool.lastHitEntityId[i] = wave.entityId;
+          pool.lastHitEntityId[i] = wave.lastHitUnitEntityId;
           consumedHit = true;
 
           if (kills > 0 && wave.lastKillCount > 0) {
@@ -2974,7 +3051,7 @@ export class BridgeBlitzGame {
       for (let i = 0; i < MAX_MID_BRUTES; i++) {
         const dangerX = this.midBrutes[i].getActiveDangerSmashX();
         if (dangerX !== null && this.squad.z - this.midBrutes[i].z <= 12.0) {
-          recommendedDodgeX = dangerX >= 0 ? -2.45 : 3.15;
+          recommendedDodgeX = dangerX >= 0 ? -4.25 : 4.25;
           break;
         }
       }
@@ -2988,7 +3065,24 @@ export class BridgeBlitzGame {
         this.squad.z
       );
       if (boltThreatX !== null) {
-        recommendedDodgeX = boltThreatX >= 0 ? -2.5 : 2.5;
+        const candX = boltThreatX >= 0 ? -2.8 : 2.8;
+        let blockedByTire = false;
+        for (let i = 0; i < MAX_TIRE_STACKS; i++) {
+          const st = this.tireStacks[i];
+          if (
+            st.active &&
+            !st.broken &&
+            this.squad.z - st.z > -1.0 &&
+            this.squad.z - st.z < 12.5 &&
+            Math.abs(st.x - candX) < 1.8
+          ) {
+            blockedByTire = true;
+            break;
+          }
+        }
+        if (!blockedByTire) {
+          recommendedDodgeX = candX;
+        }
       }
     }
 
@@ -3064,6 +3158,9 @@ export class BridgeBlitzGame {
     difficulty: DifficultyTier;
     bossEnraged: boolean;
     activeEnemyBolts: number;
+    activeEnemies: number;
+    largestActiveWave: number;
+    activeWaveFormation: string | null;
     activeSpikedDrums: number;
     commandoFacingYaw: number;
     legStrafeYaw: number;
@@ -3124,6 +3221,25 @@ export class BridgeBlitzGame {
       sumBx += bx;
       if (avx > maxBulletAbsVx) maxBulletAbsVx = avx;
       if (abx > maxBulletAbsX) maxBulletAbsX = abx;
+    }
+
+    let activeEnemies = this.activeBoardLayout === 'SPLIT_CAUSEWAY' ? this.splitCauseway.rightAliveCount : 0;
+    let largestActiveWave = this.activeBoardLayout === 'SPLIT_CAUSEWAY' ? this.splitCauseway.rightAliveCount : 0;
+    let activeWaveFormation: string | null = null;
+    let nearestWaveZ = -999999;
+    for (let w = 0; w < MAX_ENEMY_WAVES; w++) {
+      const wave = this.enemyWaves[w];
+      if (!wave.active || wave.aliveCount <= 0) {
+        continue;
+      }
+      activeEnemies += wave.aliveCount;
+      if (wave.aliveCount > largestActiveWave) {
+        largestActiveWave = wave.aliveCount;
+      }
+      if (wave.z <= this.squad.z + 2 && wave.z > nearestWaveZ) {
+        nearestWaveZ = wave.z;
+        activeWaveFormation = wave.formation;
+      }
     }
 
     let nextUncollectedGateZ: number | null = null;
@@ -3203,6 +3319,9 @@ export class BridgeBlitzGame {
       difficulty: this.saveManager.getData().difficulty,
       bossEnraged: this.boss.isEnraged,
       activeEnemyBolts: this.enemyProjectiles.activeBoltCount,
+      activeEnemies,
+      largestActiveWave,
+      activeWaveFormation,
       activeSpikedDrums,
       commandoFacingYaw: this.commandoFacingYaw,
       legStrafeYaw: this.squad.legStrafeYaw,

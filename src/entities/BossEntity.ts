@@ -9,9 +9,9 @@ import { createAllUnicornBossChassisRigs } from '../rendering/UnicornBossRigFact
 
 export const BOSS_SALVO_LANE_CENTERS = [-3.85, 0.0, 3.85] as const;
 export const BOSS_SALVO_HIT_HALF_WIDTH = 1.72;
-export const BOSS_TELEGRAPH_DURATION = 0.62;
-const BOSS_WARHEAD_SPEED = 32.5;
-const BOSS_ENRAGED_WARHEAD_SPEED = 37.5;
+export const BOSS_TELEGRAPH_DURATION = 0.56;
+const BOSS_WARHEAD_SPEED = 35.0;
+const BOSS_ENRAGED_WARHEAD_SPEED = 40.5;
 const MAX_BOSS_WARHEADS = 8;
 
 type LaneMask3 = readonly [boolean, boolean, boolean];
@@ -426,7 +426,7 @@ export class BossEntity {
     this.salvoDamage = def.salvoDamage;
     this.rewardCoins = def.rewardCoins;
     this.x = 0;
-    this.z = -trackLength - 21.5;
+    this.z = -trackLength - 24.5;
     this.walkPhase = 0;
     this.lastFootstepCycle = 0;
     this.hitFlash = 0;
@@ -440,7 +440,7 @@ export class BossEntity {
     this.activeTelegraphDuration = BOSS_TELEGRAPH_DURATION;
 
     this.clearSalvoVisuals();
-    this.salvoCooldown = 0.50;
+    this.salvoCooldown = 0.42;
     this.salvoCycleIndex = 0;
 
     this.syncActiveThemeRigAppearance();
@@ -520,31 +520,30 @@ export class BossEntity {
       this.applyFlash(0);
     }
 
-    // 50% HP Enrage Trigger & Periodic Escort Squad Summons during BOSS_FIGHT!
+    // 75% HP Escort Vanguard (ALL difficulties!) + 50% HP Enrage & Periodic Escort Phalanx Summons!
     if (inBossFight && currentSquad > 0) {
       const hpRatio = this.currentHp / Math.max(1, this.maxHp);
       if (!this.isEnraged && hpRatio <= 0.50) {
         this.isEnraged = true;
         this.lastStepEnrageTriggered = true;
-        this.escortSummonTimer = 0.35;
-        this.salvoCooldown = Math.min(this.salvoCooldown, 0.38);
+        this.escortSummonTimer = 0.25;
+        this.salvoCooldown = Math.min(this.salvoCooldown, 0.34);
       } else if (
         !this.isEnraged &&
         !this.preEnrageEscortTriggered &&
-        safeTempo >= 1.15 &&
         hpRatio <= 0.75
       ) {
         this.preEnrageEscortTriggered = true;
         this.lastStepSummonEscorts = true;
-        this.lastStepEscortCount = safeTempo >= 1.30 ? 8 : 6;
+        this.lastStepEscortCount = safeTempo >= 1.35 ? 16 : safeTempo >= 1.18 ? 14 : 12;
       }
 
       if (this.isEnraged && this.z < squadZ - 5.2) {
         this.escortSummonTimer -= dt;
         if (this.escortSummonTimer <= 0) {
-          this.escortSummonTimer = Math.max(2.6, 4.6 / safeTempo);
+          this.escortSummonTimer = Math.max(2.4, 3.6 / safeTempo);
           this.lastStepSummonEscorts = true;
-          this.lastStepEscortCount = safeTempo >= 1.30 ? 10 : safeTempo >= 1.15 ? 8 : 6;
+          this.lastStepEscortCount = safeTempo >= 1.35 ? 20 : safeTempo >= 1.18 ? 16 : 14;
         }
       }
     }
@@ -948,8 +947,8 @@ export class BossEntity {
 
     if (nextSeg < prevSeg) {
       this.lastStepSegmentBroken = true;
-      this.staggerTimer = 0.65;
-      this.z -= 1.45;
+      this.staggerTimer = 0.55;
+      this.z -= 1.65;
       this.activeRig.root.position.z = this.z;
     }
 
